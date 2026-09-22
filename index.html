@@ -297,9 +297,12 @@ L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/Worl
 }).addTo(map);
 
 // Capa de calles y su nomenclatura (World_Boundaries_and_Places casi no trae calles,
-// esta capa sí las dibuja con su nombre)
+// esta capa sí las dibuja con su nombre). Se muestra solo al acercarse: a zoom
+// de ciudad completa, Esri la dibuja como autopistas gruesas resaltadas, que
+// tapan la imagen satelital; al acercarse pasa a mostrar calles finas con nombre.
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
   maxZoom: 19,
+  minZoom: 15,
   attribution: 'Streets &copy; Esri'
 }).addTo(map);
 
