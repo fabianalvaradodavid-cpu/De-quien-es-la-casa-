@@ -182,6 +182,20 @@
   }
   button.primary:hover{ background:var(--clay-dark); }
   button.primary:active{ transform:translateY(1px); }
+  button.secondary{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:0.9rem;
+    font-weight:600;
+    padding:0.65rem 0.8rem;
+    background:#fff;
+    color:var(--moss-dark);
+    border:1.5px solid var(--moss);
+    border-radius:4px;
+    cursor:pointer;
+  }
+  button.secondary:hover{ background:#fbeef4; }
+  button.secondary:active{ transform:translateY(1px); }
+  button:disabled{ opacity:0.45; cursor:not-allowed; }
   .copied{
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     font-size:0.78rem;
@@ -232,8 +246,9 @@
       </div>
       <dl class="details" id="details"></dl>
       <div class="actions">
-        <button class="primary" id="copy-btn">Copiar rol y abrir trámite TGR</button>
-        <div class="copied" id="copied-msg">Rol copiado. Pégalo (Ctrl+V) en el formulario de TGR que se acaba de abrir.</div>
+        <button class="primary" id="copy-manzana-btn">Copiar rol manzana y abrir trámite TGR</button>
+        <button class="secondary" id="copy-propiedad-btn">Copiar rol propiedad</button>
+        <div class="copied" id="copied-msg"></div>
       </div>
     </div>
   </aside>
@@ -444,12 +459,40 @@ function showResult(data) {
 
   document.getElementById('result').classList.add('visible');
 
-  document.getElementById('copy-btn').onclick = () => {
-    navigator.clipboard.writeText(data.rol).then(() => {
-      document.getElementById('copied-msg').classList.add('visible');
+  const { manzana, propiedad } = splitRol(data.rol);
+
+  const manzanaBtn = document.getElementById('copy-manzana-btn');
+  const propiedadBtn = document.getElementById('copy-propiedad-btn');
+
+  manzanaBtn.disabled = !manzana;
+  manzanaBtn.onclick = () => {
+    navigator.clipboard.writeText(manzana).then(() => {
+      showCopiedMsg('Rol manzana copiado. Pégalo (Ctrl+V) en el formulario de TGR que se acaba de abrir.');
       window.open(TGR_URL, '_blank', 'noopener');
     });
   };
+
+  propiedadBtn.disabled = !propiedad;
+  propiedadBtn.onclick = () => {
+    navigator.clipboard.writeText(propiedad).then(() => {
+      showCopiedMsg('Rol propiedad copiado.');
+    });
+  };
+}
+
+// El rol del SII viene con el formato "MANZANA-PROPIEDAD" (ej: "1234-56").
+// Si por algún motivo no viene el guión, todo se trata como "manzana".
+function splitRol(rol) {
+  if (!rol) return { manzana: '', propiedad: '' };
+  const idx = rol.indexOf('-');
+  if (idx === -1) return { manzana: rol.trim(), propiedad: '' };
+  return { manzana: rol.slice(0, idx).trim(), propiedad: rol.slice(idx + 1).trim() };
+}
+
+function showCopiedMsg(msg) {
+  const el = document.getElementById('copied-msg');
+  el.textContent = msg;
+  el.classList.add('visible');
 }
 
 function formatCLP(n) {
