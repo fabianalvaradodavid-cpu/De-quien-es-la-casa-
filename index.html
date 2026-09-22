@@ -360,14 +360,41 @@ function formatCLP(n) {
   return '$' + n.toLocaleString('es-CL');
 }
 
+// El SII exige que metaData venga con namespace / conversationId / transactionId
+// rellenados; si no, responde 200 pero con data:null y una lista de errores.
+const SII_NAMESPACE = 'cl.sii.sdi.lob.bbrr.mapas.data.api.interfaces.MapasFacadeService';
+let siiConversationId = null; // se fija una vez por sesión de navegación
+let siiTransactionCounter = 0; // se incrementa en cada llamada
+
+function uuidv4() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 async function callProxy(path, data) {
+  if (!siiConversationId) siiConversationId = uuidv4();
+  siiTransactionCounter += 1;
+
+  const metaData = {
+    namespace: SII_NAMESPACE + path,       // ej: .../MapasFacadeService/getServicioPredio
+    conversationId: siiConversationId,
+    transactionId: uuidv4(),
+  };
+
   const resp = await fetch(PROXY_BASE + path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ metaData: {}, data })
+    body: JSON.stringify({ metaData, data })
   });
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  return resp.json();
+  const json = await resp.json();
+  if (json && json.metaData && Array.isArray(json.metaData.errors) && json.metaData.errors.length) {
+    console.error('SII metaData errors:', json.metaData.errors);
+  }
+  return json;
 }
 </script>
 </body>
