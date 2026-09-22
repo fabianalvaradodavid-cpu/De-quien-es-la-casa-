@@ -9,12 +9,14 @@
 <script src="comunas.js"></script>
 <style>
   :root{
-    --ink:#1c2b24;
-    --paper:#f6f4ee;
-    --line:#d8d2c4;
-    --moss:#2f5d4f;
-    --moss-dark:#20443a;
-    --clay:#b5622f;
+    --ink:#2a1a1f;
+    --paper:#fbf3f6;
+    --line:#e6c9d6;
+    --moss:#7c1f3e;
+    --moss-dark:#54142a;
+    --clay:#e2007a;
+    --clay-dark:#b8005f;
+    --leather:#2c1c16;
     --panel:#ffffff;
     font-size:16px;
   }
@@ -29,23 +31,41 @@
   }
   header{
     padding:1.1rem 1.4rem 0.9rem;
-    border-bottom:1px solid var(--line);
+    border-bottom:2px solid var(--clay);
+    background:linear-gradient(120deg, #fdf1f6 0%, #fbe1ee 55%, #f7d4e8 100%);
     display:flex;
-    align-items:baseline;
+    align-items:center;
     gap:0.9rem;
     flex-wrap:wrap;
+  }
+  header .titles{
+    display:flex;
+    flex-direction:column;
+    gap:0.2rem;
   }
   header h1{
     font-size:1.28rem;
     margin:0;
     font-weight:600;
     letter-spacing:0.01em;
+    color:var(--moss-dark);
   }
   header p{
     margin:0;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     font-size:0.82rem;
-    color:#5c6b62;
+    color:#7a5a68;
+  }
+  #mascot{
+    margin-left:auto;
+    height:64px;
+    width:auto;
+    border-radius:10px;
+    display:block;
+    box-shadow:0 1px 5px rgba(44,28,22,0.35);
+    border:2px solid #fff;
+    user-select:none;
+    -webkit-user-drag:none;
   }
   main{
     flex:1;
@@ -56,7 +76,7 @@
   #map{
     width:100%;
     height:100%;
-    background:#e7e3d6;
+    background:#1a1a1a;
   }
   aside{
     border-left:1px solid var(--line);
@@ -73,7 +93,7 @@
     font-size:0.72rem;
     text-transform:uppercase;
     letter-spacing:0.06em;
-    color:#7a8880;
+    color:#9a6f80;
     margin-bottom:0.35rem;
   }
   select{
@@ -88,17 +108,17 @@
   }
   .hint{
     font-size:0.8rem;
-    color:#6c7a72;
+    color:#7a5a68;
     line-height:1.45;
     padding:0.7rem 0.8rem;
-    background:#eef1ea;
+    background:#fbeef4;
     border-radius:4px;
     border:1px solid var(--line);
   }
   .status{
     margin-top:0.9rem;
     font-size:0.85rem;
-    color:#6c7a72;
+    color:#7a5a68;
   }
   .status.error{ color:#a3402b; }
   .result{
@@ -141,7 +161,7 @@
     border-bottom:1px solid #f0ede3;
   }
   dl.details div:last-child{ border-bottom:none; }
-  dl.details dt{ color:#7a8880; }
+  dl.details dt{ color:#9a6f80; }
   dl.details dd{ margin:0; text-align:right; }
   .actions{
     padding:0.85rem 1rem 1rem;
@@ -160,7 +180,7 @@
     border-radius:4px;
     cursor:pointer;
   }
-  button.primary:hover{ background:#9c5127; }
+  button.primary:hover{ background:var(--clay-dark); }
   button.primary:active{ transform:translateY(1px); }
   .copied{
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
@@ -179,9 +199,14 @@
 <body>
 
 <header>
-  <h1>Rol de propiedad → Certificado TGR</h1>
-  <p>Clic en un punto del mapa para consultar el rol de esa propiedad ante el SII.</p>
+  <div class="titles">
+    <h1>Rol de propiedad → Certificado TGR</h1>
+    <p>Clic en un punto del mapa para consultar el rol de esa propiedad ante el SII.</p>
+  </div>
+  <img id="mascot" src="mascota.jpg" alt="Mascota">
 </header>
+
+<audio id="click-sound" src="click.mp3" preload="auto"></audio>
 
 <main>
   <div id="map"></div>
@@ -216,17 +241,32 @@
 
 <script>
 // ---- Configuración ----
-// URL del proxy (Cloudflare Worker) que reenvía las llamadas al SII evitando el bloqueo de CORS.
-// Reemplaza esto por la URL real de tu Worker una vez publicado.
+// URL del proxy (Cloudflare Worker / Val.town) que reenvía las llamadas al SII evitando el bloqueo de CORS.
 const PROXY_BASE = "https://fabianalvaradodavid--eb6f8c9eb5fd11f1af9b1607ee4eb77e.web.val.run";
 
 const TGR_URL = "https://tgr.gob.cl/tramites-tgr/certificado-de-deuda-de-contribuciones/";
 
-// ---- Mapa base ----
+// ---- Sonido de "rol encontrado" ----
+const clickSound = document.getElementById('click-sound');
+function playClickSound() {
+  try {
+    clickSound.currentTime = 0;
+    clickSound.play().catch(() => {});
+  } catch (e) { /* algunos navegadores bloquean audio hasta la primera interacción del usuario */ }
+}
+
+// ---- Mapa base: satelital + etiquetas (Esri, sin necesidad de API key) ----
 const map = L.map('map', { zoomControl: true }).setView([-33.4489, -70.6693], 12);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
   maxZoom: 19,
-  attribution: '&copy; OpenStreetMap'
+  attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, GIS User Community'
+}).addTo(map);
+
+// Capa de referencia con nombres de calles, comunas, etc. sobre la imagen satelital
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 19,
+  attribution: 'Labels &copy; Esri'
 }).addTo(map);
 
 let marker = null;
@@ -283,37 +323,93 @@ map.on('click', async (e) => {
   setStatus('Consultando rol…');
   hideResult();
 
-  const bounds = map.getBounds();
-  const size = map.getSize();
-  const point = map.latLngToContainerPoint(e.latlng);
-
-  const clickInfo = {
-    x: point.x,
-    y: point.y,
-    southwestx: bounds.getSouthWest().lat,
-    southwesty: bounds.getSouthWest().lng,
-    northeastx: bounds.getNorthEast().lat,
-    northeasty: bounds.getNorthEast().lng,
-    layer: currentLayerName,
-    width: size.x,
-    height: size.y,
-    servicios: [{ layer: currentLayerName }]
-  };
-
   try {
-    const res = await callProxy('/getFeatureInfo', { clickInfo });
-    const data = res && res.data;
-    if (!data || !data.existePredio) {
+    const resuelto = await consultarRolConReintentos(e.latlng);
+    if (!resuelto) {
       setStatus('No se encontró información en ese punto. Prueba haciendo clic justo sobre el predio, con más zoom.', true);
       return;
     }
-    showResult(data);
+    if (!resuelto.rol) {
+      // Existe una entidad en ese punto (calle, plaza, área común) pero el SII
+      // no le asocia un rol de contribuyente individual.
+      setStatus('Ese punto no tiene un rol de propiedad asociado (puede ser calle, área verde o espacio público). Prueba haciendo clic más cerca del centro de una construcción.', true);
+      console.debug('SII: existePredio=true pero sin rol resoluble. Respuesta cruda:', resuelto.raw);
+      return;
+    }
+    showResult(resuelto);
     setStatus('');
   } catch (err) {
     console.error(err);
     setStatus('No se pudo consultar el rol. Revisa la URL del proxy.', true);
   }
 });
+
+// Intenta obtener el rol en el punto clickeado. Si el SII devuelve existePredio
+// pero sin datos de rol resolubles (muy común justo en los bordes de un predio,
+// donde el pixel consultado cae sobre la línea divisoria), reintenta consultando
+// unos pocos píxeles alrededor del punto original hasta encontrar un resultado
+// con rol, o hasta agotar los intentos.
+async function consultarRolConReintentos(latlng) {
+  const offsets = [
+    [0, 0],
+    [4, 0], [-4, 0], [0, 4], [0, -4],
+    [6, 6], [-6, -6], [6, -6], [-6, 6],
+    [10, 0], [-10, 0], [0, 10], [0, -10]
+  ];
+
+  const bounds = map.getBounds();
+  const size = map.getSize();
+  const basePoint = map.latLngToContainerPoint(latlng);
+
+  let ultimoConPredio = null;
+
+  for (const [dx, dy] of offsets) {
+    const clickInfo = {
+      x: basePoint.x + dx,
+      y: basePoint.y + dy,
+      southwestx: bounds.getSouthWest().lat,
+      southwesty: bounds.getSouthWest().lng,
+      northeastx: bounds.getNorthEast().lat,
+      northeasty: bounds.getNorthEast().lng,
+      layer: currentLayerName,
+      width: size.x,
+      height: size.y,
+      servicios: [{ layer: currentLayerName }]
+    };
+
+    const res = await callProxy('/getFeatureInfo', { clickInfo });
+    const data = res && res.data;
+    if (!data || !data.existePredio) continue;
+
+    const resuelto = resolverCamposPredio(data);
+    if (resuelto.rol) return resuelto; // encontramos un rol válido, listo
+    ultimoConPredio = resuelto; // guardamos por si ningún intento trae rol
+  }
+
+  return ultimoConPredio; // puede ser null (nada encontrado) o un predio sin rol
+}
+
+// El SII no siempre usa exactamente los mismos nombres de campo en su respuesta
+// (varía levemente según comuna/capa). Esta función prueba varias alternativas
+// conocidas para cada dato antes de darse por vencida.
+function resolverCamposPredio(data) {
+  const rol = pick(data, ['rol', 'ROL', 'rolPredio', 'numeroRol', 'rolCompleto', 'nomRol']);
+  const nombreComuna = pick(data, ['nombreComuna', 'comuna', 'NOM_COMUNA', 'nombreComunaPredio']);
+  const direccion = pick(data, ['direccion', 'DIRECCION', 'direccionPredio', 'calle']);
+  const destinoDescripcion = pick(data, ['destinoDescripcion', 'destino', 'DESTINO', 'destinoPredio']);
+  const valorTotalRaw = pick(data, ['valorTotal', 'avaluoTotal', 'AVALUO_TOTAL', 'monto', 'valorAvaluo']);
+  const valorTotal = valorTotalRaw !== undefined ? Number(valorTotalRaw) : undefined;
+
+  return { rol, nombreComuna, direccion, destinoDescripcion, valorTotal, raw: data };
+}
+
+function pick(obj, keys) {
+  for (const k of keys) {
+    const v = obj[k];
+    if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+  }
+  return undefined;
+}
 
 // ---- Utilidades de UI ----
 function setStatus(msg, isError) {
@@ -328,6 +424,7 @@ function hideResult() {
 }
 
 function showResult(data) {
+  playClickSound();
   document.getElementById('rol-value').textContent = data.rol || '—';
 
   const details = document.getElementById('details');
@@ -356,7 +453,7 @@ function showResult(data) {
 }
 
 function formatCLP(n) {
-  if (typeof n !== 'number') return '';
+  if (typeof n !== 'number' || Number.isNaN(n)) return '';
   return '$' + n.toLocaleString('es-CL');
 }
 
