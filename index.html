@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rol de propiedad → Certificado de deuda TGR</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="comunas.js"></script>
+<style>
+  :root{
+    --ink:#1c2b24;
+    --paper:#f6f4ee;
+    --line:#d8d2c4;
+    --moss:#2f5d4f;
+    --moss-dark:#20443a;
+    --clay:#b5622f;
+    --panel:#ffffff;
+    font-size:16px;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    font-family:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+    background:var(--paper);
+    color:var(--ink);
+    display:flex;
+    flex-direction:column;
+  }
+  header{
+    padding:1.1rem 1.4rem 0.9rem;
+    border-bottom:1px solid var(--line);
+    display:flex;
+    align-items:baseline;
+    gap:0.9rem;
+    flex-wrap:wrap;
+  }
+  header h1{
+    font-size:1.28rem;
+    margin:0;
+    font-weight:600;
+    letter-spacing:0.01em;
+  }
+  header p{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:0.82rem;
+    color:#5c6b62;
+  }
+  main{
+    flex:1;
+    display:grid;
+    grid-template-columns: minmax(0,1fr) 320px;
+    min-height:0;
+  }
+  #map{
+    width:100%;
+    height:100%;
+    background:#e7e3d6;
+  }
+  aside{
+    border-left:1px solid var(--line);
+    background:var(--panel);
+    padding:1.1rem;
+    overflow-y:auto;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  .field{
+    margin-bottom:1rem;
+  }
+  .field label{
+    display:block;
+    font-size:0.72rem;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:#7a8880;
+    margin-bottom:0.35rem;
+  }
+  select{
+    width:100%;
+    padding:0.5rem 0.6rem;
+    font-size:0.92rem;
+    border:1px solid var(--line);
+    border-radius:3px;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:inherit;
+  }
+  .hint{
+    font-size:0.8rem;
+    color:#6c7a72;
+    line-height:1.45;
+    padding:0.7rem 0.8rem;
+    background:#eef1ea;
+    border-radius:4px;
+    border:1px solid var(--line);
+  }
+  .status{
+    margin-top:0.9rem;
+    font-size:0.85rem;
+    color:#6c7a72;
+  }
+  .status.error{ color:#a3402b; }
+  .result{
+    margin-top:0.9rem;
+    border:1px solid var(--line);
+    border-radius:6px;
+    overflow:hidden;
+    display:none;
+  }
+  .result.visible{ display:block; }
+  .result-rol{
+    background:var(--moss);
+    color:#fbf9f2;
+    padding:0.9rem 1rem;
+  }
+  .result-rol .label{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:0.7rem;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    opacity:0.75;
+  }
+  .result-rol .value{
+    font-size:1.5rem;
+    font-weight:600;
+    margin-top:0.15rem;
+    letter-spacing:0.01em;
+  }
+  dl.details{
+    margin:0;
+    padding:0.85rem 1rem;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:0.83rem;
+  }
+  dl.details div{
+    display:flex;
+    justify-content:space-between;
+    gap:0.6rem;
+    padding:0.32rem 0;
+    border-bottom:1px solid #f0ede3;
+  }
+  dl.details div:last-child{ border-bottom:none; }
+  dl.details dt{ color:#7a8880; }
+  dl.details dd{ margin:0; text-align:right; }
+  .actions{
+    padding:0.85rem 1rem 1rem;
+    display:flex;
+    flex-direction:column;
+    gap:0.55rem;
+  }
+  button.primary{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:0.9rem;
+    font-weight:600;
+    padding:0.65rem 0.8rem;
+    background:var(--clay);
+    color:#fff;
+    border:none;
+    border-radius:4px;
+    cursor:pointer;
+  }
+  button.primary:hover{ background:#9c5127; }
+  button.primary:active{ transform:translateY(1px); }
+  .copied{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:0.78rem;
+    color:var(--moss-dark);
+    display:none;
+  }
+  .copied.visible{ display:block; }
+  .leaflet-container{ font-family:inherit; }
+  @media (max-width:720px){
+    main{ grid-template-columns:1fr; grid-template-rows:1fr auto; }
+    aside{ border-left:none; border-top:1px solid var(--line); max-height:46vh; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Rol de propiedad → Certificado TGR</h1>
+  <p>Clic en un punto del mapa para consultar el rol de esa propiedad ante el SII.</p>
+</header>
+
+<main>
+  <div id="map"></div>
+  <aside>
+    <div class="field">
+      <label for="comuna">Comuna</label>
+      <select id="comuna"></select>
+    </div>
+
+    <div class="hint" id="hint">
+      Elige una comuna para centrar el mapa, luego haz clic sobre cualquier
+      punto para consultar el rol de la propiedad. La consulta se hace directamente
+      contra el sistema del SII; esta página no guarda ni envía tus datos a
+      ningún otro lugar.
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <div class="result" id="result">
+      <div class="result-rol">
+        <div class="label">Rol</div>
+        <div class="value" id="rol-value">—</div>
+      </div>
+      <dl class="details" id="details"></dl>
+      <div class="actions">
+        <button class="primary" id="copy-btn">Copiar rol y abrir trámite TGR</button>
+        <div class="copied" id="copied-msg">Rol copiado. Pégalo (Ctrl+V) en el formulario de TGR que se acaba de abrir.</div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<script>
+// ---- Configuración ----
+// URL del proxy (Cloudflare Worker) que reenvía las llamadas al SII evitando el bloqueo de CORS.
+// Reemplaza esto por la URL real de tu Worker una vez publicado.
+const PROXY_BASE = "https://fabianalvaradodavid--eb6f8c9eb5fd11f1af9b1607ee4eb77e.web.val.run";
+
+const TGR_URL = "https://tgr.gob.cl/tramites-tgr/certificado-de-deuda-de-contribuciones/";
+
+// ---- Mapa base ----
+const map = L.map('map', { zoomControl: true }).setView([-33.4489, -70.6693], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap'
+}).addTo(map);
+
+let marker = null;
+let currentLayerName = null; // capa "Predios" de la comuna activa, requerida por getFeatureInfo
+
+// ---- Selector de comuna ----
+const comunaSelect = document.getElementById('comuna');
+const placeholder = document.createElement('option');
+placeholder.textContent = 'Selecciona una comuna…';
+placeholder.value = '';
+comunaSelect.appendChild(placeholder);
+
+COMUNAS_SII
+  .slice()
+  .sort((a, b) => a[1].localeCompare(b[1], 'es'))
+  .forEach(([codigo, nombre]) => {
+    const opt = document.createElement('option');
+    opt.value = codigo;
+    opt.textContent = nombre;
+    comunaSelect.appendChild(opt);
+  });
+
+comunaSelect.addEventListener('change', async () => {
+  const codigo = comunaSelect.value;
+  if (!codigo) return;
+  setStatus('Cargando comuna…');
+  try {
+    const info = await callProxy('/getServicioPredio', { comuna: Number(codigo) });
+    const servicios = (info && info.data) || [];
+    const predios = servicios.find(s => s.aliasServicio === 'P') || servicios[0];
+    if (!predios) {
+      setStatus('El SII no devolvió datos para esta comuna.', true);
+      return;
+    }
+    currentLayerName = predios.layer;
+    map.setView([predios.latitud, predios.longitud], predios.zoom || 14);
+    setStatus('Listo. Haz clic en un punto del mapa.');
+  } catch (err) {
+    console.error(err);
+    setStatus('No se pudo cargar la comuna. Revisa la URL del proxy.', true);
+  }
+});
+
+// ---- Clic en el mapa → consultar rol ----
+map.on('click', async (e) => {
+  if (!currentLayerName) {
+    setStatus('Primero elige una comuna arriba.', true);
+    return;
+  }
+
+  if (marker) map.removeLayer(marker);
+  marker = L.marker(e.latlng).addTo(map);
+
+  setStatus('Consultando rol…');
+  hideResult();
+
+  const bounds = map.getBounds();
+  const size = map.getSize();
+  const point = map.latLngToContainerPoint(e.latlng);
+
+  const clickInfo = {
+    x: point.x,
+    y: point.y,
+    southwestx: bounds.getSouthWest().lat,
+    southwesty: bounds.getSouthWest().lng,
+    northeastx: bounds.getNorthEast().lat,
+    northeasty: bounds.getNorthEast().lng,
+    layer: currentLayerName,
+    width: size.x,
+    height: size.y,
+    servicios: [{ layer: currentLayerName }]
+  };
+
+  try {
+    const res = await callProxy('/getFeatureInfo', { clickInfo });
+    const data = res && res.data;
+    if (!data || !data.existePredio) {
+      setStatus('No se encontró información en ese punto. Prueba haciendo clic justo sobre el predio, con más zoom.', true);
+      return;
+    }
+    showResult(data);
+    setStatus('');
+  } catch (err) {
+    console.error(err);
+    setStatus('No se pudo consultar el rol. Revisa la URL del proxy.', true);
+  }
+});
+
+// ---- Utilidades de UI ----
+function setStatus(msg, isError) {
+  const el = document.getElementById('status');
+  el.textContent = msg || '';
+  el.classList.toggle('error', !!isError);
+}
+
+function hideResult() {
+  document.getElementById('result').classList.remove('visible');
+  document.getElementById('copied-msg').classList.remove('visible');
+}
+
+function showResult(data) {
+  document.getElementById('rol-value').textContent = data.rol || '—';
+
+  const details = document.getElementById('details');
+  const rows = [
+    ['Comuna', data.nombreComuna],
+    ['Dirección', data.direccion],
+    ['Destino', data.destinoDescripcion],
+    ['Avalúo total', formatCLP(data.valorTotal)],
+  ].filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== '');
+
+  details.innerHTML = '';
+  rows.forEach(([label, value]) => {
+    const row = document.createElement('div');
+    row.innerHTML = `<dt>${label}</dt><dd>${value}</dd>`;
+    details.appendChild(row);
+  });
+
+  document.getElementById('result').classList.add('visible');
+
+  document.getElementById('copy-btn').onclick = () => {
+    navigator.clipboard.writeText(data.rol).then(() => {
+      document.getElementById('copied-msg').classList.add('visible');
+      window.open(TGR_URL, '_blank', 'noopener');
+    });
+  };
+}
+
+function formatCLP(n) {
+  if (typeof n !== 'number') return '';
+  return '$' + n.toLocaleString('es-CL');
+}
+
+async function callProxy(path, data) {
+  const resp = await fetch(PROXY_BASE + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ metaData: {}, data })
+  });
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  return resp.json();
+}
+</script>
+</body>
+</html>
