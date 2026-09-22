@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rol de propiedad → Certificado de deuda TGR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Luckiest+Guy&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="comunas.js"></script>
@@ -44,11 +47,15 @@
     gap:0.2rem;
   }
   header h1{
-    font-size:1.28rem;
+    font-family:'Luckiest Guy', 'Iowan Old Style', cursive;
+    font-size:1.9rem;
     margin:0;
-    font-weight:600;
-    letter-spacing:0.01em;
-    color:var(--moss-dark);
+    font-weight:400;
+    letter-spacing:0.02em;
+    color:var(--clay);
+    text-shadow:2px 2px 0 var(--moss-dark);
+    transform:rotate(-1.5deg);
+    display:inline-block;
   }
   header p{
     margin:0;
@@ -56,14 +63,17 @@
     font-size:0.82rem;
     color:#7a5a68;
   }
+  .mascot-wrap{
+    margin:-1.1rem -1.1rem 1.1rem;
+    overflow:hidden;
+    border-bottom:2px solid var(--clay);
+  }
   #mascot{
-    margin-left:auto;
-    height:64px;
-    width:auto;
-    border-radius:10px;
     display:block;
-    box-shadow:0 1px 5px rgba(44,28,22,0.35);
-    border:2px solid #fff;
+    width:100%;
+    height:230px;
+    object-fit:cover;
+    object-position:50% 18%;
     user-select:none;
     -webkit-user-drag:none;
   }
@@ -214,10 +224,9 @@
 
 <header>
   <div class="titles">
-    <h1>Rol de propiedad → Certificado TGR</h1>
+    <h1>¿DE QUIÉN ES LA CASA?</h1>
     <p>Clic en un punto del mapa para consultar el rol de esa propiedad ante el SII.</p>
   </div>
-  <img id="mascot" src="mascota.jpg" alt="Mascota">
 </header>
 
 <audio id="click-sound" src="click.mp3" preload="auto"></audio>
@@ -225,6 +234,9 @@
 <main>
   <div id="map"></div>
   <aside>
+    <div class="mascot-wrap">
+      <img id="mascot" src="mascota.jpg" alt="Mascota">
+    </div>
     <div class="field">
       <label for="comuna">Comuna</label>
       <select id="comuna"></select>
@@ -247,7 +259,7 @@
       <dl class="details" id="details"></dl>
       <div class="actions">
         <button class="primary" id="copy-manzana-btn">Copiar rol manzana y abrir trámite TGR</button>
-        <button class="secondary" id="copy-propiedad-btn">Copiar rol propiedad</button>
+        <button class="secondary" id="copy-propiedad-btn">Copiar rol predio</button>
         <div class="copied" id="copied-msg"></div>
       </div>
     </div>
@@ -475,7 +487,7 @@ function showResult(data) {
   propiedadBtn.disabled = !propiedad;
   propiedadBtn.onclick = () => {
     navigator.clipboard.writeText(propiedad).then(() => {
-      showCopiedMsg('Rol propiedad copiado.');
+      showCopiedMsg('Rol predio copiado.');
     });
   };
 }
