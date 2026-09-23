@@ -620,38 +620,52 @@ function cerrarModalUnidades() {
 }
 
 async function abrirModalUnidades(comunaCodigo, manzana) {
-  document.getElementById('modal-title').textContent = `Unidades de la manzana ${manzana}`;
+  document.getElementById('modal-title').textContent = `Unidades de la manzana ${manzana} (predios 1–500)`;
   const body = document.getElementById('modal-body');
-  body.innerHTML = '<p class="modal-loading">Buscando unidades…</p>';
   modalOverlay.classList.add('visible');
 
-  const encontrados = [];
-  let fallosSeguidos = 0;
-  const MAX_INTENTOS = 300;       // tope de números de predio a probar (90001…90300)
-  const MAX_FALLOS_SEGUIDOS = 15; // deja de buscar tras N "no existe" seguidos
+  // Recorre los predios 1…500 de la manzana (los roles de departamento/unidad
+  // dentro del edificio), no la serie 900xx de bodegas/estacionamientos.
+  const TOTAL = 500;
+  const CONCURRENCIA = 8; // consultas en paralelo, para no demorar minutos en las 500
 
-  for (let n = 1; n <= MAX_INTENTOS && fallosSeguidos < MAX_FALLOS_SEGUIDOS; n++) {
-    const predio = 90000 + n;
-    let resultado;
-    try {
-      resultado = await buscarPredioPorRol(comunaCodigo, manzana, predio);
-    } catch (err) {
-      console.error('Error consultando rol directo', manzana, predio, err);
-      body.innerHTML =
-        '<p class="modal-error">No se pudo consultar el SII por rol directo (puede estar lento o caído en ' +
-        'este momento). Intenta de nuevo en unos segundos.</p>';
-      return;
-    }
-    if (resultado) {
-      encontrados.push(resultado);
-      fallosSeguidos = 0;
-    } else {
-      fallosSeguidos++;
+  const encontrados = [];
+  let consultados = 0;
+  let errores = 0;
+
+  const actualizarProgreso = () => {
+    body.innerHTML =
+      `<p class="modal-loading">Consultando unidades… ${consultados}/${TOTAL}` +
+      (encontrados.length ? ` (${encontrados.length} encontradas)` : '') +
+      `</p>`;
+  };
+  actualizarProgreso();
+
+  const pendientes = Array.from({ length: TOTAL }, (_, i) => i + 1); // predio 1..500
+
+  async function trabajador() {
+    while (pendientes.length) {
+      const predio = pendientes.shift();
+      try {
+        const resultado = await buscarPredioPorRol(comunaCodigo, manzana, predio);
+        if (resultado) encontrados.push(resultado);
+      } catch (err) {
+        console.error('Error consultando rol directo', manzana, predio, err);
+        errores++;
+      }
+      consultados++;
+      actualizarProgreso();
     }
   }
 
+  await Promise.all(Array.from({ length: CONCURRENCIA }, trabajador));
+
+  encontrados.sort((a, b) => a.predio - b.predio);
+
   if (!encontrados.length) {
-    body.innerHTML = '<p class="modal-error">No se encontraron otras unidades en esta manzana.</p>';
+    body.innerHTML = errores
+      ? `<p class="modal-error">No se encontró ninguna unidad entre el 1 y el 500 (hubo ${errores} consultas fallidas; el SII puede estar lento). Intenta de nuevo.</p>`
+      : '<p class="modal-error">No se encontraron unidades entre el 1 y el 500 en esta manzana.</p>';
     return;
   }
 
@@ -671,6 +685,14 @@ async function abrirModalUnidades(comunaCodigo, manzana) {
     ul.appendChild(li);
   });
   body.appendChild(ul);
+
+  if (errores) {
+    const nota = document.createElement('p');
+    nota.className = 'modal-error';
+    nota.style.marginTop = '0.6rem';
+    nota.textContent = `${errores} de las 500 consultas fallaron y no se reintentaron.`;
+    body.appendChild(nota);
+  }
 }
 
 // Confirmado capturando el request real del sitio oficial del SII (Buscar Rol):
