@@ -397,6 +397,7 @@ L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/Worl
 
 let marker = null;
 let currentLayerName = null; // capa "Predios" de la comuna activa, requerida por getFeatureInfo
+let currentServicios = null; // lista completa de servicios/capas de la comuna activa, requerida por getPredioNacional
 
 // ---- Selector de comuna ----
 const comunaSelect = document.getElementById('comuna');
@@ -428,6 +429,7 @@ comunaSelect.addEventListener('change', async () => {
       return;
     }
     currentLayerName = predios.layer;
+    currentServicios = servicios;
     map.setView([predios.latitud, predios.longitud], predios.zoom || 14);
     setStatus('Listo. Haz clic en un punto del mapa.');
   } catch (err) {
@@ -636,9 +638,8 @@ async function abrirModalUnidades(comunaCodigo, manzana) {
     } catch (err) {
       console.error('Error consultando rol directo', manzana, predio, err);
       body.innerHTML =
-        '<p class="modal-error">No se pudo consultar por rol directo todavía: falta configurar ' +
-        'la ruta <code>/buscarRol</code> en el proxy con el endpoint real del SII. ' +
-        'Revisa la consola del navegador (F12) para más detalles.</p>';
+        '<p class="modal-error">No se pudo consultar el SII por rol directo (puede estar lento o caído en ' +
+        'este momento). Intenta de nuevo en unos segundos.</p>';
       return;
     }
     if (resultado) {
@@ -661,7 +662,7 @@ async function abrirModalUnidades(comunaCodigo, manzana) {
     const li = document.createElement('li');
     const rolEl = document.createElement('span');
     rolEl.className = 'unit-rol';
-    rolEl.textContent = `${manzana}-${u.predio}`;
+    rolEl.textContent = u.rol || `${manzana}-${u.predio}`;
     const dirEl = document.createElement('span');
     dirEl.className = 'unit-dir';
     dirEl.textContent = u.direccion || 'Sin dirección registrada';
@@ -672,19 +673,36 @@ async function abrirModalUnidades(comunaCodigo, manzana) {
   body.appendChild(ul);
 }
 
-// NOTA: esta ruta (/buscarRol) todavía no está confirmada contra el SII real.
-// Busca por manzana+predio directamente (sin necesitar clic en el mapa), que es
-// la única forma de enumerar unidades apiladas de un mismo edificio.
+// Confirmado capturando el request real del sitio oficial del SII (Buscar Rol):
+// el body va como { predio: {comuna, manzana, predio} (strings), servicios: [...] },
+// donde "servicios" es la lista de capas WMS de la comuna (comuna, layer, style,
+// eac, eacano) que ya obtuvimos antes con /getServicioPredio.
 async function buscarPredioPorRol(comunaCodigo, manzana, predio) {
-  const res = await callProxy('/buscarRol', {
-    comuna: Number(comunaCodigo),
-    manzana: Number(manzana),
-    predio: Number(predio)
+  const res = await callProxy('/getPredioNacional', {
+    predio: {
+      comuna: String(comunaCodigo),
+      manzana: String(manzana),
+      predio: String(predio)
+    },
+    servicios: serviciosParaConsulta(currentServicios)
   });
   const data = res && res.data;
   if (!data || data.existePredio === false) return null;
   const resuelto = resolverCamposPredio(data);
-  return { predio, direccion: resuelto.direccion };
+  if (!resuelto.rol && !resuelto.direccion) return null; // nada útil, se trata como "no existe"
+  return { predio, rol: resuelto.rol, direccion: resuelto.direccion };
+}
+
+// La búsqueda por rol solo necesita estos campos de cada servicio/capa, que es
+// lo que el sitio oficial del SII manda (visto en la captura de Network).
+function serviciosParaConsulta(servicios) {
+  return (servicios || []).map(s => ({
+    comuna: s.comuna,
+    layer: s.layer,
+    style: s.style,
+    eac: s.eac,
+    eacano: s.eacano
+  }));
 }
 
 // El rol del SII viene con el formato "MANZANA-PROPIEDAD" (ej: "1234-56").
