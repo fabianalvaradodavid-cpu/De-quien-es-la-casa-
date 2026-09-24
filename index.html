@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="comunas.js"></script>
+<script src="comunas_geo.js"></script>
 <style>
   :root{
     --ink:#2a1a1f;
@@ -638,11 +639,13 @@ let comunasGeoCargando = null;
 function cargarComunasGeo() {
   if (comunasGeo) return Promise.resolve(comunasGeo);
   if (!comunasGeoCargando) {
-    comunasGeoCargando = fetch('comunas.geojson')
-      .then((r) => {
-        if (!r.ok) throw new Error('HTTP ' + r.status + ' en comunas.geojson');
-        return r.json();
-      })
+    const origen = (typeof COMUNAS_GEO !== 'undefined')
+      ? Promise.resolve(COMUNAS_GEO)
+      : fetch('comunas.geojson').then((r) => {
+          if (!r.ok) throw new Error('HTTP ' + r.status + ' en comunas.geojson');
+          return r.json();
+        });
+    comunasGeoCargando = origen
       .then((gj) => {
         const lista = [];
         gj.features.forEach((f) => {
@@ -740,7 +743,13 @@ map.on('click', async (e) => {
   setStatus('Detectando comuna…');
 
   try {
-    await cargarComunasGeo();
+    try {
+      await cargarComunasGeo();
+    } catch (err) {
+      console.error(err);
+      setStatus('No se pudieron cargar los límites de comunas: ' + err.message + '. Sube comunas_geo.js junto a index.html.', true);
+      return;
+    }
     const candidatas = comunasCandidatas(e.latlng.lat, e.latlng.lng);
     if (!candidatas.length) {
       setStatus('No se pudo determinar la comuna de ese punto (¿está fuera de Chile?).', true);
@@ -750,7 +759,14 @@ map.on('click', async (e) => {
     let ultimoSinRol = null;
     for (const c of candidatas.slice(0, 3)) {
       setStatus('Consultando rol en ' + c.nombre + '…');
-      const cfg = await obtenerServiciosComuna(c.codigo);
+      let cfg;
+      try {
+        cfg = await obtenerServiciosComuna(c.codigo);
+      } catch (err) {
+        console.error(err);
+        if (seq === clickSeq) setStatus('Falló la conexión con el proxy/SII al pedir la comuna ' + c.nombre + ': ' + err.message, true);
+        return;
+      }
       if (seq !== clickSeq) return;
       if (!cfg) continue;
 
@@ -776,7 +792,7 @@ map.on('click', async (e) => {
     }
   } catch (err) {
     console.error(err);
-    if (seq === clickSeq) setStatus('No se pudo consultar el rol. Revisa la URL del proxy y que comunas.geojson esté junto a index.html.', true);
+    if (seq === clickSeq) setStatus('No se pudo consultar el rol (' + err.message + ').', true);
   }
 });
 
