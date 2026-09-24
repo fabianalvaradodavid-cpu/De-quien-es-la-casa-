@@ -117,15 +117,6 @@
     color:var(--ink);
     font-family:inherit;
   }
-  .hint{
-    font-size:0.8rem;
-    color:#7a5a68;
-    line-height:1.45;
-    padding:0.7rem 0.8rem;
-    background:#fbeef4;
-    border-radius:4px;
-    border:1px solid var(--line);
-  }
   .status{
     margin-top:0.9rem;
     font-size:0.85rem;
@@ -402,7 +393,7 @@
 <header>
   <div class="titles">
     <h1>¿DE QUIÉN ES LA CASA?</h1>
-    <p>Clic en un punto del mapa para consultar el rol de esa propiedad ante el SII.</p>
+    <p>Clic en un punto del mapa para consultar el rol de esa propiedad ante el SII. Luego usa esos datos para abrir página de TGR para conocer al propietario.</p>
   </div>
 </header>
 
@@ -432,13 +423,6 @@
         Santuarios de la Naturaleza
       </label>
       <div class="layer-loading" id="loading-monumentos" style="display:none;">Cargando datos del CMN…</div>
-    </div>
-
-    <div class="hint" id="hint">
-      Haz clic sobre cualquier punto del mapa: la comuna se detecta sola y se
-      consulta el rol de la propiedad. La consulta se hace directamente
-      contra el sistema del SII; esta página no guarda ni envía tus datos a
-      ningún otro lugar.
     </div>
 
     <div class="status" id="status"></div>
