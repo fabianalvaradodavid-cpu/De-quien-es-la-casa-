@@ -131,6 +131,55 @@
     color:#7a5a68;
   }
   .status.error{ color:#a3402b; }
+  .layers-box{
+    margin-bottom:1rem;
+    padding:0.7rem 0.8rem;
+    border:1px solid var(--line);
+    border-radius:4px;
+    background:var(--paper);
+  }
+  .layers-box .layers-title{
+    display:block;
+    font-size:0.72rem;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:#9a6f80;
+    margin-bottom:0.5rem;
+  }
+  .layer-toggle{
+    display:flex;
+    align-items:center;
+    gap:0.5rem;
+    font-size:0.85rem;
+    color:var(--ink);
+    padding:0.25rem 0;
+    cursor:pointer;
+    user-select:none;
+  }
+  .layer-toggle input{
+    width:15px;
+    height:15px;
+    accent-color:#a3402b;
+    cursor:pointer;
+  }
+  .layer-toggle .swatch{
+    width:10px;
+    height:10px;
+    border-radius:50%;
+    flex-shrink:0;
+  }
+  .layer-toggle .swatch.poligonos{ border-radius:2px; }
+  .layer-loading{
+    font-size:0.75rem;
+    color:#9a6f80;
+    margin-left:1.6rem;
+  }
+  .monumento-popup{ font-size:0.85rem; line-height:1.4; max-width:240px; }
+  .monumento-popup h4{ margin:0 0 0.3rem; font-size:0.9rem; }
+  .monumento-popup dl{ margin:0; }
+  .monumento-popup dt{ font-weight:600; color:#7a5a68; float:left; clear:left; margin-right:0.3rem; }
+  .monumento-popup dd{ margin:0 0 0.15rem; }
+  .monumento-popup a{ color:#a3402b; }
   .result{
     margin-top:0.9rem;
     border:1px solid var(--line);
@@ -269,32 +318,6 @@
     color:#7a5a68;
   }
   .modal-error{ color:#a3402b; }
-  .modal-filter{
-    margin-bottom:0.9rem;
-  }
-  .modal-filter label{
-    display:block;
-    font-size:0.72rem;
-    text-transform:uppercase;
-    letter-spacing:0.06em;
-    color:#9a6f80;
-    margin-bottom:0.35rem;
-  }
-  .modal-filter input{
-    width:100%;
-    padding:0.5rem 0.6rem;
-    font-size:0.88rem;
-    border:1px solid var(--line);
-    border-radius:3px;
-    background:var(--paper);
-    color:var(--ink);
-    font-family:inherit;
-  }
-  .modal-filter .filter-hint{
-    font-size:0.72rem;
-    color:#9a6f80;
-    margin-top:0.3rem;
-  }
   ul.unit-list{
     list-style:none;
     margin:0;
@@ -302,20 +325,13 @@
   }
   ul.unit-list li{
     display:flex;
-    flex-direction:column;
-    gap:0.4rem;
-    padding:0.55rem 0;
+    justify-content:space-between;
+    gap:0.8rem;
+    padding:0.5rem 0;
     border-bottom:1px solid #f0ede3;
     font-size:0.85rem;
   }
   ul.unit-list li:last-child{ border-bottom:none; }
-  .unit-row{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:0.6rem;
-    flex-wrap:wrap;
-  }
   .unit-rol{
     font-weight:600;
     color:var(--moss-dark);
@@ -324,44 +340,7 @@
   .unit-dir{
     text-align:right;
     color:var(--ink);
-    flex:1;
-    min-width:120px;
   }
-  .unit-actions{
-    display:flex;
-    gap:0.4rem;
-    flex-shrink:0;
-  }
-  .unit-btn{
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-    font-size:0.72rem;
-    font-weight:600;
-    padding:0.28rem 0.55rem;
-    background:#fff;
-    color:var(--moss-dark);
-    border:1px solid var(--moss);
-    border-radius:3px;
-    cursor:pointer;
-    white-space:nowrap;
-  }
-  .unit-btn:hover{ background:#fbeef4; }
-  .unit-btn:active{ transform:translateY(1px); }
-  .unit-detail{
-    display:none;
-    font-size:0.78rem;
-    color:#7a5a68;
-    background:#fbeef4;
-    border-radius:4px;
-    padding:0.4rem 0.6rem;
-  }
-  .unit-detail.visible{ display:block; }
-  .unit-detail div{
-    display:flex;
-    justify-content:space-between;
-    gap:0.6rem;
-    padding:0.12rem 0;
-  }
-  .unit-detail .k{ color:#9a6f80; }
   @media (max-width:720px){
     main{ grid-template-columns:1fr; grid-template-rows:1fr auto; }
     aside{ border-left:none; border-top:1px solid var(--line); max-height:46vh; }
@@ -373,7 +352,7 @@
 <header>
   <div class="titles">
     <h1>¿DE QUIÉN ES LA CASA?</h1>
-    <p>Clic en un punto del mapa para consultar el rol de esa propiedad ante el SII. Luego ingresa a la página de TGR con estos datos para conocer quien es el propietario registrado.</p>
+    <p>Clic en un punto del mapa para consultar el rol de esa propiedad ante el SII.</p>
   </div>
 </header>
 
@@ -388,6 +367,22 @@
     <div class="field">
       <label for="comuna">Comuna</label>
       <select id="comuna"></select>
+    </div>
+
+    <div class="layers-box">
+      <span class="layers-title">Monumentos Nacionales</span>
+      <label class="layer-toggle">
+        <input type="checkbox" id="toggle-puntos">
+        <span class="swatch" style="background:#e0562f;"></span>
+        Puntos
+      </label>
+      <div class="layer-loading" id="loading-puntos" style="display:none;">Cargando puntos…</div>
+      <label class="layer-toggle">
+        <input type="checkbox" id="toggle-poligonos">
+        <span class="swatch poligonos" style="background:#2f8ee0;"></span>
+        Polígonos
+      </label>
+      <div class="layer-loading" id="loading-poligonos" style="display:none;">Cargando polígonos…</div>
     </div>
 
     <div class="hint" id="hint">
@@ -408,7 +403,7 @@
       <div class="actions">
         <button class="primary" id="copy-manzana-btn">Copiar rol manzana y abrir trámite TGR</button>
         <button class="secondary" id="copy-propiedad-btn">Copiar rol predio</button>
-        <button class="secondary" id="ver-unidades-btn" style="display:none;">Ver todas las unidades de este edificio</button>
+        <button class="secondary" id="ver-unidades-btn" style="display:none;">Ver roles 1 a 500 de este edificio</button>
         <div class="copied" id="copied-msg"></div>
       </div>
     </div>
@@ -467,7 +462,123 @@ L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/Worl
 
 let marker = null;
 let currentLayerName = null; // capa "Predios" de la comuna activa, requerida por getFeatureInfo
-let currentServicios = null; // lista completa de servicios/capas de la comuna activa (para la capa "Predios" del clic en el mapa)
+let currentServicios = null; // lista completa de servicios/capas de la comuna activa, requerida por getPredioNacional
+
+// ---- Capas de Monumentos Nacionales (puntos y polígonos oficiales del CMN) ----
+// Se cargan de forma perezosa (solo al marcar el checkbox por primera vez) para no
+// gastar datos si el usuario nunca las activa. Los archivos .geojson viven junto a
+// este index.html.
+const COLOR_POR_CATEGORIA = {
+  'Monumento Histórico': '#e0562f',
+  'Zona Típica o Pintoresca': '#c98a1f',
+  'Santuario de la Naturaleza': '#2f8e5a',
+};
+function colorCategoria(categoria) {
+  return COLOR_POR_CATEGORIA[categoria] || '#7a5a68';
+}
+
+function popupMonumento(props) {
+  const filas = [
+    ['Categoría', props.categoria],
+    ['Región', props.region],
+    ['Comuna', props.comuna],
+    ['Código CMN', props.codigo_cmn],
+    ['Decreto', [props.tipo_decreto, props.n_decreto].filter(Boolean).join(' N° ')],
+    ['Fecha decreto', props.fecha_decreto],
+  ].filter(([, v]) => v);
+
+  let html = `<div class="monumento-popup"><h4>${props.nombre || 'Monumento Nacional'}</h4><dl>`;
+  filas.forEach(([k, v]) => { html += `<dt>${k}</dt><dd>${v}</dd>`; });
+  html += '</dl>';
+  if (props.decreto_url) {
+    html += `<p><a href="${props.decreto_url}" target="_blank" rel="noopener">Ver decreto</a></p>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function onEachMonumento(feature, layer) {
+  // Evita que el clic sobre un punto/polígono de monumento dispare también la
+  // consulta de rol del SII asociada al clic en el mapa.
+  layer.on('click', (e) => L.DomEvent.stopPropagation(e));
+  layer.bindPopup(popupMonumento(feature.properties || {}));
+}
+
+function crearCapaMonumentos(tipo, geojson) {
+  if (tipo === 'puntos') {
+    return L.geoJSON(geojson, {
+      pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
+        radius: 5,
+        weight: 1,
+        color: '#2b1a20',
+        fillColor: colorCategoria(feature.properties && feature.properties.categoria),
+        fillOpacity: 0.85,
+      }),
+      onEachFeature: onEachMonumento,
+    });
+  }
+  return L.geoJSON(geojson, {
+    style: (feature) => ({
+      color: colorCategoria(feature.properties && feature.properties.categoria),
+      weight: 2,
+      fillColor: colorCategoria(feature.properties && feature.properties.categoria),
+      fillOpacity: 0.18,
+    }),
+    onEachFeature: onEachMonumento,
+  });
+}
+
+function configurarToggleCapa({ checkboxId, loadingId, archivo, tipo }) {
+  const checkbox = document.getElementById(checkboxId);
+  const loadingEl = document.getElementById(loadingId);
+  let capa = null;
+  let cargando = null;
+
+  checkbox.addEventListener('change', async () => {
+    if (!checkbox.checked) {
+      if (capa) map.removeLayer(capa);
+      return;
+    }
+    if (capa) {
+      capa.addTo(map);
+      return;
+    }
+    loadingEl.style.display = 'block';
+    checkbox.disabled = true;
+    try {
+      if (!cargando) {
+        cargando = fetch(archivo).then((r) => {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        });
+      }
+      const geojson = await cargando;
+      capa = crearCapaMonumentos(tipo, geojson);
+      capa.addTo(map);
+    } catch (err) {
+      console.error('Error cargando capa de monumentos', archivo, err);
+      checkbox.checked = false;
+      cargando = null;
+      setStatus('No se pudo cargar la capa de monumentos. Revisa que el archivo ' + archivo + ' esté publicado junto al sitio.', true);
+    } finally {
+      loadingEl.style.display = 'none';
+      checkbox.disabled = false;
+    }
+  });
+}
+
+configurarToggleCapa({
+  checkboxId: 'toggle-puntos',
+  loadingId: 'loading-puntos',
+  archivo: 'monumentos_puntos.geojson',
+  tipo: 'puntos',
+});
+configurarToggleCapa({
+  checkboxId: 'toggle-poligonos',
+  loadingId: 'loading-poligonos',
+  archivo: 'monumentos_poligonos.geojson',
+  tipo: 'poligonos',
+});
 
 // ---- Selector de comuna ----
 const comunaSelect = document.getElementById('comuna');
@@ -665,7 +776,7 @@ function showResult(data) {
   const unidadesBtn = document.getElementById('ver-unidades-btn');
   if (esUnidadDeCopropiedad(propiedad)) {
     unidadesBtn.style.display = '';
-    unidadesBtn.onclick = () => abrirModalUnidades(comunaSelect.value, data.nombreComuna, data.direccion, manzana);
+    unidadesBtn.onclick = () => abrirModalUnidades(comunaSelect.value, manzana);
   } else {
     unidadesBtn.style.display = 'none';
   }
@@ -689,191 +800,101 @@ function cerrarModalUnidades() {
   modalOverlay.classList.remove('visible');
 }
 
-// A partir de una dirección de unidad ("AV OHIGGINS 1650 DP 205 EDIF LEBLON")
-// intenta quedarse solo con "calle + número" ("AV OHIGGINS 1650"), cortando en
-// el primer número, para usarla como valor inicial del buscador por dirección.
-function direccionBase(direccion) {
-  if (!direccion) return '';
-  const m = direccion.match(/^(.*?\d+)/);
-  return (m ? m[1] : direccion).trim();
-}
-
-// Separa un texto tipo "Los Aliaga 531" en calle ("Los Aliaga") y número ("531"),
-// cortando en el último grupo de dígitos.
-function separarCalleYNumero(texto) {
-  const t = (texto || '').trim();
-  const m = t.match(/^(.*?)\s+(\d+)\s*$/);
-  if (!m) return { calle: t, numero: '' };
-  return { calle: m[1].trim(), numero: m[2].trim() };
-}
-
-async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, manzanaClic) {
-  document.getElementById('modal-title').textContent = 'Unidades en esta dirección';
+async function abrirModalUnidades(comunaCodigo, manzana) {
+  document.getElementById('modal-title').textContent = `Unidades de la manzana ${manzana}`;
   const body = document.getElementById('modal-body');
   modalOverlay.classList.add('visible');
 
-  body.innerHTML = `
-    <div class="modal-filter">
-      <label for="filtro-direccion">Calle y número</label>
-      <div style="display:flex; gap:0.5rem;">
-        <input type="text" id="filtro-direccion" autocomplete="off" style="flex:1;">
-        <button class="primary" id="buscar-direccion-btn" style="white-space:nowrap; padding:0.5rem 0.9rem;">Buscar</button>
-      </div>
-      <div class="filter-hint">Busca directamente en el SII todas las unidades (departamentos, bodegas, estacionamientos) registradas en esa calle y número.</div>
-    </div>
-    <div id="modal-results"></div>
-  `;
+  const TOTAL = 500;      // consulta xxx-1 hasta xxx-500
+  const CONCURRENCIA = 20; // consultas en paralelo por lote, para no demorar minutos
 
-  const input = document.getElementById('filtro-direccion');
-  const resultsEl = document.getElementById('modal-results');
-  const buscarBtn = document.getElementById('buscar-direccion-btn');
-  input.value = direccionBase(direccionClic);
+  const encontrados = [];
+  let consultados = 0;
+  let huboError = false;
 
-  async function ejecutarBusqueda() {
-    const { calle, numero } = separarCalleYNumero(input.value);
-    if (!calle || !numero) {
-      resultsEl.innerHTML = '<p class="modal-error">Escribe la calle seguida del número, por ejemplo "Los Aliaga 531".</p>';
-      return;
+  body.innerHTML = `<p class="modal-loading">Consultando roles 1 a ${TOTAL}… (0/${TOTAL})</p>`;
+
+  for (let inicio = 1; inicio <= TOTAL; inicio += CONCURRENCIA) {
+    const lote = [];
+    for (let n = inicio; n < inicio + CONCURRENCIA && n <= TOTAL; n++) {
+      lote.push(
+        buscarPredioPorRol(comunaCodigo, manzana, n)
+          .then((r) => ({ n, resultado: r }))
+          .catch((err) => ({ n, error: err }))
+      );
     }
-    resultsEl.innerHTML = '<p class="modal-loading">Buscando…</p>';
-    try {
-      const unidades = await buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero);
-      // El SII devuelve todas las unidades de esa calle/número, aunque pertenezcan
-      // a otra manzana (edificios distintos que comparten dirección postal). Nos
-      // quedamos solo con las que son de la misma manzana que el predio que
-      // originó la búsqueda (ej: si el rol clickeado es "3950-90354", solo
-      // dejamos resultados "3950-xx").
-      const filtradas = manzanaClic
-        ? unidades.filter(u => {
-            const resuelto = resolverCamposPredio(u);
-            const rolUnidad = u.rol || resuelto.rol || '';
-            const manzanaUnidad = (u.manzana !== undefined && u.manzana !== null)
-              ? String(u.manzana)
-              : splitRol(rolUnidad).manzana;
-            return manzanaUnidad === String(manzanaClic);
-          })
-        : unidades;
-      renderUnidades(filtradas);
-    } catch (err) {
-      console.error('Error buscando por dirección', err);
-      const msg = (err && err.message) ? err.message : String(err);
-      resultsEl.innerHTML = `<p class="modal-error">No se pudo consultar (${escapeHtml(msg)}). Revisa la URL del proxy o intenta de nuevo.</p>`;
+
+    const resultados = await Promise.all(lote);
+    for (const item of resultados) {
+      consultados++;
+      if (item.error) {
+        console.error('Error consultando rol directo', manzana, item.n, item.error);
+        huboError = true;
+        continue;
+      }
+      if (item.resultado) encontrados.push(item.resultado);
     }
+
+    body.innerHTML = `<p class="modal-loading">Consultando roles 1 a ${TOTAL}… (${consultados}/${TOTAL})</p>`;
   }
 
-  function renderUnidades(unidades) {
-    if (!unidades.length) {
-      resultsEl.innerHTML = '<p class="modal-error">No se encontraron unidades para esa calle y número.</p>';
-      return;
-    }
-    const ordenadas = unidades.slice().sort((a, b) => (a.predio || 0) - (b.predio || 0));
-    const ul = document.createElement('ul');
-    ul.className = 'unit-list';
-    ordenadas.forEach(u => {
-      const resuelto = resolverCamposPredio(u);
-      const rolUnidad = u.rol || resuelto.rol || `${u.manzana}-${u.predio}`;
-
-      const li = document.createElement('li');
-
-      const row = document.createElement('div');
-      row.className = 'unit-row';
-
-      const rolEl = document.createElement('span');
-      rolEl.className = 'unit-rol';
-      rolEl.textContent = rolUnidad;
-
-      const dirEl = document.createElement('span');
-      dirEl.className = 'unit-dir';
-      dirEl.textContent = u.direccion || 'Sin dirección registrada';
-
-      const actions = document.createElement('div');
-      actions.className = 'unit-actions';
-
-      const verBtn = document.createElement('button');
-      verBtn.className = 'unit-btn';
-      verBtn.type = 'button';
-      verBtn.textContent = 'Ver';
-
-      const manzanaBtn = document.createElement('button');
-      manzanaBtn.className = 'unit-btn';
-      manzanaBtn.type = 'button';
-      manzanaBtn.textContent = 'Copiar rol manzana y abrir trámite TGR';
-
-      const copiarBtn = document.createElement('button');
-      copiarBtn.className = 'unit-btn';
-      copiarBtn.type = 'button';
-      copiarBtn.textContent = 'Copiar rol predio';
-
-      actions.appendChild(verBtn);
-      actions.appendChild(manzanaBtn);
-      actions.appendChild(copiarBtn);
-      row.appendChild(rolEl);
-      row.appendChild(dirEl);
-      row.appendChild(actions);
-
-      const detail = document.createElement('div');
-      detail.className = 'unit-detail';
-      detail.innerHTML = `
-        <div><span class="k">Destino</span><span>${escapeHtml(resuelto.destinoDescripcion || 'Sin información')}</span></div>
-        <div><span class="k">Avalúo total</span><span>${resuelto.valorTotal !== undefined ? escapeHtml(formatCLP(resuelto.valorTotal)) : 'Sin información'}</span></div>
-      `;
-
-      verBtn.addEventListener('click', () => {
-        const visible = detail.classList.toggle('visible');
-        verBtn.textContent = visible ? 'Ocultar' : 'Ver';
-      });
-
-      manzanaBtn.addEventListener('click', () => {
-        const { manzana } = splitRol(rolUnidad);
-        navigator.clipboard.writeText(manzana || rolUnidad).then(() => {
-          showCopiedMsg('Rol manzana copiado. Pégalo (Ctrl+V) en el formulario de TGR que se acaba de abrir.');
-          window.open(TGR_URL, '_blank', 'noopener');
-        });
-      });
-
-      copiarBtn.addEventListener('click', () => {
-        const { propiedad } = splitRol(rolUnidad);
-        navigator.clipboard.writeText(propiedad || rolUnidad).then(() => {
-          showCopiedMsg('Rol predio copiado.');
-        });
-      });
-
-      li.appendChild(row);
-      li.appendChild(detail);
-      ul.appendChild(li);
-    });
-    resultsEl.innerHTML = '';
-    resultsEl.appendChild(ul);
-    const nota = document.createElement('p');
-    nota.className = 'modal-loading';
-    nota.style.marginTop = '0.6rem';
-    nota.textContent = `${ordenadas.length} unidad(es) encontrada(s).`;
-    resultsEl.appendChild(nota);
+  if (!encontrados.length) {
+    body.innerHTML = huboError
+      ? '<p class="modal-error">No se pudo consultar el SII por rol directo (puede estar lento o caído en este momento). Intenta de nuevo en unos segundos.</p>'
+      : '<p class="modal-error">No se encontraron unidades en esta manzana.</p>';
+    return;
   }
 
-  buscarBtn.addEventListener('click', ejecutarBusqueda);
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') ejecutarBusqueda(); });
+  encontrados.sort((a, b) => a.predio - b.predio);
 
-  ejecutarBusqueda(); // búsqueda automática al abrir, con la dirección del clic
+  body.innerHTML = '';
+  const ul = document.createElement('ul');
+  ul.className = 'unit-list';
+  encontrados.forEach(u => {
+    const li = document.createElement('li');
+    const rolEl = document.createElement('span');
+    rolEl.className = 'unit-rol';
+    rolEl.textContent = u.rol || `${manzana}-${u.predio}`;
+    const dirEl = document.createElement('span');
+    dirEl.className = 'unit-dir';
+    dirEl.textContent = u.direccion || 'Sin dirección registrada';
+    li.appendChild(rolEl);
+    li.appendChild(dirEl);
+    ul.appendChild(li);
+  });
+  body.appendChild(ul);
 }
 
-// Confirmado capturando el request real del sitio oficial del SII (buscador por
-// dirección del mapa): el body va como { rolDireccion: {comuna, nombreComuna,
-// calle, numeroCalleStr, detalle}, servicios: [] }. A diferencia de getFeatureInfo,
-// esta consulta trae TODAS las unidades de esa calle/número en una sola llamada,
-// sin necesidad de recorrer números de predio uno por uno.
-async function buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero) {
-  const res = await callProxy('/getPrediosDireccion', {
-    rolDireccion: {
+// Confirmado capturando el request real del sitio oficial del SII (Buscar Rol):
+// el body va como { predio: {comuna, manzana, predio} (strings), servicios: [...] },
+// donde "servicios" es la lista de capas WMS de la comuna (comuna, layer, style,
+// eac, eacano) que ya obtuvimos antes con /getServicioPredio.
+async function buscarPredioPorRol(comunaCodigo, manzana, predio) {
+  const res = await callProxy('/getPredioNacional', {
+    predio: {
       comuna: String(comunaCodigo),
-      nombreComuna: nombreComuna || '',
-      calle: calle.toLowerCase(),
-      numeroCalleStr: String(numero),
-      detalle: 0
+      manzana: String(manzana),
+      predio: String(predio)
     },
-    servicios: []
+    servicios: serviciosParaConsulta(currentServicios)
   });
-  return Array.isArray(res && res.data) ? res.data : [];
+  const data = res && res.data;
+  if (!data || data.existePredio === false) return null;
+  const resuelto = resolverCamposPredio(data);
+  if (!resuelto.rol && !resuelto.direccion) return null; // nada útil, se trata como "no existe"
+  return { predio, rol: resuelto.rol, direccion: resuelto.direccion };
+}
+
+// La búsqueda por rol solo necesita estos campos de cada servicio/capa, que es
+// lo que el sitio oficial del SII manda (visto en la captura de Network).
+function serviciosParaConsulta(servicios) {
+  return (servicios || []).map(s => ({
+    comuna: s.comuna,
+    layer: s.layer,
+    style: s.style,
+    eac: s.eac,
+    eacano: s.eacano
+  }));
 }
 
 // El rol del SII viene con el formato "MANZANA-PROPIEDAD" (ej: "1234-56").
@@ -889,12 +910,6 @@ function showCopiedMsg(msg) {
   const el = document.getElementById('copied-msg');
   el.textContent = msg;
   el.classList.add('visible');
-}
-
-function escapeHtml(str) {
-  const div = document.createElement('div');
-  div.textContent = str == null ? '' : String(str);
-  return div.innerHTML;
 }
 
 function formatCLP(n) {
