@@ -364,11 +364,6 @@
     <div class="mascot-wrap">
       <img id="mascot" src="mascota.jpg" alt="Mascota">
     </div>
-    <div class="field">
-      <label for="comuna">Comuna</label>
-      <select id="comuna"></select>
-    </div>
-
     <div class="layers-box">
       <span class="layers-title">Monumentos Nacionales</span>
       <label class="layer-toggle">
@@ -390,8 +385,8 @@
     </div>
 
     <div class="hint" id="hint">
-      Elige una comuna para centrar el mapa, luego haz clic sobre cualquier
-      punto para consultar el rol de la propiedad. La consulta se hace directamente
+      Haz clic sobre cualquier punto del mapa: la comuna se detecta sola y se
+      consulta el rol de la propiedad. La consulta se hace directamente
       contra el sistema del SII; esta página no guarda ni envía tus datos a
       ningún otro lugar.
     </div>
@@ -465,8 +460,6 @@ L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/Worl
 }).addTo(map);
 
 let marker = null;
-let currentLayerName = null; // capa "Predios" de la comuna activa, requerida por getFeatureInfo
-let currentServicios = null; // lista completa de servicios/capas de la comuna activa, requerida por getPredioNacional
 
 // ---- Capas de Monumentos Nacionales (puntos y polígonos oficiales del CMN) ----
 // Se cargan de forma perezosa (solo al marcar el checkbox por primera vez) para no
@@ -510,7 +503,7 @@ function onEachMonumento(feature, layer) {
   layer.on('click', (e) => {
     // Si hay comuna elegida, el mapa va a poner el pin de rol en este mismo
     // punto: se sube el popup para que no lo tape (el pin mide ~41px de alto).
-    const offset = currentLayerName ? [0, -34] : [0, 7];
+    const offset = [0, -34];
     L.popup({ offset })
       .setLatLng(e.latlng)
       .setContent(html)
@@ -618,76 +611,172 @@ configurarToggleCategoria({ checkboxId: 'toggle-mh', categoria: 'Monumento Hist�
 configurarToggleCategoria({ checkboxId: 'toggle-zt', categoria: 'Zona Típica o Pintoresca' });
 configurarToggleCategoria({ checkboxId: 'toggle-sn', categoria: 'Santuario de la Naturaleza' });
 
-// ---- Selector de comuna ----
-const comunaSelect = document.getElementById('comuna');
-const placeholder = document.createElement('option');
-placeholder.textContent = 'Selecciona una comuna…';
-placeholder.value = '';
-comunaSelect.appendChild(placeholder);
+// ---- Detección automática de comuna a partir del punto clicado ----
+// Se usa comunas.geojson (límites) para saber en qué comuna cayó el clic, y
+// comunas.js (COMUNAS_SII) para traducir el nombre al código interno del SII.
+// Diferencias de ortografía entre ambas fuentes (nombre SII → nombre en geojson):
+const ALIAS_NOMBRE = {
+  'LACALERA': 'CALERA',
+  'LLAYLLAY': 'LLAILLAY',
+  'SANFRANCISCODEMOSTAZAL': 'MOSTAZAL',
+  'TREHUACO': 'TREGUACO',
+};
+function normNombre(s) {
+  return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
 
-COMUNAS_SII
-  .slice()
-  .sort((a, b) => a[1].localeCompare(b[1], 'es'))
-  .forEach(([codigo, nombre]) => {
-    const opt = document.createElement('option');
-    opt.value = codigo;
-    opt.textContent = nombre;
-    comunaSelect.appendChild(opt);
-  });
-
-comunaSelect.addEventListener('change', async () => {
-  const codigo = comunaSelect.value;
-  if (!codigo) return;
-  setStatus('Cargando comuna…');
-  try {
-    const info = await callProxy('/getServicioPredio', { comuna: Number(codigo) });
-    const servicios = (info && info.data) || [];
-    const predios = servicios.find(s => s.aliasServicio === 'P') || servicios[0];
-    if (!predios) {
-      setStatus('El SII no devolvió datos para esta comuna.', true);
-      return;
-    }
-    currentLayerName = predios.layer;
-    currentServicios = servicios;
-    map.setView([predios.latitud, predios.longitud], predios.zoom || 14);
-    setStatus('Listo. Haz clic en un punto del mapa.');
-  } catch (err) {
-    console.error(err);
-    setStatus('No se pudo cargar la comuna. Revisa la URL del proxy.', true);
-  }
+const siiPorNombre = {};
+COMUNAS_SII.forEach(([codigo, nombre]) => {
+  const k = normNombre(nombre);
+  siiPorNombre[ALIAS_NOMBRE[k] || k] = { codigo, nombre };
 });
 
-// ---- Clic en el mapa → consultar rol ----
-map.on('click', async (e) => {
-  if (!currentLayerName) {
-    setStatus('Primero elige una comuna arriba.', true);
-    return;
+let comunasGeo = null;
+let comunasGeoCargando = null;
+
+function cargarComunasGeo() {
+  if (comunasGeo) return Promise.resolve(comunasGeo);
+  if (!comunasGeoCargando) {
+    comunasGeoCargando = fetch('comunas.geojson')
+      .then((r) => {
+        if (!r.ok) throw new Error('HTTP ' + r.status + ' en comunas.geojson');
+        return r.json();
+      })
+      .then((gj) => {
+        const lista = [];
+        gj.features.forEach((f) => {
+          const sii = siiPorNombre[normNombre((f.properties && f.properties.Comuna) || '')];
+          if (!sii || !f.geometry) return;
+          const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          polys.forEach((p) => p[0].forEach(([x, y]) => {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }));
+          lista.push({ codigo: sii.codigo, nombre: sii.nombre, polys, bbox: [minX, minY, maxX, maxY] });
+        });
+        comunasGeo = lista;
+        return lista;
+      })
+      .catch((err) => {
+        comunasGeoCargando = null; // permite reintentar en el próximo clic
+        throw err;
+      });
   }
+  return comunasGeoCargando;
+}
+cargarComunasGeo().catch((err) => console.error('No se pudo precargar comunas.geojson', err));
+
+function puntoEnAnillo(x, y, anillo) {
+  let dentro = false;
+  for (let i = 0, j = anillo.length - 1; i < anillo.length; j = i++) {
+    const xi = anillo[i][0], yi = anillo[i][1], xj = anillo[j][0], yj = anillo[j][1];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) dentro = !dentro;
+  }
+  return dentro;
+}
+function puntoEnPoligono(x, y, poly) {
+  if (!puntoEnAnillo(x, y, poly[0])) return false;
+  for (let h = 1; h < poly.length; h++) if (puntoEnAnillo(x, y, poly[h])) return false;
+  return true;
+}
+function distanciaSegmento(px, py, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const l2 = dx * dx + dy * dy;
+  let t = l2 ? ((px - a[0]) * dx + (py - a[1]) * dy) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (a[0] + t * dx), py - (a[1] + t * dy));
+}
+
+// Devuelve las comunas donde puede estar el punto: primero la que lo contiene y,
+// como respaldo, las vecinas a menos de ~500 m (los límites del geojson están
+// simplificados, así que cerca de un borde la comuna real podría ser la vecina).
+function comunasCandidatas(lat, lng) {
+  const MARGEN = 0.005; // grados (~550 m)
+  const dentro = [];
+  const cerca = [];
+  for (const c of comunasGeo) {
+    const [x0, y0, x1, y1] = c.bbox;
+    if (lng < x0 - MARGEN || lng > x1 + MARGEN || lat < y0 - MARGEN || lat > y1 + MARGEN) continue;
+    if (c.polys.some((p) => puntoEnPoligono(lng, lat, p))) { dentro.push(c); continue; }
+    let min = Infinity;
+    c.polys.forEach((p) => {
+      const r = p[0];
+      for (let i = 0; i < r.length - 1; i++) {
+        const d = distanciaSegmento(lng, lat, r[i], r[i + 1]);
+        if (d < min) min = d;
+      }
+    });
+    if (min <= MARGEN) cerca.push({ c, d: min });
+  }
+  cerca.sort((a, b) => a.d - b.d);
+  return [...dentro, ...cerca.map((o) => o.c)];
+}
+
+// Servicios/capas del SII por comuna (se piden una sola vez y se recuerdan).
+const serviciosCache = {};
+async function obtenerServiciosComuna(codigo) {
+  if (serviciosCache[codigo]) return serviciosCache[codigo];
+  const info = await callProxy('/getServicioPredio', { comuna: Number(codigo) });
+  const servicios = (info && info.data) || [];
+  const predios = servicios.find((s) => s.aliasServicio === 'P') || servicios[0];
+  if (!predios) return null;
+  serviciosCache[codigo] = { layer: predios.layer, servicios };
+  return serviciosCache[codigo];
+}
+
+// ---- Clic en el mapa → detectar comuna → consultar rol ----
+let clickSeq = 0; // para ignorar respuestas de clics anteriores
+map.on('click', async (e) => {
+  const seq = ++clickSeq;
 
   if (marker) map.removeLayer(marker);
   marker = L.marker(e.latlng).addTo(map);
 
-  setStatus('Consultando rol…');
   hideResult();
+  setStatus('Detectando comuna…');
 
   try {
-    const resuelto = await consultarRolConReintentos(e.latlng);
-    if (!resuelto) {
-      setStatus('No se encontró información en ese punto. Prueba haciendo clic justo sobre el predio, con más zoom.', true);
+    await cargarComunasGeo();
+    const candidatas = comunasCandidatas(e.latlng.lat, e.latlng.lng);
+    if (!candidatas.length) {
+      setStatus('No se pudo determinar la comuna de ese punto (¿está fuera de Chile?).', true);
       return;
     }
-    if (!resuelto.rol) {
-      // Existe una entidad en ese punto (calle, plaza, área común) pero el SII
-      // no le asocia un rol de contribuyente individual.
+
+    let ultimoSinRol = null;
+    for (const c of candidatas.slice(0, 3)) {
+      setStatus('Consultando rol en ' + c.nombre + '…');
+      const cfg = await obtenerServiciosComuna(c.codigo);
+      if (seq !== clickSeq) return;
+      if (!cfg) continue;
+
+      const resuelto = await consultarRolConReintentos(e.latlng, cfg.layer);
+      if (seq !== clickSeq) return;
+      if (!resuelto) continue;
+
+      resuelto.comunaCodigo = c.codigo;
+      resuelto.servicios = cfg.servicios;
+      if (resuelto.rol) {
+        showResult(resuelto);
+        setStatus('');
+        return;
+      }
+      ultimoSinRol = resuelto; // hay entidad pero sin rol individual
+    }
+
+    if (ultimoSinRol) {
       setStatus('Ese punto no tiene un rol de propiedad asociado (puede ser calle, área verde o espacio público). Prueba haciendo clic más cerca del centro de una construcción.', true);
-      console.debug('SII: existePredio=true pero sin rol resoluble. Respuesta cruda:', resuelto.raw);
-      return;
+      console.debug('SII: existePredio=true pero sin rol resoluble. Respuesta cruda:', ultimoSinRol.raw);
+    } else {
+      setStatus('No se encontró información en ese punto. Prueba haciendo clic justo sobre el predio, con más zoom.', true);
     }
-    showResult(resuelto);
-    setStatus('');
   } catch (err) {
     console.error(err);
-    setStatus('No se pudo consultar el rol. Revisa la URL del proxy.', true);
+    if (seq === clickSeq) setStatus('No se pudo consultar el rol. Revisa la URL del proxy y que comunas.geojson esté junto a index.html.', true);
   }
 });
 
@@ -696,7 +785,7 @@ map.on('click', async (e) => {
 // donde el pixel consultado cae sobre la línea divisoria), reintenta consultando
 // unos pocos píxeles alrededor del punto original hasta encontrar un resultado
 // con rol, o hasta agotar los intentos.
-async function consultarRolConReintentos(latlng) {
+async function consultarRolConReintentos(latlng, layerName) {
   const offsets = [
     [0, 0],
     [4, 0], [-4, 0], [0, 4], [0, -4],
@@ -718,10 +807,10 @@ async function consultarRolConReintentos(latlng) {
       southwesty: bounds.getSouthWest().lng,
       northeastx: bounds.getNorthEast().lat,
       northeasty: bounds.getNorthEast().lng,
-      layer: currentLayerName,
+      layer: layerName,
       width: size.x,
       height: size.y,
-      servicios: [{ layer: currentLayerName }]
+      servicios: [{ layer: layerName }]
     };
 
     const res = await callProxy('/getFeatureInfo', { clickInfo });
@@ -814,7 +903,7 @@ function showResult(data) {
   const unidadesBtn = document.getElementById('ver-unidades-btn');
   if (esUnidadDeCopropiedad(propiedad)) {
     unidadesBtn.style.display = '';
-    unidadesBtn.onclick = () => abrirModalUnidades(comunaSelect.value, manzana);
+    unidadesBtn.onclick = () => abrirModalUnidades(data.comunaCodigo, manzana, data.servicios);
   } else {
     unidadesBtn.style.display = 'none';
   }
@@ -838,7 +927,7 @@ function cerrarModalUnidades() {
   modalOverlay.classList.remove('visible');
 }
 
-async function abrirModalUnidades(comunaCodigo, manzana) {
+async function abrirModalUnidades(comunaCodigo, manzana, servicios) {
   document.getElementById('modal-title').textContent = `Unidades de la manzana ${manzana}`;
   const body = document.getElementById('modal-body');
   modalOverlay.classList.add('visible');
@@ -856,7 +945,7 @@ async function abrirModalUnidades(comunaCodigo, manzana) {
     const lote = [];
     for (let n = inicio; n < inicio + CONCURRENCIA && n <= TOTAL; n++) {
       lote.push(
-        buscarPredioPorRol(comunaCodigo, manzana, n)
+        buscarPredioPorRol(comunaCodigo, manzana, n, servicios)
           .then((r) => ({ n, resultado: r }))
           .catch((err) => ({ n, error: err }))
       );
@@ -907,14 +996,14 @@ async function abrirModalUnidades(comunaCodigo, manzana) {
 // el body va como { predio: {comuna, manzana, predio} (strings), servicios: [...] },
 // donde "servicios" es la lista de capas WMS de la comuna (comuna, layer, style,
 // eac, eacano) que ya obtuvimos antes con /getServicioPredio.
-async function buscarPredioPorRol(comunaCodigo, manzana, predio) {
+async function buscarPredioPorRol(comunaCodigo, manzana, predio, servicios) {
   const res = await callProxy('/getPredioNacional', {
     predio: {
       comuna: String(comunaCodigo),
       manzana: String(manzana),
       predio: String(predio)
     },
-    servicios: serviciosParaConsulta(currentServicios)
+    servicios: serviciosParaConsulta(servicios)
   });
   const data = res && res.data;
   if (!data || data.existePredio === false) return null;
