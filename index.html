@@ -372,17 +372,21 @@
     <div class="layers-box">
       <span class="layers-title">Monumentos Nacionales</span>
       <label class="layer-toggle">
-        <input type="checkbox" id="toggle-puntos">
+        <input type="checkbox" id="toggle-mh">
         <span class="swatch" style="background:#e0562f;"></span>
-        Puntos
+        Monumentos Históricos
       </label>
-      <div class="layer-loading" id="loading-puntos" style="display:none;">Cargando puntos…</div>
       <label class="layer-toggle">
-        <input type="checkbox" id="toggle-poligonos">
-        <span class="swatch poligonos" style="background:#2f8ee0;"></span>
-        Polígonos
+        <input type="checkbox" id="toggle-zt">
+        <span class="swatch" style="background:#c98a1f;"></span>
+        Zonas Típicas
       </label>
-      <div class="layer-loading" id="loading-poligonos" style="display:none;">Cargando polígonos…</div>
+      <label class="layer-toggle">
+        <input type="checkbox" id="toggle-sn">
+        <span class="swatch" style="background:#2f8e5a;"></span>
+        Santuarios de la Naturaleza
+      </label>
+      <div class="layer-loading" id="loading-monumentos" style="display:none;">Cargando datos del CMN…</div>
     </div>
 
     <div class="hint" id="hint">
@@ -504,62 +508,84 @@ function onEachMonumento(feature, layer) {
   layer.bindPopup(popupMonumento(feature.properties || {}));
 }
 
-function crearCapaMonumentos(tipo, geojson) {
-  if (tipo === 'puntos') {
-    return L.geoJSON(geojson, {
-      pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
-        radius: 5,
-        weight: 1,
-        color: '#2b1a20',
-        fillColor: colorCategoria(feature.properties && feature.properties.categoria),
-        fillOpacity: 0.85,
-      }),
-      onEachFeature: onEachMonumento,
-    });
-  }
-  return L.geoJSON(geojson, {
-    style: (feature) => ({
-      color: colorCategoria(feature.properties && feature.properties.categoria),
+function crearCapaCategoria(categoria, features) {
+  const color = colorCategoria(categoria);
+  return L.geoJSON({ type: 'FeatureCollection', features }, {
+    pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
+      radius: 5,
+      weight: 1,
+      color: '#2b1a20',
+      fillColor: color,
+      fillOpacity: 0.85,
+    }),
+    style: () => ({
+      color,
       weight: 2,
-      fillColor: colorCategoria(feature.properties && feature.properties.categoria),
+      fillColor: color,
       fillOpacity: 0.18,
     }),
     onEachFeature: onEachMonumento,
   });
 }
 
-function configurarToggleCapa({ checkboxId, loadingId, archivo, tipo }) {
+// Los dos .geojson (puntos y polígonos) se cargan una sola vez entre las tres
+// categorías, y se agrupan por "categoria" para que cada checkbox mezcle los
+// puntos y los polígonos que le correspondan.
+let monumentosCargando = null;
+let monumentosPorCategoria = null;
+const capasMonumentosActivas = {};
+
+async function cargarDatosMonumentos() {
+  if (monumentosPorCategoria) return monumentosPorCategoria;
+  if (!monumentosCargando) {
+    monumentosCargando = Promise.all([
+      fetch('monumentos_puntos.geojson').then((r) => {
+        if (!r.ok) throw new Error('HTTP ' + r.status + ' en monumentos_puntos.geojson');
+        return r.json();
+      }),
+      fetch('monumentos_poligonos.geojson').then((r) => {
+        if (!r.ok) throw new Error('HTTP ' + r.status + ' en monumentos_poligonos.geojson');
+        return r.json();
+      }),
+    ]).then(([puntos, poligonos]) => {
+      const todas = [...puntos.features, ...poligonos.features];
+      const porCategoria = {};
+      todas.forEach((f) => {
+        const cat = (f.properties && f.properties.categoria) || 'Otro';
+        if (!porCategoria[cat]) porCategoria[cat] = [];
+        porCategoria[cat].push(f);
+      });
+      monumentosPorCategoria = porCategoria;
+      return porCategoria;
+    });
+  }
+  return monumentosCargando;
+}
+
+function configurarToggleCategoria({ checkboxId, categoria }) {
   const checkbox = document.getElementById(checkboxId);
-  const loadingEl = document.getElementById(loadingId);
-  let capa = null;
-  let cargando = null;
+  const loadingEl = document.getElementById('loading-monumentos');
 
   checkbox.addEventListener('change', async () => {
     if (!checkbox.checked) {
-      if (capa) map.removeLayer(capa);
+      if (capasMonumentosActivas[categoria]) map.removeLayer(capasMonumentosActivas[categoria]);
       return;
     }
-    if (capa) {
-      capa.addTo(map);
+    if (capasMonumentosActivas[categoria]) {
+      capasMonumentosActivas[categoria].addTo(map);
       return;
     }
     loadingEl.style.display = 'block';
     checkbox.disabled = true;
     try {
-      if (!cargando) {
-        cargando = fetch(archivo).then((r) => {
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          return r.json();
-        });
-      }
-      const geojson = await cargando;
-      capa = crearCapaMonumentos(tipo, geojson);
+      const porCategoria = await cargarDatosMonumentos();
+      const capa = crearCapaCategoria(categoria, porCategoria[categoria] || []);
+      capasMonumentosActivas[categoria] = capa;
       capa.addTo(map);
     } catch (err) {
-      console.error('Error cargando capa de monumentos', archivo, err);
+      console.error('Error cargando monumentos', err);
       checkbox.checked = false;
-      cargando = null;
-      setStatus('No se pudo cargar la capa de monumentos. Revisa que el archivo ' + archivo + ' esté publicado junto al sitio.', true);
+      setStatus('No se pudo cargar la capa de monumentos: ' + err.message, true);
     } finally {
       loadingEl.style.display = 'none';
       checkbox.disabled = false;
@@ -567,18 +593,9 @@ function configurarToggleCapa({ checkboxId, loadingId, archivo, tipo }) {
   });
 }
 
-configurarToggleCapa({
-  checkboxId: 'toggle-puntos',
-  loadingId: 'loading-puntos',
-  archivo: 'monumentos_puntos.geojson',
-  tipo: 'puntos',
-});
-configurarToggleCapa({
-  checkboxId: 'toggle-poligonos',
-  loadingId: 'loading-poligonos',
-  archivo: 'monumentos_poligonos.geojson',
-  tipo: 'poligonos',
-});
+configurarToggleCategoria({ checkboxId: 'toggle-mh', categoria: 'Monumento Histórico' });
+configurarToggleCategoria({ checkboxId: 'toggle-zt', categoria: 'Zona Típica o Pintoresca' });
+configurarToggleCategoria({ checkboxId: 'toggle-sn', categoria: 'Santuario de la Naturaleza' });
 
 // ---- Selector de comuna ----
 const comunaSelect = document.getElementById('comuna');
