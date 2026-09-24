@@ -423,7 +423,7 @@ L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/Worl
 
 let marker = null;
 let currentLayerName = null; // capa "Predios" de la comuna activa, requerida por getFeatureInfo
-let currentServicios = null; // lista completa de servicios/capas de la comuna activa, requerida por getPredioNacional
+let currentServicios = null; // lista completa de servicios/capas de la comuna activa (para la capa "Predios" del clic en el mapa)
 
 // ---- Selector de comuna ----
 const comunaSelect = document.getElementById('comuna');
@@ -621,7 +621,7 @@ function showResult(data) {
   const unidadesBtn = document.getElementById('ver-unidades-btn');
   if (esUnidadDeCopropiedad(propiedad)) {
     unidadesBtn.style.display = '';
-    unidadesBtn.onclick = () => abrirModalUnidades(comunaSelect.value, manzana, data.direccion);
+    unidadesBtn.onclick = () => abrirModalUnidades(comunaSelect.value, data.nombreComuna, data.direccion);
   } else {
     unidadesBtn.style.display = 'none';
   }
@@ -647,87 +647,74 @@ function cerrarModalUnidades() {
 
 // A partir de una dirección de unidad ("AV OHIGGINS 1650 DP 205 EDIF LEBLON")
 // intenta quedarse solo con "calle + número" ("AV OHIGGINS 1650"), cortando en
-// el primer número, para usarlo como filtro por defecto del edificio completo
-// (sin el departamento/local específico que ya trae la dirección de una unidad).
+// el primer número, para usarla como valor inicial del buscador por dirección.
 function direccionBase(direccion) {
   if (!direccion) return '';
   const m = direccion.match(/^(.*?\d+)/);
   return (m ? m[1] : direccion).trim();
 }
 
-function normalizarTexto(s) {
-  return (s || '')
-    .toString()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, ''); // quita tildes para comparar
+// Separa un texto tipo "Los Aliaga 531" en calle ("Los Aliaga") y número ("531"),
+// cortando en el último grupo de dígitos.
+function separarCalleYNumero(texto) {
+  const t = (texto || '').trim();
+  const m = t.match(/^(.*?)\s+(\d+)\s*$/);
+  if (!m) return { calle: t, numero: '' };
+  return { calle: m[1].trim(), numero: m[2].trim() };
 }
 
-async function abrirModalUnidades(comunaCodigo, manzana, direccionClic) {
-  document.getElementById('modal-title').textContent = `Unidades de la manzana ${manzana}`;
+async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic) {
+  document.getElementById('modal-title').textContent = 'Unidades en esta dirección';
   const body = document.getElementById('modal-body');
   modalOverlay.classList.add('visible');
 
   body.innerHTML = `
     <div class="modal-filter">
-      <label for="filtro-direccion">Filtrar por dirección del edificio</label>
-      <input type="text" id="filtro-direccion" autocomplete="off">
-      <div class="filter-hint">Solo se muestran las unidades cuya dirección contiene este texto. Bórralo para ver todas las de la manzana.</div>
+      <label for="filtro-direccion">Calle y número</label>
+      <div style="display:flex; gap:0.5rem;">
+        <input type="text" id="filtro-direccion" autocomplete="off" style="flex:1;">
+        <button class="primary" id="buscar-direccion-btn" style="white-space:nowrap; padding:0.5rem 0.9rem;">Buscar</button>
+      </div>
+      <div class="filter-hint">Busca directamente en el SII todas las unidades (departamentos, bodegas, estacionamientos) registradas en esa calle y número.</div>
     </div>
     <div id="modal-results"></div>
   `;
 
-  const filtroInput = document.getElementById('filtro-direccion');
+  const input = document.getElementById('filtro-direccion');
   const resultsEl = document.getElementById('modal-results');
-  filtroInput.value = direccionBase(direccionClic);
+  const buscarBtn = document.getElementById('buscar-direccion-btn');
+  input.value = direccionBase(direccionClic);
 
-  // Recorre los predios 1…1000 de la manzana (los roles de departamento/unidad
-  // dentro del edificio), no la serie 900xx de bodegas/estacionamientos. Una
-  // misma manzana puede tener varios edificios/direcciones distintas, por eso
-  // se filtra por dirección en vez de mostrar todo junto.
-  const TOTAL = 1000;
-  const CONCURRENCIA = 5;       // menos paralelismo: más gentil con el SII/proxy
-  const REINTENTOS = 3;         // intentos por predio antes de darlo por fallido
-  const PAUSA_ENTRE_MS = 60;    // pequeña pausa tras cada consulta (éxito o no)
-
-  const todasLasUnidades = [];
-  let consultados = 0;
-  let errores = 0;
-  let ultimoErrorMsg = '';
-  let terminado = false;
-
-  function renderResultados() {
-    const filtro = normalizarTexto(filtroInput.value.trim());
-    const filtradas = filtro
-      ? todasLasUnidades.filter(u => normalizarTexto(u.direccion).includes(filtro))
-      : todasLasUnidades.slice();
-    filtradas.sort((a, b) => a.predio - b.predio);
-
-    resultsEl.innerHTML = '';
-
-    if (!filtradas.length) {
-      const msg = document.createElement('p');
-      msg.className = terminado && !todasLasUnidades.length && errores ? 'modal-error' : 'modal-loading';
-      if (!todasLasUnidades.length) {
-        msg.textContent = terminado
-          ? (errores
-              ? `No se encontró ninguna unidad, incluso tras reintentar cada una hasta ${REINTENTOS} veces (${errores} siguieron fallando). Último error: ${escapeHtml(ultimoErrorMsg)}. Es posible que el SII esté bloqueando temporalmente por exceso de consultas — espera un par de minutos e intenta de nuevo.`
-              : 'No se encontraron unidades en esta manzana.')
-          : `Buscando unidades… ${consultados}/${TOTAL}${errores ? ` · ${errores} con error` : ''}`;
-      } else {
-        msg.textContent = `Ninguna unidad coincide con "${filtroInput.value.trim()}". Prueba con menos palabras o bórralo para ver todas (${todasLasUnidades.length} encontradas hasta ahora).`;
-      }
-      resultsEl.appendChild(msg);
+  async function ejecutarBusqueda() {
+    const { calle, numero } = separarCalleYNumero(input.value);
+    if (!calle || !numero) {
+      resultsEl.innerHTML = '<p class="modal-error">Escribe la calle seguida del número, por ejemplo "Los Aliaga 531".</p>';
       return;
     }
+    resultsEl.innerHTML = '<p class="modal-loading">Buscando…</p>';
+    try {
+      const unidades = await buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero);
+      renderUnidades(unidades);
+    } catch (err) {
+      console.error('Error buscando por dirección', err);
+      const msg = (err && err.message) ? err.message : String(err);
+      resultsEl.innerHTML = `<p class="modal-error">No se pudo consultar (${escapeHtml(msg)}). Revisa la URL del proxy o intenta de nuevo.</p>`;
+    }
+  }
 
+  function renderUnidades(unidades) {
+    if (!unidades.length) {
+      resultsEl.innerHTML = '<p class="modal-error">No se encontraron unidades para esa calle y número.</p>';
+      return;
+    }
+    const ordenadas = unidades.slice().sort((a, b) => (a.predio || 0) - (b.predio || 0));
     const ul = document.createElement('ul');
     ul.className = 'unit-list';
-    filtradas.forEach(u => {
+    ordenadas.forEach(u => {
       const li = document.createElement('li');
       const rolEl = document.createElement('span');
       rolEl.className = 'unit-rol';
-      rolEl.textContent = u.rol || `${manzana}-${u.predio}`;
+      rolEl.textContent = u.rol || `${u.manzana}-${u.predio}`;
       const dirEl = document.createElement('span');
       dirEl.className = 'unit-dir';
       dirEl.textContent = u.direccion || 'Sin dirección registrada';
@@ -735,102 +722,38 @@ async function abrirModalUnidades(comunaCodigo, manzana, direccionClic) {
       li.appendChild(dirEl);
       ul.appendChild(li);
     });
+    resultsEl.innerHTML = '';
     resultsEl.appendChild(ul);
-
-    if (!terminado) {
-      const p = document.createElement('p');
-      p.className = 'modal-loading';
-      p.style.marginTop = '0.6rem';
-      p.textContent = `Buscando más unidades… ${consultados}/${TOTAL}${errores ? ` · ${errores} con error` : ''}`;
-      resultsEl.appendChild(p);
-    } else if (errores) {
-      const nota = document.createElement('p');
-      nota.className = 'modal-error';
-      nota.style.marginTop = '0.6rem';
-      nota.textContent = `${errores} de las ${TOTAL} unidades siguieron fallando tras ${REINTENTOS} intentos cada una (probablemente no existen, o el SII las rechazó repetidamente).`;
-      resultsEl.appendChild(nota);
-    }
+    const nota = document.createElement('p');
+    nota.className = 'modal-loading';
+    nota.style.marginTop = '0.6rem';
+    nota.textContent = `${ordenadas.length} unidad(es) encontrada(s).`;
+    resultsEl.appendChild(nota);
   }
 
-  filtroInput.addEventListener('input', renderResultados);
-  renderResultados();
+  buscarBtn.addEventListener('click', ejecutarBusqueda);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') ejecutarBusqueda(); });
 
-  const pendientes = Array.from({ length: TOTAL }, (_, i) => i + 1); // predio 1..1000
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-  async function buscarConReintentos(predio) {
-    let ultimoError;
-    for (let intento = 0; intento < REINTENTOS; intento++) {
-      try {
-        return await buscarPredioPorRol(comunaCodigo, manzana, predio);
-      } catch (err) {
-        ultimoError = err;
-        if (intento < REINTENTOS - 1) {
-          // backoff creciente + un poco de aleatoriedad, para no reintentar todos
-          // al mismo tiempo y volver a saturar al servidor
-          await sleep(350 * (intento + 1) + Math.random() * 250);
-        }
-      }
-    }
-    throw ultimoError;
-  }
-
-  async function trabajador() {
-    while (pendientes.length) {
-      const predio = pendientes.shift();
-      try {
-        const resultado = await buscarConReintentos(predio);
-        if (resultado) {
-          todasLasUnidades.push(resultado);
-          renderResultados();
-        }
-      } catch (err) {
-        console.error('Error consultando rol directo (agotados los reintentos)', manzana, predio, err);
-        errores++;
-        ultimoErrorMsg = (err && err.message) ? err.message : String(err);
-      }
-      consultados++;
-      if (consultados % 5 === 0) renderResultados(); // no repintar en cada una: de a poco
-      await sleep(PAUSA_ENTRE_MS);
-    }
-  }
-
-  await Promise.all(Array.from({ length: CONCURRENCIA }, trabajador));
-
-  terminado = true;
-  renderResultados();
+  ejecutarBusqueda(); // búsqueda automática al abrir, con la dirección del clic
 }
 
-// Confirmado capturando el request real del sitio oficial del SII (Buscar Rol):
-// el body va como { predio: {comuna, manzana, predio} (strings), servicios: [...] },
-// donde "servicios" es la lista de capas WMS de la comuna (comuna, layer, style,
-// eac, eacano) que ya obtuvimos antes con /getServicioPredio.
-async function buscarPredioPorRol(comunaCodigo, manzana, predio) {
-  const res = await callProxy('/getPredioNacional', {
-    predio: {
+// Confirmado capturando el request real del sitio oficial del SII (buscador por
+// dirección del mapa): el body va como { rolDireccion: {comuna, nombreComuna,
+// calle, numeroCalleStr, detalle}, servicios: [] }. A diferencia de getFeatureInfo,
+// esta consulta trae TODAS las unidades de esa calle/número en una sola llamada,
+// sin necesidad de recorrer números de predio uno por uno.
+async function buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero) {
+  const res = await callProxy('/getPrediosDireccion', {
+    rolDireccion: {
       comuna: String(comunaCodigo),
-      manzana: String(manzana),
-      predio: String(predio)
+      nombreComuna: nombreComuna || '',
+      calle: calle.toLowerCase(),
+      numeroCalleStr: String(numero),
+      detalle: 0
     },
-    servicios: serviciosParaConsulta(currentServicios)
+    servicios: []
   });
-  const data = res && res.data;
-  if (!data || data.existePredio === false) return null;
-  const resuelto = resolverCamposPredio(data);
-  if (!resuelto.rol && !resuelto.direccion) return null; // nada útil, se trata como "no existe"
-  return { predio, rol: resuelto.rol, direccion: resuelto.direccion };
-}
-
-// La búsqueda por rol solo necesita estos campos de cada servicio/capa, que es
-// lo que el sitio oficial del SII manda (visto en la captura de Network).
-function serviciosParaConsulta(servicios) {
-  return (servicios || []).map(s => ({
-    comuna: s.comuna,
-    layer: s.layer,
-    style: s.style,
-    eac: s.eac,
-    eacano: s.eacano
-  }));
+  return Array.isArray(res && res.data) ? res.data : [];
 }
 
 // El rol del SII viene con el formato "MANZANA-PROPIEDAD" (ej: "1234-56").
