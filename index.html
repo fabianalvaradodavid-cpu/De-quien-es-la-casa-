@@ -970,7 +970,7 @@ function showResult(data) {
   const unidadesBtn = document.getElementById('ver-unidades-btn');
   if (esUnidadDeCopropiedad(propiedad)) {
     unidadesBtn.style.display = '';
-    unidadesBtn.onclick = () => abrirModalUnidades(data.comunaCodigo, data.nombreComuna || data.comunaNombre, data.direccion);
+    unidadesBtn.onclick = () => abrirModalUnidades(data.comunaCodigo, data.nombreComuna || data.comunaNombre, data.direccion, manzana);
   } else {
     unidadesBtn.style.display = 'none';
   }
@@ -1012,7 +1012,7 @@ function separarCalleYNumero(texto) {
   return { calle: m[1].trim(), numero: m[2].trim() };
 }
 
-async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic) {
+async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, manzana) {
   document.getElementById('modal-title').textContent = 'Unidades en esta dirección';
   const body = document.getElementById('modal-body');
   modalOverlay.classList.add('visible');
@@ -1024,7 +1024,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic) {
         <input type="text" id="filtro-direccion" autocomplete="off" style="flex:1;">
         <button class="primary" id="buscar-direccion-btn" style="white-space:nowrap; padding:0.5rem 0.9rem;">Buscar</button>
       </div>
-      <div class="filter-hint">Busca directamente en el SII todas las unidades (departamentos, bodegas, estacionamientos) registradas en esa calle y número.</div>
+      <div class="filter-hint">Busca en el SII las unidades (departamentos, bodegas, estacionamientos) de esa calle y número que pertenecen a la manzana ${escapeHtml(manzana)}.</div>
     </div>
     <div id="modal-results"></div>
   `;
@@ -1051,9 +1051,15 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic) {
     }
   }
 
-  function renderUnidades(unidades) {
+  function renderUnidades(todas) {
+    // Solo interesan los roles de la misma manzana que el rol clicado
+    // (ej.: si el rol es 6510-90001, solo los que empiezan con 6510).
+    const unidades = todas.filter((u) => {
+      const m = u.rol ? splitRol(String(u.rol)).manzana : String(u.manzana == null ? '' : u.manzana).trim();
+      return m === String(manzana);
+    });
     if (!unidades.length) {
-      resultsEl.innerHTML = '<p class="modal-error">No se encontraron unidades para esa calle y número.</p>';
+      resultsEl.innerHTML = `<p class="modal-error">No se encontraron unidades de la manzana ${escapeHtml(manzana)} para esa calle y número.</p>`;
       return;
     }
     const ordenadas = unidades.slice().sort((a, b) => (a.predio || 0) - (b.predio || 0));
