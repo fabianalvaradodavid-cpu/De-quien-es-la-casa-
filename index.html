@@ -10,7 +10,6 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="comunas.js"></script>
-<script src="comunas_geo.js"></script>
 <style>
   :root{
     --ink:#2a1a1f;
@@ -654,6 +653,8 @@ const ALIAS_NOMBRE = {
   'LLAYLLAY': 'LLAILLAY',
   'SANFRANCISCODEMOSTAZAL': 'MOSTAZAL',
   'TREHUACO': 'TREGUACO',
+  'MARCHIGUE': 'MARCHIHUE',
+  'PAIHUANO': 'PAIGUANO',
 };
 function normNombre(s) {
   return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -672,12 +673,23 @@ let comunasGeoCargando = null;
 function cargarComunasGeo() {
   if (comunasGeo) return Promise.resolve(comunasGeo);
   if (!comunasGeoCargando) {
+    // comunas_geo.js pesa varios MB: se inyecta después de pintar la página en vez
+    // de bloquearla con un <script> en el <head>. Si falla, se intenta el .geojson.
+    const cargarScript = (src) => new Promise((ok, fallo) => {
+      const sc = document.createElement('script');
+      sc.src = src;
+      sc.onload = ok;
+      sc.onerror = () => fallo(new Error('No se pudo cargar ' + src));
+      document.head.appendChild(sc);
+    });
     const origen = (typeof COMUNAS_GEO !== 'undefined')
       ? Promise.resolve(COMUNAS_GEO)
-      : fetch('comunas.geojson').then((r) => {
-          if (!r.ok) throw new Error('HTTP ' + r.status + ' en comunas.geojson');
-          return r.json();
-        });
+      : cargarScript('comunas_geo.js')
+          .then(() => COMUNAS_GEO)
+          .catch(() => fetch('comunas.geojson').then((r) => {
+            if (!r.ok) throw new Error('HTTP ' + r.status + ' en comunas.geojson');
+            return r.json();
+          }));
     comunasGeoCargando = origen
       .then((gj) => {
         const lista = [];
@@ -1019,12 +1031,12 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
 
   body.innerHTML = `
     <div class="modal-filter">
-      <label for="filtro-direccion">Calle y número</label>
+      <label for="filtro-direccion">Calle (el número es opcional)</label>
       <div style="display:flex; gap:0.5rem;">
-        <input type="text" id="filtro-direccion" autocomplete="off" style="flex:1;">
+        <input type="text" id="filtro-direccion" autocomplete="off" placeholder="Ej.: Los Aliaga  o  Los Aliaga 531" style="flex:1;">
         <button class="primary" id="buscar-direccion-btn" style="white-space:nowrap; padding:0.5rem 0.9rem;">Buscar</button>
       </div>
-      <div class="filter-hint">Busca en el SII las unidades (departamentos, bodegas, estacionamientos) de esa calle y número que pertenecen a la manzana ${escapeHtml(manzana)}.</div>
+      <div class="filter-hint">Busca en el SII las unidades (departamentos, bodegas, estacionamientos) de esa calle que pertenecen a la manzana ${escapeHtml(manzana)}. Si no pones número, se buscan en toda la calle y se muestran solo las de esa manzana.</div>
     </div>
     <div id="modal-results"></div>
   `;
@@ -1036,13 +1048,21 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
 
   async function ejecutarBusqueda() {
     const { calle, numero } = separarCalleYNumero(input.value);
-    if (!calle || !numero) {
-      resultsEl.innerHTML = '<p class="modal-error">Escribe la calle seguida del número, por ejemplo "Los Aliaga 531".</p>';
+    if (!calle) {
+      resultsEl.innerHTML = '<p class="modal-error">Escribe al menos el nombre de la calle, por ejemplo "Los Aliaga" (el número es opcional).</p>';
       return;
     }
     resultsEl.innerHTML = '<p class="modal-loading">Buscando…</p>';
     try {
-      const unidades = await buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero);
+      let unidades = await buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero);
+      // Sin número y sin resultados: si es la misma calle del clic, se reintenta con
+      // el número de esa dirección (por si el SII no acepta la búsqueda sin número).
+      if (!numero && !unidades.length) {
+        const base = separarCalleYNumero(direccionBase(direccionClic));
+        if (base.numero && normNombre(base.calle) === normNombre(calle)) {
+          unidades = await buscarPorDireccion(comunaCodigo, nombreComuna, base.calle, base.numero);
+        }
+      }
       renderUnidades(unidades);
     } catch (err) {
       console.error('Error buscando por dirección', err);
@@ -1059,7 +1079,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
       return m === String(manzana);
     });
     if (!unidades.length) {
-      resultsEl.innerHTML = `<p class="modal-error">No se encontraron unidades de la manzana ${escapeHtml(manzana)} para esa calle y número.</p>`;
+      resultsEl.innerHTML = `<p class="modal-error">No se encontraron unidades de la manzana ${escapeHtml(manzana)} para esa búsqueda.</p>`;
       return;
     }
     const ordenadas = unidades.slice().sort((a, b) => (a.predio || 0) - (b.predio || 0));
