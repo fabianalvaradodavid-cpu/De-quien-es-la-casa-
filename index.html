@@ -665,7 +665,7 @@ function showResult(data) {
   const unidadesBtn = document.getElementById('ver-unidades-btn');
   if (esUnidadDeCopropiedad(propiedad)) {
     unidadesBtn.style.display = '';
-    unidadesBtn.onclick = () => abrirModalUnidades(comunaSelect.value, data.nombreComuna, data.direccion);
+    unidadesBtn.onclick = () => abrirModalUnidades(comunaSelect.value, data.nombreComuna, data.direccion, manzana);
   } else {
     unidadesBtn.style.display = 'none';
   }
@@ -707,7 +707,7 @@ function separarCalleYNumero(texto) {
   return { calle: m[1].trim(), numero: m[2].trim() };
 }
 
-async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic) {
+async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, manzanaClic) {
   document.getElementById('modal-title').textContent = 'Unidades en esta dirección';
   const body = document.getElementById('modal-body');
   modalOverlay.classList.add('visible');
@@ -738,7 +738,22 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic) {
     resultsEl.innerHTML = '<p class="modal-loading">Buscando…</p>';
     try {
       const unidades = await buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero);
-      renderUnidades(unidades);
+      // El SII devuelve todas las unidades de esa calle/número, aunque pertenezcan
+      // a otra manzana (edificios distintos que comparten dirección postal). Nos
+      // quedamos solo con las que son de la misma manzana que el predio que
+      // originó la búsqueda (ej: si el rol clickeado es "3950-90354", solo
+      // dejamos resultados "3950-xx").
+      const filtradas = manzanaClic
+        ? unidades.filter(u => {
+            const resuelto = resolverCamposPredio(u);
+            const rolUnidad = u.rol || resuelto.rol || '';
+            const manzanaUnidad = (u.manzana !== undefined && u.manzana !== null)
+              ? String(u.manzana)
+              : splitRol(rolUnidad).manzana;
+            return manzanaUnidad === String(manzanaClic);
+          })
+        : unidades;
+      renderUnidades(filtradas);
     } catch (err) {
       console.error('Error buscando por dirección', err);
       const msg = (err && err.message) ? err.message : String(err);
