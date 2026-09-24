@@ -342,6 +342,55 @@
     text-align:right;
     color:var(--ink);
   }
+  .modal-filter{
+    margin-bottom:0.9rem;
+  }
+  .modal-filter label{
+    display:block;
+    font-size:0.72rem;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:#9a6f80;
+    margin-bottom:0.35rem;
+  }
+  .modal-filter input{
+    width:100%;
+    padding:0.5rem 0.6rem;
+    font-size:0.88rem;
+    border:1px solid var(--line);
+    border-radius:3px;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:inherit;
+  }
+  .modal-filter .filter-hint{
+    font-size:0.72rem;
+    color:#9a6f80;
+    margin-top:0.3rem;
+  }
+  ul.unit-list{
+    list-style:none;
+    margin:0;
+    padding:0;
+  }
+  ul.unit-list li{
+    display:flex;
+    justify-content:space-between;
+    gap:0.8rem;
+    padding:0.5rem 0;
+    border-bottom:1px solid #f0ede3;
+    font-size:0.85rem;
+  }
+  ul.unit-list li:last-child{ border-bottom:none; }
+  .unit-rol{
+    font-weight:600;
+    color:var(--moss-dark);
+    white-space:nowrap;
+  }
+  .unit-dir{
+    text-align:right;
+    color:var(--ink);
+  }
   @media (max-width:720px){
     main{ grid-template-columns:1fr; grid-template-rows:1fr auto; }
     aside{ border-left:none; border-top:1px solid var(--line); max-height:46vh; }
@@ -403,7 +452,7 @@
       <div class="actions">
         <button class="primary" id="copy-manzana-btn">Copiar rol manzana y abrir trámite TGR</button>
         <button class="secondary" id="copy-propiedad-btn">Copiar rol predio</button>
-        <button class="secondary" id="ver-unidades-btn" style="display:none;">Ver roles 1 a 500 de este edificio</button>
+        <button class="secondary" id="ver-unidades-btn" style="display:none;">Buscar todas las unidades de este edificio</button>
         <div class="copied" id="copied-msg"></div>
       </div>
     </div>
@@ -775,7 +824,7 @@ map.on('click', async (e) => {
       if (!resuelto) continue;
 
       resuelto.comunaCodigo = c.codigo;
-      resuelto.servicios = cfg.servicios;
+      resuelto.comunaNombre = c.nombre;
       if (resuelto.rol) {
         showResult(resuelto);
         setStatus('');
@@ -919,7 +968,7 @@ function showResult(data) {
   const unidadesBtn = document.getElementById('ver-unidades-btn');
   if (esUnidadDeCopropiedad(propiedad)) {
     unidadesBtn.style.display = '';
-    unidadesBtn.onclick = () => abrirModalUnidades(data.comunaCodigo, manzana, data.servicios);
+    unidadesBtn.onclick = () => abrirModalUnidades(data.comunaCodigo, data.nombreComuna || data.comunaNombre, data.direccion);
   } else {
     unidadesBtn.style.display = 'none';
   }
@@ -943,101 +992,115 @@ function cerrarModalUnidades() {
   modalOverlay.classList.remove('visible');
 }
 
-async function abrirModalUnidades(comunaCodigo, manzana, servicios) {
-  document.getElementById('modal-title').textContent = `Unidades de la manzana ${manzana}`;
+// A partir de una dirección de unidad ("AV OHIGGINS 1650 DP 205 EDIF LEBLON")
+// intenta quedarse solo con "calle + número" ("AV OHIGGINS 1650"), cortando en
+// el primer número, para usarla como valor inicial del buscador por dirección.
+function direccionBase(direccion) {
+  if (!direccion) return '';
+  const m = direccion.match(/^(.*?\d+)/);
+  return (m ? m[1] : direccion).trim();
+}
+
+// Separa un texto tipo "Los Aliaga 531" en calle ("Los Aliaga") y número ("531"),
+// cortando en el último grupo de dígitos.
+function separarCalleYNumero(texto) {
+  const t = (texto || '').trim();
+  const m = t.match(/^(.*?)\s+(\d+)\s*$/);
+  if (!m) return { calle: t, numero: '' };
+  return { calle: m[1].trim(), numero: m[2].trim() };
+}
+
+async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic) {
+  document.getElementById('modal-title').textContent = 'Unidades en esta dirección';
   const body = document.getElementById('modal-body');
   modalOverlay.classList.add('visible');
 
-  const TOTAL = 500;      // consulta xxx-1 hasta xxx-500
-  const CONCURRENCIA = 20; // consultas en paralelo por lote, para no demorar minutos
+  body.innerHTML = `
+    <div class="modal-filter">
+      <label for="filtro-direccion">Calle y número</label>
+      <div style="display:flex; gap:0.5rem;">
+        <input type="text" id="filtro-direccion" autocomplete="off" style="flex:1;">
+        <button class="primary" id="buscar-direccion-btn" style="white-space:nowrap; padding:0.5rem 0.9rem;">Buscar</button>
+      </div>
+      <div class="filter-hint">Busca directamente en el SII todas las unidades (departamentos, bodegas, estacionamientos) registradas en esa calle y número.</div>
+    </div>
+    <div id="modal-results"></div>
+  `;
 
-  const encontrados = [];
-  let consultados = 0;
-  let huboError = false;
+  const input = document.getElementById('filtro-direccion');
+  const resultsEl = document.getElementById('modal-results');
+  const buscarBtn = document.getElementById('buscar-direccion-btn');
+  input.value = direccionBase(direccionClic);
 
-  body.innerHTML = `<p class="modal-loading">Consultando roles 1 a ${TOTAL}… (0/${TOTAL})</p>`;
-
-  for (let inicio = 1; inicio <= TOTAL; inicio += CONCURRENCIA) {
-    const lote = [];
-    for (let n = inicio; n < inicio + CONCURRENCIA && n <= TOTAL; n++) {
-      lote.push(
-        buscarPredioPorRol(comunaCodigo, manzana, n, servicios)
-          .then((r) => ({ n, resultado: r }))
-          .catch((err) => ({ n, error: err }))
-      );
+  async function ejecutarBusqueda() {
+    const { calle, numero } = separarCalleYNumero(input.value);
+    if (!calle || !numero) {
+      resultsEl.innerHTML = '<p class="modal-error">Escribe la calle seguida del número, por ejemplo "Los Aliaga 531".</p>';
+      return;
     }
-
-    const resultados = await Promise.all(lote);
-    for (const item of resultados) {
-      consultados++;
-      if (item.error) {
-        console.error('Error consultando rol directo', manzana, item.n, item.error);
-        huboError = true;
-        continue;
-      }
-      if (item.resultado) encontrados.push(item.resultado);
+    resultsEl.innerHTML = '<p class="modal-loading">Buscando…</p>';
+    try {
+      const unidades = await buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero);
+      renderUnidades(unidades);
+    } catch (err) {
+      console.error('Error buscando por dirección', err);
+      const msg = (err && err.message) ? err.message : String(err);
+      resultsEl.innerHTML = `<p class="modal-error">No se pudo consultar (${escapeHtml(msg)}). Revisa la URL del proxy o intenta de nuevo.</p>`;
     }
-
-    body.innerHTML = `<p class="modal-loading">Consultando roles 1 a ${TOTAL}… (${consultados}/${TOTAL})</p>`;
   }
 
-  if (!encontrados.length) {
-    body.innerHTML = huboError
-      ? '<p class="modal-error">No se pudo consultar el SII por rol directo (puede estar lento o caído en este momento). Intenta de nuevo en unos segundos.</p>'
-      : '<p class="modal-error">No se encontraron unidades en esta manzana.</p>';
-    return;
+  function renderUnidades(unidades) {
+    if (!unidades.length) {
+      resultsEl.innerHTML = '<p class="modal-error">No se encontraron unidades para esa calle y número.</p>';
+      return;
+    }
+    const ordenadas = unidades.slice().sort((a, b) => (a.predio || 0) - (b.predio || 0));
+    const ul = document.createElement('ul');
+    ul.className = 'unit-list';
+    ordenadas.forEach(u => {
+      const li = document.createElement('li');
+      const rolEl = document.createElement('span');
+      rolEl.className = 'unit-rol';
+      rolEl.textContent = u.rol || `${u.manzana}-${u.predio}`;
+      const dirEl = document.createElement('span');
+      dirEl.className = 'unit-dir';
+      dirEl.textContent = u.direccion || 'Sin dirección registrada';
+      li.appendChild(rolEl);
+      li.appendChild(dirEl);
+      ul.appendChild(li);
+    });
+    resultsEl.innerHTML = '';
+    resultsEl.appendChild(ul);
+    const nota = document.createElement('p');
+    nota.className = 'modal-loading';
+    nota.style.marginTop = '0.6rem';
+    nota.textContent = `${ordenadas.length} unidad(es) encontrada(s).`;
+    resultsEl.appendChild(nota);
   }
 
-  encontrados.sort((a, b) => a.predio - b.predio);
+  buscarBtn.addEventListener('click', ejecutarBusqueda);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') ejecutarBusqueda(); });
 
-  body.innerHTML = '';
-  const ul = document.createElement('ul');
-  ul.className = 'unit-list';
-  encontrados.forEach(u => {
-    const li = document.createElement('li');
-    const rolEl = document.createElement('span');
-    rolEl.className = 'unit-rol';
-    rolEl.textContent = u.rol || `${manzana}-${u.predio}`;
-    const dirEl = document.createElement('span');
-    dirEl.className = 'unit-dir';
-    dirEl.textContent = u.direccion || 'Sin dirección registrada';
-    li.appendChild(rolEl);
-    li.appendChild(dirEl);
-    ul.appendChild(li);
-  });
-  body.appendChild(ul);
+  ejecutarBusqueda(); // búsqueda automática al abrir, con la dirección del clic
 }
 
-// Confirmado capturando el request real del sitio oficial del SII (Buscar Rol):
-// el body va como { predio: {comuna, manzana, predio} (strings), servicios: [...] },
-// donde "servicios" es la lista de capas WMS de la comuna (comuna, layer, style,
-// eac, eacano) que ya obtuvimos antes con /getServicioPredio.
-async function buscarPredioPorRol(comunaCodigo, manzana, predio, servicios) {
-  const res = await callProxy('/getPredioNacional', {
-    predio: {
+// Confirmado capturando el request real del sitio oficial del SII (buscador por
+// dirección del mapa): el body va como { rolDireccion: {comuna, nombreComuna,
+// calle, numeroCalleStr, detalle}, servicios: [] }. A diferencia de getFeatureInfo,
+// esta consulta trae TODAS las unidades de esa calle/número en una sola llamada,
+// sin necesidad de recorrer números de predio uno por uno.
+async function buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero) {
+  const res = await callProxy('/getPrediosDireccion', {
+    rolDireccion: {
       comuna: String(comunaCodigo),
-      manzana: String(manzana),
-      predio: String(predio)
+      nombreComuna: nombreComuna || '',
+      calle: calle.toLowerCase(),
+      numeroCalleStr: String(numero),
+      detalle: 0
     },
-    servicios: serviciosParaConsulta(servicios)
+    servicios: []
   });
-  const data = res && res.data;
-  if (!data || data.existePredio === false) return null;
-  const resuelto = resolverCamposPredio(data);
-  if (!resuelto.rol && !resuelto.direccion) return null; // nada útil, se trata como "no existe"
-  return { predio, rol: resuelto.rol, direccion: resuelto.direccion };
-}
-
-// La búsqueda por rol solo necesita estos campos de cada servicio/capa, que es
-// lo que el sitio oficial del SII manda (visto en la captura de Network).
-function serviciosParaConsulta(servicios) {
-  return (servicios || []).map(s => ({
-    comuna: s.comuna,
-    layer: s.layer,
-    style: s.style,
-    eac: s.eac,
-    eacano: s.eacano
-  }));
+  return Array.isArray(res && res.data) ? res.data : [];
 }
 
 // El rol del SII viene con el formato "MANZANA-PROPIEDAD" (ej: "1234-56").
@@ -1053,6 +1116,12 @@ function showCopiedMsg(msg) {
   const el = document.getElementById('copied-msg');
   el.textContent = msg;
   el.classList.add('visible');
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
 }
 
 function formatCLP(n) {
