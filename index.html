@@ -269,6 +269,32 @@
     color:#7a5a68;
   }
   .modal-error{ color:#a3402b; }
+  .modal-filter{
+    margin-bottom:0.9rem;
+  }
+  .modal-filter label{
+    display:block;
+    font-size:0.72rem;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:#9a6f80;
+    margin-bottom:0.35rem;
+  }
+  .modal-filter input{
+    width:100%;
+    padding:0.5rem 0.6rem;
+    font-size:0.88rem;
+    border:1px solid var(--line);
+    border-radius:3px;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:inherit;
+  }
+  .modal-filter .filter-hint{
+    font-size:0.72rem;
+    color:#9a6f80;
+    margin-top:0.3rem;
+  }
   ul.unit-list{
     list-style:none;
     margin:0;
@@ -595,7 +621,7 @@ function showResult(data) {
   const unidadesBtn = document.getElementById('ver-unidades-btn');
   if (esUnidadDeCopropiedad(propiedad)) {
     unidadesBtn.style.display = '';
-    unidadesBtn.onclick = () => abrirModalUnidades(comunaSelect.value, manzana);
+    unidadesBtn.onclick = () => abrirModalUnidades(comunaSelect.value, manzana, data.direccion);
   } else {
     unidadesBtn.style.display = 'none';
   }
@@ -619,31 +645,115 @@ function cerrarModalUnidades() {
   modalOverlay.classList.remove('visible');
 }
 
-async function abrirModalUnidades(comunaCodigo, manzana) {
-  document.getElementById('modal-title').textContent = `Unidades de la manzana ${manzana} (predios 1–1000)`;
+// A partir de una dirección de unidad ("AV OHIGGINS 1650 DP 205 EDIF LEBLON")
+// intenta quedarse solo con "calle + número" ("AV OHIGGINS 1650"), cortando en
+// el primer número, para usarlo como filtro por defecto del edificio completo
+// (sin el departamento/local específico que ya trae la dirección de una unidad).
+function direccionBase(direccion) {
+  if (!direccion) return '';
+  const m = direccion.match(/^(.*?\d+)/);
+  return (m ? m[1] : direccion).trim();
+}
+
+function normalizarTexto(s) {
+  return (s || '')
+    .toString()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, ''); // quita tildes para comparar
+}
+
+async function abrirModalUnidades(comunaCodigo, manzana, direccionClic) {
+  document.getElementById('modal-title').textContent = `Unidades de la manzana ${manzana}`;
   const body = document.getElementById('modal-body');
   modalOverlay.classList.add('visible');
 
+  body.innerHTML = `
+    <div class="modal-filter">
+      <label for="filtro-direccion">Filtrar por dirección del edificio</label>
+      <input type="text" id="filtro-direccion" autocomplete="off">
+      <div class="filter-hint">Solo se muestran las unidades cuya dirección contiene este texto. Bórralo para ver todas las de la manzana.</div>
+    </div>
+    <div id="modal-results"></div>
+  `;
+
+  const filtroInput = document.getElementById('filtro-direccion');
+  const resultsEl = document.getElementById('modal-results');
+  filtroInput.value = direccionBase(direccionClic);
+
   // Recorre los predios 1…1000 de la manzana (los roles de departamento/unidad
-  // dentro del edificio), no la serie 900xx de bodegas/estacionamientos.
+  // dentro del edificio), no la serie 900xx de bodegas/estacionamientos. Una
+  // misma manzana puede tener varios edificios/direcciones distintas, por eso
+  // se filtra por dirección en vez de mostrar todo junto.
   const TOTAL = 1000;
   const CONCURRENCIA = 5;       // menos paralelismo: más gentil con el SII/proxy
   const REINTENTOS = 3;         // intentos por predio antes de darlo por fallido
   const PAUSA_ENTRE_MS = 60;    // pequeña pausa tras cada consulta (éxito o no)
 
-  const encontrados = [];
+  const todasLasUnidades = [];
   let consultados = 0;
   let errores = 0;
   let ultimoErrorMsg = '';
+  let terminado = false;
 
-  const actualizarProgreso = () => {
-    body.innerHTML =
-      `<p class="modal-loading">Consultando unidades… ${consultados}/${TOTAL}` +
-      (encontrados.length ? ` (${encontrados.length} encontradas)` : '') +
-      (errores ? ` · ${errores} con error` : '') +
-      `</p>`;
-  };
-  actualizarProgreso();
+  function renderResultados() {
+    const filtro = normalizarTexto(filtroInput.value.trim());
+    const filtradas = filtro
+      ? todasLasUnidades.filter(u => normalizarTexto(u.direccion).includes(filtro))
+      : todasLasUnidades.slice();
+    filtradas.sort((a, b) => a.predio - b.predio);
+
+    resultsEl.innerHTML = '';
+
+    if (!filtradas.length) {
+      const msg = document.createElement('p');
+      msg.className = terminado && !todasLasUnidades.length && errores ? 'modal-error' : 'modal-loading';
+      if (!todasLasUnidades.length) {
+        msg.textContent = terminado
+          ? (errores
+              ? `No se encontró ninguna unidad, incluso tras reintentar cada una hasta ${REINTENTOS} veces (${errores} siguieron fallando). Último error: ${escapeHtml(ultimoErrorMsg)}. Es posible que el SII esté bloqueando temporalmente por exceso de consultas — espera un par de minutos e intenta de nuevo.`
+              : 'No se encontraron unidades en esta manzana.')
+          : `Buscando unidades… ${consultados}/${TOTAL}${errores ? ` · ${errores} con error` : ''}`;
+      } else {
+        msg.textContent = `Ninguna unidad coincide con "${filtroInput.value.trim()}". Prueba con menos palabras o bórralo para ver todas (${todasLasUnidades.length} encontradas hasta ahora).`;
+      }
+      resultsEl.appendChild(msg);
+      return;
+    }
+
+    const ul = document.createElement('ul');
+    ul.className = 'unit-list';
+    filtradas.forEach(u => {
+      const li = document.createElement('li');
+      const rolEl = document.createElement('span');
+      rolEl.className = 'unit-rol';
+      rolEl.textContent = u.rol || `${manzana}-${u.predio}`;
+      const dirEl = document.createElement('span');
+      dirEl.className = 'unit-dir';
+      dirEl.textContent = u.direccion || 'Sin dirección registrada';
+      li.appendChild(rolEl);
+      li.appendChild(dirEl);
+      ul.appendChild(li);
+    });
+    resultsEl.appendChild(ul);
+
+    if (!terminado) {
+      const p = document.createElement('p');
+      p.className = 'modal-loading';
+      p.style.marginTop = '0.6rem';
+      p.textContent = `Buscando más unidades… ${consultados}/${TOTAL}${errores ? ` · ${errores} con error` : ''}`;
+      resultsEl.appendChild(p);
+    } else if (errores) {
+      const nota = document.createElement('p');
+      nota.className = 'modal-error';
+      nota.style.marginTop = '0.6rem';
+      nota.textContent = `${errores} de las ${TOTAL} unidades siguieron fallando tras ${REINTENTOS} intentos cada una (probablemente no existen, o el SII las rechazó repetidamente).`;
+      resultsEl.appendChild(nota);
+    }
+  }
+
+  filtroInput.addEventListener('input', renderResultados);
+  renderResultados();
 
   const pendientes = Array.from({ length: TOTAL }, (_, i) => i + 1); // predio 1..1000
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -670,53 +780,25 @@ async function abrirModalUnidades(comunaCodigo, manzana) {
       const predio = pendientes.shift();
       try {
         const resultado = await buscarConReintentos(predio);
-        if (resultado) encontrados.push(resultado);
+        if (resultado) {
+          todasLasUnidades.push(resultado);
+          renderResultados();
+        }
       } catch (err) {
         console.error('Error consultando rol directo (agotados los reintentos)', manzana, predio, err);
         errores++;
         ultimoErrorMsg = (err && err.message) ? err.message : String(err);
       }
       consultados++;
-      actualizarProgreso();
+      if (consultados % 5 === 0) renderResultados(); // no repintar en cada una: de a poco
       await sleep(PAUSA_ENTRE_MS);
     }
   }
 
   await Promise.all(Array.from({ length: CONCURRENCIA }, trabajador));
 
-  encontrados.sort((a, b) => a.predio - b.predio);
-
-  if (!encontrados.length) {
-    body.innerHTML = errores
-      ? `<p class="modal-error">No se encontró ninguna unidad entre el 1 y el 1000, incluso tras reintentar cada una hasta ${REINTENTOS} veces (${errores} siguieron fallando). Último error: ${escapeHtml(ultimoErrorMsg)}. Es posible que el SII esté bloqueando temporalmente por exceso de consultas — espera un par de minutos e intenta de nuevo.</p>`
-      : '<p class="modal-error">No se encontraron unidades entre el 1 y el 1000 en esta manzana.</p>';
-    return;
-  }
-
-  body.innerHTML = '';
-  const ul = document.createElement('ul');
-  ul.className = 'unit-list';
-  encontrados.forEach(u => {
-    const li = document.createElement('li');
-    const rolEl = document.createElement('span');
-    rolEl.className = 'unit-rol';
-    rolEl.textContent = u.rol || `${manzana}-${u.predio}`;
-    const dirEl = document.createElement('span');
-    dirEl.className = 'unit-dir';
-    dirEl.textContent = u.direccion || 'Sin dirección registrada';
-    li.appendChild(rolEl);
-    li.appendChild(dirEl);
-    ul.appendChild(li);
-  });
-  body.appendChild(ul);
-
-  if (errores) {
-    const nota = document.createElement('p');
-    nota.className = 'modal-error';
-    nota.style.marginTop = '0.6rem';
-    nota.textContent = `${errores} de las 1000 unidades siguieron fallando tras ${3} intentos cada una (probablemente no existen, o el SII las rechazó repetidamente).`;
-    body.appendChild(nota);
-  }
+  terminado = true;
+  renderResultados();
 }
 
 // Confirmado capturando el request real del sitio oficial del SII (Buscar Rol):
