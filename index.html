@@ -502,9 +502,9 @@ function popupMonumento(props) {
 }
 
 function onEachMonumento(feature, layer) {
-  // Evita que el clic sobre un punto/polígono de monumento dispare también la
-  // consulta de rol del SII asociada al clic en el mapa.
-  layer.on('click', (e) => L.DomEvent.stopPropagation(e));
+  // No frenamos la propagación del clic: así se abre el popup del monumento
+  // Y además el clic le sigue llegando al mapa, que dispara la consulta de rol
+  // del SII para ese mismo punto.
   layer.bindPopup(popupMonumento(feature.properties || {}));
 }
 
