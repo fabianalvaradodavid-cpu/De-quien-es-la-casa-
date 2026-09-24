@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rol de propiedad → Certificado de deuda TGR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Luckiest+Guy&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="comunas.js"></script>
+<script src="comunas_geo.js"></script>
+<style>
+  :root{
+    --ink:#2a1a1f;
+    --paper:#fbf3f6;
+    --line:#e6c9d6;
+    --moss:#7c1f3e;
+    --moss-dark:#54142a;
+    --clay:#e2007a;
+    --clay-dark:#b8005f;
+    --leather:#2c1c16;
+    --panel:#ffffff;
+    font-size:16px;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    font-family:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+    background:var(--paper);
+    color:var(--ink);
+    display:flex;
+    flex-direction:column;
+  }
+  header{
+    padding:1.1rem 1.4rem 0.9rem;
+    border-bottom:2px solid var(--clay);
+    background:linear-gradient(120deg, #fdf1f6 0%, #fbe1ee 55%, #f7d4e8 100%);
+    display:flex;
+    align-items:center;
+    gap:0.9rem;
+    flex-wrap:wrap;
+  }
+  header .titles{
+    display:flex;
+    flex-direction:column;
+    gap:0.2rem;
+  }
+  header h1{
+    font-family:'Luckiest Guy', 'Iowan Old Style', cursive;
+    font-size:1.9rem;
+    margin:0;
+    font-weight:400;
+    letter-spacing:0.02em;
+    color:var(--clay);
+    text-shadow:2px 2px 0 var(--moss-dark);
+    transform:rotate(-1.5deg);
+    display:inline-block;
+  }
+  header p{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:0.82rem;
+    color:#7a5a68;
+  }
+  .mascot-wrap{
+    margin:-1.1rem -1.1rem 1.1rem;
+    overflow:hidden;
+    border-bottom:2px solid var(--clay);
+  }
+  #mascot{
+    display:block;
+    width:100%;
+    height:230px;
+    object-fit:cover;
+    object-position:50% 18%;
+    user-select:none;
+    -webkit-user-drag:none;
+  }
+  main{
+    flex:1;
+    display:grid;
+    grid-template-columns: minmax(0,1fr) 320px;
+    min-height:0;
+  }
+  #map{
+    width:100%;
+    height:100%;
+    background:#1a1a1a;
+  }
+  aside{
+    border-left:1px solid var(--line);
+    background:var(--panel);
+    padding:1.1rem;
+    overflow-y:auto;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  .field{
+    margin-bottom:1rem;
+  }
+  .field label{
+    display:block;
+    font-size:0.72rem;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:#9a6f80;
+    margin-bottom:0.35rem;
+  }
+  select{
+    width:100%;
+    padding:0.5rem 0.6rem;
+    font-size:0.92rem;
+    border:1px solid var(--line);
+    border-radius:3px;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:inherit;
+  }
+  .hint{
+    font-size:0.8rem;
+    color:#7a5a68;
+    line-height:1.45;
+    padding:0.7rem 0.8rem;
+    background:#fbeef4;
+    border-radius:4px;
+    border:1px solid var(--line);
+  }
+  .status{
+    margin-top:0.9rem;
+    font-size:0.85rem;
+    color:#7a5a68;
+  }
+  .status.error{ color:#a3402b; }
+  .layers-box{
+    margin-bottom:1rem;
+    padding:0.7rem 0.8rem;
+    border:1px solid var(--line);
+    border-radius:4px;
+    background:var(--paper);
+  }
+  .layers-box .layers-title{
+    display:block;
+    font-size:0.72rem;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:#9a6f80;
+    margin-bottom:0.5rem;
+  }
+  .layer-toggle{
+    display:flex;
+    align-items:center;
+    gap:0.5rem;
+    font-size:0.85rem;
+    color:var(--ink);
+    padding:0.25rem 0;
+    cursor:pointer;
+    user-select:none;
+  }
+  .layer-toggle input{
+    width:15px;
+    height:15px;
+    accent-color:#a3402b;
+    cursor:pointer;
+  }
+  .layer-toggle .swatch{
+    width:10px;
+    height:10px;
+    border-radius:50%;
+    flex-shrink:0;
+  }
+  .layer-toggle .swatch.poligonos{ border-radius:2px; }
+  .layer-loading{
+    font-size:0.75rem;
+    color:#9a6f80;
+    margin-left:1.6rem;
+  }
+  .monumento-popup{ font-size:0.85rem; line-height:1.4; max-width:240px; }
+  .monumento-popup h4{ margin:0 0 0.3rem; font-size:0.9rem; }
+  .monumento-popup dl{ margin:0; }
+  .monumento-popup dt{ font-weight:600; color:#7a5a68; float:left; clear:left; margin-right:0.3rem; }
+  .monumento-popup dd{ margin:0 0 0.15rem; }
+  .monumento-popup a{ color:#a3402b; }
+  .result{
+    margin-top:0.9rem;
+    border:1px solid var(--line);
+    border-radius:6px;
+    overflow:hidden;
+    display:none;
+  }
+  .result.visible{ display:block; }
+  .result-rol{
+    background:var(--moss);
+    color:#fbf9f2;
+    padding:0.9rem 1rem;
+  }
+  .result-rol .label{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:0.7rem;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    opacity:0.75;
+  }
+  .result-rol .value{
+    font-size:1.5rem;
+    font-weight:600;
+    margin-top:0.15rem;
+    letter-spacing:0.01em;
+  }
+  dl.details{
+    margin:0;
+    padding:0.85rem 1rem;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:0.83rem;
+  }
+  dl.details div{
+    display:flex;
+    justify-content:space-between;
+    gap:0.6rem;
+    padding:0.32rem 0;
+    border-bottom:1px solid #f0ede3;
+  }
+  dl.details div:last-child{ border-bottom:none; }
+  dl.details dt{ color:#9a6f80; }
+  dl.details dd{ margin:0; text-align:right; }
+  .actions{
+    padding:0.85rem 1rem 1rem;
+    display:flex;
+    flex-direction:column;
+    gap:0.55rem;
+  }
+  button.primary{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:0.9rem;
+    font-weight:600;
+    padding:0.65rem 0.8rem;
+    background:var(--clay);
+    color:#fff;
+    border:none;
+    border-radius:4px;
+    cursor:pointer;
+  }
+  button.primary:hover{ background:var(--clay-dark); }
+  button.primary:active{ transform:translateY(1px); }
+  button.secondary{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:0.9rem;
+    font-weight:600;
+    padding:0.65rem 0.8rem;
+    background:#fff;
+    color:var(--moss-dark);
+    border:1.5px solid var(--moss);
+    border-radius:4px;
+    cursor:pointer;
+  }
+  button.secondary:hover{ background:#fbeef4; }
+  button.secondary:active{ transform:translateY(1px); }
+  button:disabled{ opacity:0.45; cursor:not-allowed; }
+  .copied{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:0.78rem;
+    color:var(--moss-dark);
+    display:none;
+  }
+  .copied.visible{ display:block; }
+  .leaflet-container{ font-family:inherit; }
+
+  .modal-overlay{
+    position:fixed;
+    inset:0;
+    background:rgba(20,10,14,0.6);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:1000;
+    padding:1rem;
+  }
+  .modal-overlay.visible{ display:flex; }
+  .modal{
+    background:var(--panel);
+    border-radius:8px;
+    width:100%;
+    max-width:440px;
+    max-height:78vh;
+    display:flex;
+    flex-direction:column;
+    box-shadow:0 8px 30px rgba(0,0,0,0.35);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  .modal-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:0.8rem;
+    padding:0.9rem 1.1rem;
+    border-bottom:1px solid var(--line);
+  }
+  .modal-header h2{
+    margin:0;
+    font-size:1rem;
+    color:var(--moss-dark);
+  }
+  .modal-close{
+    background:none;
+    border:none;
+    font-size:1.4rem;
+    line-height:1;
+    color:#9a6f80;
+    cursor:pointer;
+    padding:0.1rem 0.3rem;
+  }
+  .modal-close:hover{ color:var(--clay); }
+  .modal-body{
+    padding:0.9rem 1.1rem 1.1rem;
+    overflow-y:auto;
+  }
+  .modal-loading, .modal-error{
+    font-size:0.88rem;
+    color:#7a5a68;
+  }
+  .modal-error{ color:#a3402b; }
+  ul.unit-list{
+    list-style:none;
+    margin:0;
+    padding:0;
+  }
+  ul.unit-list li{
+    display:flex;
+    justify-content:space-between;
+    gap:0.8rem;
+    padding:0.5rem 0;
+    border-bottom:1px solid #f0ede3;
+    font-size:0.85rem;
+  }
+  ul.unit-list li:last-child{ border-bottom:none; }
+  .unit-rol{
+    font-weight:600;
+    color:var(--moss-dark);
+    white-space:nowrap;
+  }
+  .unit-dir{
+    text-align:right;
+    color:var(--ink);
+  }
+  .modal-filter{
+    margin-bottom:0.9rem;
+  }
+  .modal-filter label{
+    display:block;
+    font-size:0.72rem;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:#9a6f80;
+    margin-bottom:0.35rem;
+  }
+  .modal-filter input{
+    width:100%;
+    padding:0.5rem 0.6rem;
+    font-size:0.88rem;
+    border:1px solid var(--line);
+    border-radius:3px;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:inherit;
+  }
+  .modal-filter .filter-hint{
+    font-size:0.72rem;
+    color:#9a6f80;
+    margin-top:0.3rem;
+  }
+  ul.unit-list{
+    list-style:none;
+    margin:0;
+    padding:0;
+  }
+  ul.unit-list li{
+    display:flex;
+    justify-content:space-between;
+    gap:0.8rem;
+    padding:0.5rem 0;
+    border-bottom:1px solid #f0ede3;
+    font-size:0.85rem;
+  }
+  ul.unit-list li:last-child{ border-bottom:none; }
+  .unit-rol{
+    font-weight:600;
+    color:var(--moss-dark);
+    white-space:nowrap;
+  }
+  .unit-dir{
+    text-align:right;
+    color:var(--ink);
+  }
+  @media (max-width:720px){
+    main{ grid-template-columns:1fr; grid-template-rows:1fr auto; }
+    aside{ border-left:none; border-top:1px solid var(--line); max-height:46vh; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="titles">
+    <h1>¿DE QUIÉN ES LA CASA?</h1>
+    <p>Clic en un punto del mapa para consultar el rol de esa propiedad ante el SII.</p>
+  </div>
+</header>
+
+<audio id="click-sound" src="click.mp3" preload="auto"></audio>
+
+<main>
+  <div id="map"></div>
+  <aside>
+    <div class="mascot-wrap">
+      <img id="mascot" src="mascota.jpg" alt="Mascota">
+    </div>
+    <div class="layers-box">
+      <span class="layers-title">Monumentos Nacionales</span>
+      <label class="layer-toggle">
+        <input type="checkbox" id="toggle-mh">
+        <span class="swatch" style="background:#e0562f;"></span>
+        Monumentos Históricos
+      </label>
+      <label class="layer-toggle">
+        <input type="checkbox" id="toggle-zt">
+        <span class="swatch" style="background:#c98a1f;"></span>
+        Zonas Típicas
+      </label>
+      <label class="layer-toggle">
+        <input type="checkbox" id="toggle-sn">
+        <span class="swatch" style="background:#2f8e5a;"></span>
+        Santuarios de la Naturaleza
+      </label>
+      <div class="layer-loading" id="loading-monumentos" style="display:none;">Cargando datos del CMN…</div>
+    </div>
+
+    <div class="hint" id="hint">
+      Haz clic sobre cualquier punto del mapa: la comuna se detecta sola y se
+      consulta el rol de la propiedad. La consulta se hace directamente
+      contra el sistema del SII; esta página no guarda ni envía tus datos a
+      ningún otro lugar.
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <div class="result" id="result">
+      <div class="result-rol">
+        <div class="label">Rol</div>
+        <div class="value" id="rol-value">—</div>
+      </div>
+      <dl class="details" id="details"></dl>
+      <div class="actions">
+        <button class="primary" id="copy-manzana-btn">Copiar rol manzana y abrir trámite TGR</button>
+        <button class="secondary" id="copy-propiedad-btn">Copiar rol predio</button>
+        <button class="secondary" id="ver-unidades-btn" style="display:none;">Buscar todas las unidades de este edificio</button>
+        <div class="copied" id="copied-msg"></div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modal-title">Unidades del edificio</h2>
+      <button class="modal-close" id="modal-close" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+// ---- Configuración ----
+// URL del proxy (Cloudflare Worker / Val.town) que reenvía las llamadas al SII evitando el bloqueo de CORS.
+const PROXY_BASE = "https://fabianalvaradodavid--eb6f8c9eb5fd11f1af9b1607ee4eb77e.web.val.run";
+
+const TGR_URL = "https://tgr.gob.cl/tramites-tgr/certificado-de-deuda-de-contribuciones/";
+
+// ---- Sonido de "rol encontrado" ----
+const clickSound = document.getElementById('click-sound');
+function playClickSound() {
+  try {
+    clickSound.currentTime = 0;
+    clickSound.play().catch(() => {});
+  } catch (e) { /* algunos navegadores bloquean audio hasta la primera interacción del usuario */ }
+}
+
+// ---- Mapa base: satelital + etiquetas (Esri, sin necesidad de API key) ----
+const map = L.map('map', { zoomControl: true }).setView([-33.4489, -70.6693], 12);
+
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 19,
+  attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, GIS User Community'
+}).addTo(map);
+
+// Capa de referencia con nombres de calles, comunas, etc. sobre la imagen satelital
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 19,
+  attribution: 'Labels &copy; Esri'
+}).addTo(map);
+
+// Capa de calles y su nomenclatura (World_Boundaries_and_Places casi no trae calles,
+// esta capa sí las dibuja con su nombre). Se muestra solo al acercarse: a zoom
+// de ciudad completa, Esri la dibuja como autopistas gruesas resaltadas, que
+// tapan la imagen satelital; al acercarse pasa a mostrar calles finas con nombre.
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 19,
+  minZoom: 15,
+  attribution: 'Streets &copy; Esri'
+}).addTo(map);
+
+let marker = null;
+
+// ---- Capas de Monumentos Nacionales (puntos y polígonos oficiales del CMN) ----
+// Se cargan de forma perezosa (solo al marcar el checkbox por primera vez) para no
+// gastar datos si el usuario nunca las activa. Los archivos .geojson viven junto a
+// este index.html.
+const COLOR_POR_CATEGORIA = {
+  'Monumento Histórico': '#e0562f',
+  'Zona Típica o Pintoresca': '#c98a1f',
+  'Santuario de la Naturaleza': '#2f8e5a',
+};
+function colorCategoria(categoria) {
+  return COLOR_POR_CATEGORIA[categoria] || '#7a5a68';
+}
+
+function popupMonumento(props) {
+  const filas = [
+    ['Categoría', props.categoria],
+    ['Región', props.region],
+    ['Comuna', props.comuna],
+    ['Código CMN', props.codigo_cmn],
+    ['Decreto', [props.tipo_decreto, props.n_decreto].filter(Boolean).join(' N° ')],
+    ['Fecha decreto', props.fecha_decreto],
+  ].filter(([, v]) => v);
+
+  let html = `<div class="monumento-popup"><h4>${props.nombre || 'Monumento Nacional'}</h4><dl>`;
+  filas.forEach(([k, v]) => { html += `<dt>${k}</dt><dd>${v}</dd>`; });
+  html += '</dl>';
+  if (props.decreto_url) {
+    html += `<p><a href="${props.decreto_url}" target="_blank" rel="noopener">Ver decreto</a></p>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function onEachMonumento(feature, layer) {
+  const html = popupMonumento(feature.properties || {});
+  // OJO: no se usa layer.bindPopup(). Internamente Leaflet llama a DomEvent.stop()
+  // en el clic para "evitar el clic del mapa", y por eso el clic nunca llegaba
+  // al mapa y no se consultaba el rol del SII. Abriendo el popup a mano, el clic
+  // sigue su camino: se abre el popup del monumento Y además se consulta el rol.
+  layer.on('click', (e) => {
+    // Si hay comuna elegida, el mapa va a poner el pin de rol en este mismo
+    // punto: se sube el popup para que no lo tape (el pin mide ~41px de alto).
+    const offset = [0, -34];
+    L.popup({ offset })
+      .setLatLng(e.latlng)
+      .setContent(html)
+      .openOn(map);
+  });
+}
+
+function crearCapaCategoria(categoria, features) {
+  const color = colorCategoria(categoria);
+  return L.geoJSON({ type: 'FeatureCollection', features }, {
+    pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
+      radius: 5,
+      weight: 1,
+      color: '#2b1a20',
+      fillColor: color,
+      fillOpacity: 0.85,
+    }),
+    style: () => ({
+      color,
+      weight: 2,
+      fillColor: color,
+      fillOpacity: 0.18,
+    }),
+    onEachFeature: onEachMonumento,
+  });
+}
+
+// Los dos .geojson (puntos y polígonos) se cargan una sola vez entre las tres
+// categorías, y se agrupan por "categoria" para que cada checkbox mezcle los
+// puntos y los polígonos que le correspondan.
+let monumentosCargando = null;
+let monumentosPorCategoria = null;
+const capasMonumentosActivas = {};
+
+async function cargarDatosMonumentos() {
+  if (monumentosPorCategoria) return monumentosPorCategoria;
+  if (!monumentosCargando) {
+    monumentosCargando = Promise.all([
+      fetch('monumentos_puntos.geojson').then((r) => {
+        if (!r.ok) throw new Error('HTTP ' + r.status + ' en monumentos_puntos.geojson');
+        return r.json();
+      }),
+      fetch('monumentos_poligonos.geojson').then((r) => {
+        if (!r.ok) throw new Error('HTTP ' + r.status + ' en monumentos_poligonos.geojson');
+        return r.json();
+      }),
+    ]).then(([puntos, poligonos]) => {
+      // Los monumentos que tienen polígono traen además un punto (centroide) con
+      // el mismo codigo_cmn. Ese punto se descarta para que no aparezca en medio
+      // del polígono; solo quedan los puntos de monumentos sin polígono.
+      const codigosConPoligono = new Set(
+        poligonos.features
+          .map((f) => f.properties && f.properties.codigo_cmn)
+          .filter(Boolean)
+      );
+      const puntosSinPoligono = puntos.features.filter(
+        (f) => !codigosConPoligono.has(f.properties && f.properties.codigo_cmn)
+      );
+      const todas = [...puntosSinPoligono, ...poligonos.features];
+      const porCategoria = {};
+      todas.forEach((f) => {
+        const cat = (f.properties && f.properties.categoria) || 'Otro';
+        if (!porCategoria[cat]) porCategoria[cat] = [];
+        porCategoria[cat].push(f);
+      });
+      monumentosPorCategoria = porCategoria;
+      return porCategoria;
+    });
+  }
+  return monumentosCargando;
+}
+
+function configurarToggleCategoria({ checkboxId, categoria }) {
+  const checkbox = document.getElementById(checkboxId);
+  const loadingEl = document.getElementById('loading-monumentos');
+
+  checkbox.addEventListener('change', async () => {
+    if (!checkbox.checked) {
+      if (capasMonumentosActivas[categoria]) map.removeLayer(capasMonumentosActivas[categoria]);
+      return;
+    }
+    if (capasMonumentosActivas[categoria]) {
+      capasMonumentosActivas[categoria].addTo(map);
+      return;
+    }
+    loadingEl.style.display = 'block';
+    checkbox.disabled = true;
+    try {
+      const porCategoria = await cargarDatosMonumentos();
+      const capa = crearCapaCategoria(categoria, porCategoria[categoria] || []);
+      capasMonumentosActivas[categoria] = capa;
+      capa.addTo(map);
+    } catch (err) {
+      console.error('Error cargando monumentos', err);
+      checkbox.checked = false;
+      setStatus('No se pudo cargar la capa de monumentos: ' + err.message, true);
+    } finally {
+      loadingEl.style.display = 'none';
+      checkbox.disabled = false;
+    }
+  });
+}
+
+configurarToggleCategoria({ checkboxId: 'toggle-mh', categoria: 'Monumento Histórico' });
+configurarToggleCategoria({ checkboxId: 'toggle-zt', categoria: 'Zona Típica o Pintoresca' });
+configurarToggleCategoria({ checkboxId: 'toggle-sn', categoria: 'Santuario de la Naturaleza' });
+
+// ---- Detección automática de comuna a partir del punto clicado ----
+// Se usa comunas.geojson (límites) para saber en qué comuna cayó el clic, y
+// comunas.js (COMUNAS_SII) para traducir el nombre al código interno del SII.
+// Diferencias de ortografía entre ambas fuentes (nombre SII → nombre en geojson):
+const ALIAS_NOMBRE = {
+  'LACALERA': 'CALERA',
+  'LLAYLLAY': 'LLAILLAY',
+  'SANFRANCISCODEMOSTAZAL': 'MOSTAZAL',
+  'TREHUACO': 'TREGUACO',
+};
+function normNombre(s) {
+  return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+const siiPorNombre = {};
+COMUNAS_SII.forEach(([codigo, nombre]) => {
+  const k = normNombre(nombre);
+  siiPorNombre[ALIAS_NOMBRE[k] || k] = { codigo, nombre };
+});
+
+let comunasGeo = null;
+let comunasGeoCargando = null;
+
+function cargarComunasGeo() {
+  if (comunasGeo) return Promise.resolve(comunasGeo);
+  if (!comunasGeoCargando) {
+    const origen = (typeof COMUNAS_GEO !== 'undefined')
+      ? Promise.resolve(COMUNAS_GEO)
+      : fetch('comunas.geojson').then((r) => {
+          if (!r.ok) throw new Error('HTTP ' + r.status + ' en comunas.geojson');
+          return r.json();
+        });
+    comunasGeoCargando = origen
+      .then((gj) => {
+        const lista = [];
+        gj.features.forEach((f) => {
+          const sii = siiPorNombre[normNombre((f.properties && f.properties.Comuna) || '')];
+          if (!sii || !f.geometry) return;
+          const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          polys.forEach((p) => p[0].forEach(([x, y]) => {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }));
+          lista.push({ codigo: sii.codigo, nombre: sii.nombre, polys, bbox: [minX, minY, maxX, maxY] });
+        });
+        comunasGeo = lista;
+        return lista;
+      })
+      .catch((err) => {
+        comunasGeoCargando = null; // permite reintentar en el próximo clic
+        throw err;
+      });
+  }
+  return comunasGeoCargando;
+}
+cargarComunasGeo().catch((err) => console.error('No se pudo precargar comunas.geojson', err));
+
+function puntoEnAnillo(x, y, anillo) {
+  let dentro = false;
+  for (let i = 0, j = anillo.length - 1; i < anillo.length; j = i++) {
+    const xi = anillo[i][0], yi = anillo[i][1], xj = anillo[j][0], yj = anillo[j][1];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) dentro = !dentro;
+  }
+  return dentro;
+}
+function puntoEnPoligono(x, y, poly) {
+  if (!puntoEnAnillo(x, y, poly[0])) return false;
+  for (let h = 1; h < poly.length; h++) if (puntoEnAnillo(x, y, poly[h])) return false;
+  return true;
+}
+function distanciaSegmento(px, py, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const l2 = dx * dx + dy * dy;
+  let t = l2 ? ((px - a[0]) * dx + (py - a[1]) * dy) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (a[0] + t * dx), py - (a[1] + t * dy));
+}
+
+// Devuelve las comunas donde puede estar el punto: primero la que lo contiene y,
+// como respaldo, las vecinas a menos de ~500 m (los límites del geojson están
+// simplificados, así que cerca de un borde la comuna real podría ser la vecina).
+function comunasCandidatas(lat, lng) {
+  const MARGEN = 0.005; // grados (~550 m)
+  const dentro = [];
+  const cerca = [];
+  for (const c of comunasGeo) {
+    const [x0, y0, x1, y1] = c.bbox;
+    if (lng < x0 - MARGEN || lng > x1 + MARGEN || lat < y0 - MARGEN || lat > y1 + MARGEN) continue;
+    if (c.polys.some((p) => puntoEnPoligono(lng, lat, p))) { dentro.push(c); continue; }
+    let min = Infinity;
+    c.polys.forEach((p) => {
+      const r = p[0];
+      for (let i = 0; i < r.length - 1; i++) {
+        const d = distanciaSegmento(lng, lat, r[i], r[i + 1]);
+        if (d < min) min = d;
+      }
+    });
+    if (min <= MARGEN) cerca.push({ c, d: min });
+  }
+  cerca.sort((a, b) => a.d - b.d);
+  return [...dentro, ...cerca.map((o) => o.c)];
+}
+
+// En el SII, Santiago está dividida en tres zonas con capas propias, pero en
+// comunas.geojson es una sola comuna. Al caer un clic en ella se prueban las tres.
+const SUBCOMUNAS_SII = { '13101': ['13101', '13134', '13135'] };
+const nombreSiiPorCodigo = {};
+COMUNAS_SII.forEach(([codigo, nombre]) => { nombreSiiPorCodigo[codigo] = nombre; });
+
+// Servicios/capas del SII por comuna (se piden una sola vez y se recuerdan).
+const serviciosCache = {};
+async function obtenerServiciosComuna(codigo) {
+  if (serviciosCache[codigo]) return serviciosCache[codigo];
+  const info = await callProxy('/getServicioPredio', { comuna: Number(codigo) });
+  const servicios = (info && info.data) || [];
+  const predios = servicios.find((s) => s.aliasServicio === 'P') || servicios[0];
+  if (!predios) return null;
+  serviciosCache[codigo] = { layer: predios.layer, servicios };
+  return serviciosCache[codigo];
+}
+
+// ---- Clic en el mapa → detectar comuna → consultar rol ----
+let clickSeq = 0; // para ignorar respuestas de clics anteriores
+map.on('click', async (e) => {
+  const seq = ++clickSeq;
+
+  if (marker) map.removeLayer(marker);
+  marker = L.marker(e.latlng).addTo(map);
+
+  hideResult();
+  setStatus('Detectando comuna…');
+
+  try {
+    try {
+      await cargarComunasGeo();
+    } catch (err) {
+      console.error(err);
+      setStatus('No se pudieron cargar los límites de comunas: ' + err.message + '. Sube comunas_geo.js junto a index.html.', true);
+      return;
+    }
+    const candidatas = comunasCandidatas(e.latlng.lat, e.latlng.lng);
+    if (!candidatas.length) {
+      setStatus('No se pudo determinar la comuna de ese punto (¿está fuera de Chile?).', true);
+      return;
+    }
+
+    let ultimoSinRol = null;
+    for (const c of candidatas.slice(0, 3)) {
+      // Una comuna del geojson puede corresponder a varias "comunas" del SII
+      // (Santiago → Santiago, Santiago Oeste, Santiago Sur). Se consultan todas
+      // en paralelo y gana la que devuelva un rol en ese punto.
+      const codigos = SUBCOMUNAS_SII[c.codigo] || [c.codigo];
+      setStatus('Consultando rol en ' + c.nombre + '…');
+
+      const respuestas = await Promise.all(codigos.map(async (codigo) => {
+        try {
+          const cfg = await obtenerServiciosComuna(codigo);
+          if (!cfg) return { vacio: true };
+          const r = await consultarRolConReintentos(e.latlng, cfg.layer);
+          if (!r) return { vacio: true };
+          r.comunaCodigo = codigo;
+          r.comunaNombre = nombreSiiPorCodigo[codigo] || c.nombre;
+          return { r };
+        } catch (err) {
+          console.error(err);
+          return { error: err };
+        }
+      }));
+      if (seq !== clickSeq) return;
+
+      const conError = respuestas.filter((x) => x.error);
+      if (conError.length === respuestas.length) {
+        setStatus('Falló la conexión con el proxy/SII al consultar ' + c.nombre + ': ' + conError[0].error.message, true);
+        return;
+      }
+
+      const resultados = respuestas.filter((x) => x.r).map((x) => x.r);
+      const conRol = resultados.find((r) => r.rol);
+      if (conRol) {
+        showResult(conRol);
+        setStatus('');
+        return;
+      }
+      if (resultados.length) ultimoSinRol = resultados[0]; // hay entidad pero sin rol individual
+    }
+
+    if (ultimoSinRol) {
+      setStatus('Ese punto no tiene un rol de propiedad asociado (puede ser calle, área verde o espacio público). Prueba haciendo clic más cerca del centro de una construcción.', true);
+      console.debug('SII: existePredio=true pero sin rol resoluble. Respuesta cruda:', ultimoSinRol.raw);
+    } else {
+      setStatus('No se encontró información en ese punto. Prueba haciendo clic justo sobre el predio, con más zoom.', true);
+    }
+  } catch (err) {
+    console.error(err);
+    if (seq === clickSeq) setStatus('No se pudo consultar el rol (' + err.message + ').', true);
+  }
+});
+
+// Intenta obtener el rol en el punto clickeado. Si el SII devuelve existePredio
+// pero sin datos de rol resolubles (muy común justo en los bordes de un predio,
+// donde el pixel consultado cae sobre la línea divisoria), reintenta consultando
+// unos pocos píxeles alrededor del punto original hasta encontrar un resultado
+// con rol, o hasta agotar los intentos.
+async function consultarRolConReintentos(latlng, layerName) {
+  const offsets = [
+    [0, 0],
+    [4, 0], [-4, 0], [0, 4], [0, -4],
+    [6, 6], [-6, -6], [6, -6], [-6, 6],
+    [10, 0], [-10, 0], [0, 10], [0, -10]
+  ];
+
+  const bounds = map.getBounds();
+  const size = map.getSize();
+  const basePoint = map.latLngToContainerPoint(latlng);
+
+  let ultimoConPredio = null;
+
+  for (const [dx, dy] of offsets) {
+    const clickInfo = {
+      x: basePoint.x + dx,
+      y: basePoint.y + dy,
+      southwestx: bounds.getSouthWest().lat,
+      southwesty: bounds.getSouthWest().lng,
+      northeastx: bounds.getNorthEast().lat,
+      northeasty: bounds.getNorthEast().lng,
+      layer: layerName,
+      width: size.x,
+      height: size.y,
+      servicios: [{ layer: layerName }]
+    };
+
+    const res = await callProxy('/getFeatureInfo', { clickInfo });
+    const data = res && res.data;
+    if (!data || !data.existePredio) continue;
+
+    const resuelto = resolverCamposPredio(data);
+    if (resuelto.rol) return resuelto; // encontramos un rol válido, listo
+    ultimoConPredio = resuelto; // guardamos por si ningún intento trae rol
+  }
+
+  return ultimoConPredio; // puede ser null (nada encontrado) o un predio sin rol
+}
+
+// El SII no siempre usa exactamente los mismos nombres de campo en su respuesta
+// (varía levemente según comuna/capa). Esta función prueba varias alternativas
+// conocidas para cada dato antes de darse por vencida.
+function resolverCamposPredio(data) {
+  const rol = pick(data, ['rol', 'ROL', 'rolPredio', 'numeroRol', 'rolCompleto', 'nomRol']);
+  const nombreComuna = pick(data, ['nombreComuna', 'comuna', 'NOM_COMUNA', 'nombreComunaPredio']);
+  const direccion = pick(data, ['direccion', 'DIRECCION', 'direccionPredio', 'calle']);
+  const destinoDescripcion = pick(data, ['destinoDescripcion', 'destino', 'DESTINO', 'destinoPredio']);
+  const valorTotalRaw = pick(data, ['valorTotal', 'avaluoTotal', 'AVALUO_TOTAL', 'monto', 'valorAvaluo']);
+  const valorTotal = valorTotalRaw !== undefined ? Number(valorTotalRaw) : undefined;
+
+  return { rol, nombreComuna, direccion, destinoDescripcion, valorTotal, raw: data };
+}
+
+function pick(obj, keys) {
+  for (const k of keys) {
+    const v = obj[k];
+    if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+  }
+  return undefined;
+}
+
+// ---- Utilidades de UI ----
+function setStatus(msg, isError) {
+  const el = document.getElementById('status');
+  el.textContent = msg || '';
+  el.classList.toggle('error', !!isError);
+}
+
+function hideResult() {
+  document.getElementById('result').classList.remove('visible');
+  document.getElementById('copied-msg').classList.remove('visible');
+}
+
+function showResult(data) {
+  playClickSound();
+  document.getElementById('rol-value').textContent = data.rol || '—';
+
+  const details = document.getElementById('details');
+  const rows = [
+    ['Comuna', data.nombreComuna],
+    ['Dirección', data.direccion],
+    ['Destino', data.destinoDescripcion],
+    ['Avalúo total', formatCLP(data.valorTotal)],
+  ].filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== '');
+
+  details.innerHTML = '';
+  rows.forEach(([label, value]) => {
+    const row = document.createElement('div');
+    row.innerHTML = `<dt>${label}</dt><dd>${value}</dd>`;
+    details.appendChild(row);
+  });
+
+  document.getElementById('result').classList.add('visible');
+
+  const { manzana, propiedad } = splitRol(data.rol);
+
+  const manzanaBtn = document.getElementById('copy-manzana-btn');
+  const propiedadBtn = document.getElementById('copy-propiedad-btn');
+
+  manzanaBtn.disabled = !manzana;
+  manzanaBtn.onclick = () => {
+    navigator.clipboard.writeText(manzana).then(() => {
+      showCopiedMsg('Rol manzana copiado. Pégalo (Ctrl+V) en el formulario de TGR que se acaba de abrir.');
+      window.open(TGR_URL, '_blank', 'noopener');
+    });
+  };
+
+  propiedadBtn.disabled = !propiedad;
+  propiedadBtn.onclick = () => {
+    navigator.clipboard.writeText(propiedad).then(() => {
+      showCopiedMsg('Rol predio copiado.');
+    });
+  };
+
+  const unidadesBtn = document.getElementById('ver-unidades-btn');
+  if (esUnidadDeCopropiedad(propiedad)) {
+    unidadesBtn.style.display = '';
+    unidadesBtn.onclick = () => abrirModalUnidades(data.comunaCodigo, data.nombreComuna || data.comunaNombre, data.direccion);
+  } else {
+    unidadesBtn.style.display = 'none';
+  }
+}
+
+// Roles con predio 90001, 90002, ... corresponden a unidades individuales
+// (deptos, bodegas, estacionamientos) dentro de un edificio acogido a la
+// Ley 19.537 de Copropiedad Inmobiliaria.
+function esUnidadDeCopropiedad(propiedad) {
+  return !!propiedad && /^90\d{3,}$/.test(propiedad);
+}
+
+// ---- Modal "Unidades del edificio" ----
+const modalOverlay = document.getElementById('modal-overlay');
+document.getElementById('modal-close').addEventListener('click', cerrarModalUnidades);
+modalOverlay.addEventListener('click', (e) => {
+  if (e.target === modalOverlay) cerrarModalUnidades();
+});
+
+function cerrarModalUnidades() {
+  modalOverlay.classList.remove('visible');
+}
+
+// A partir de una dirección de unidad ("AV OHIGGINS 1650 DP 205 EDIF LEBLON")
+// intenta quedarse solo con "calle + número" ("AV OHIGGINS 1650"), cortando en
+// el primer número, para usarla como valor inicial del buscador por dirección.
+function direccionBase(direccion) {
+  if (!direccion) return '';
+  const m = direccion.match(/^(.*?\d+)/);
+  return (m ? m[1] : direccion).trim();
+}
+
+// Separa un texto tipo "Los Aliaga 531" en calle ("Los Aliaga") y número ("531"),
+// cortando en el último grupo de dígitos.
+function separarCalleYNumero(texto) {
+  const t = (texto || '').trim();
+  const m = t.match(/^(.*?)\s+(\d+)\s*$/);
+  if (!m) return { calle: t, numero: '' };
+  return { calle: m[1].trim(), numero: m[2].trim() };
+}
+
+async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic) {
+  document.getElementById('modal-title').textContent = 'Unidades en esta dirección';
+  const body = document.getElementById('modal-body');
+  modalOverlay.classList.add('visible');
+
+  body.innerHTML = `
+    <div class="modal-filter">
+      <label for="filtro-direccion">Calle y número</label>
+      <div style="display:flex; gap:0.5rem;">
+        <input type="text" id="filtro-direccion" autocomplete="off" style="flex:1;">
+        <button class="primary" id="buscar-direccion-btn" style="white-space:nowrap; padding:0.5rem 0.9rem;">Buscar</button>
+      </div>
+      <div class="filter-hint">Busca directamente en el SII todas las unidades (departamentos, bodegas, estacionamientos) registradas en esa calle y número.</div>
+    </div>
+    <div id="modal-results"></div>
+  `;
+
+  const input = document.getElementById('filtro-direccion');
+  const resultsEl = document.getElementById('modal-results');
+  const buscarBtn = document.getElementById('buscar-direccion-btn');
+  input.value = direccionBase(direccionClic);
+
+  async function ejecutarBusqueda() {
+    const { calle, numero } = separarCalleYNumero(input.value);
+    if (!calle || !numero) {
+      resultsEl.innerHTML = '<p class="modal-error">Escribe la calle seguida del número, por ejemplo "Los Aliaga 531".</p>';
+      return;
+    }
+    resultsEl.innerHTML = '<p class="modal-loading">Buscando…</p>';
+    try {
+      const unidades = await buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero);
+      renderUnidades(unidades);
+    } catch (err) {
+      console.error('Error buscando por dirección', err);
+      const msg = (err && err.message) ? err.message : String(err);
+      resultsEl.innerHTML = `<p class="modal-error">No se pudo consultar (${escapeHtml(msg)}). Revisa la URL del proxy o intenta de nuevo.</p>`;
+    }
+  }
+
+  function renderUnidades(unidades) {
+    if (!unidades.length) {
+      resultsEl.innerHTML = '<p class="modal-error">No se encontraron unidades para esa calle y número.</p>';
+      return;
+    }
+    const ordenadas = unidades.slice().sort((a, b) => (a.predio || 0) - (b.predio || 0));
+    const ul = document.createElement('ul');
+    ul.className = 'unit-list';
+    ordenadas.forEach(u => {
+      const li = document.createElement('li');
+      const rolEl = document.createElement('span');
+      rolEl.className = 'unit-rol';
+      rolEl.textContent = u.rol || `${u.manzana}-${u.predio}`;
+      const dirEl = document.createElement('span');
+      dirEl.className = 'unit-dir';
+      dirEl.textContent = u.direccion || 'Sin dirección registrada';
+      li.appendChild(rolEl);
+      li.appendChild(dirEl);
+      ul.appendChild(li);
+    });
+    resultsEl.innerHTML = '';
+    resultsEl.appendChild(ul);
+    const nota = document.createElement('p');
+    nota.className = 'modal-loading';
+    nota.style.marginTop = '0.6rem';
+    nota.textContent = `${ordenadas.length} unidad(es) encontrada(s).`;
+    resultsEl.appendChild(nota);
+  }
+
+  buscarBtn.addEventListener('click', ejecutarBusqueda);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') ejecutarBusqueda(); });
+
+  ejecutarBusqueda(); // búsqueda automática al abrir, con la dirección del clic
+}
+
+// Confirmado capturando el request real del sitio oficial del SII (buscador por
+// dirección del mapa): el body va como { rolDireccion: {comuna, nombreComuna,
+// calle, numeroCalleStr, detalle}, servicios: [] }. A diferencia de getFeatureInfo,
+// esta consulta trae TODAS las unidades de esa calle/número en una sola llamada,
+// sin necesidad de recorrer números de predio uno por uno.
+async function buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero) {
+  const res = await callProxy('/getPrediosDireccion', {
+    rolDireccion: {
+      comuna: String(comunaCodigo),
+      nombreComuna: nombreComuna || '',
+      calle: calle.toLowerCase(),
+      numeroCalleStr: String(numero),
+      detalle: 0
+    },
+    servicios: []
+  });
+  return Array.isArray(res && res.data) ? res.data : [];
+}
+
+// El rol del SII viene con el formato "MANZANA-PROPIEDAD" (ej: "1234-56").
+// Si por algún motivo no viene el guión, todo se trata como "manzana".
+function splitRol(rol) {
+  if (!rol) return { manzana: '', propiedad: '' };
+  const idx = rol.indexOf('-');
+  if (idx === -1) return { manzana: rol.trim(), propiedad: '' };
+  return { manzana: rol.slice(0, idx).trim(), propiedad: rol.slice(idx + 1).trim() };
+}
+
+function showCopiedMsg(msg) {
+  const el = document.getElementById('copied-msg');
+  el.textContent = msg;
+  el.classList.add('visible');
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
+
+function formatCLP(n) {
+  if (typeof n !== 'number' || Number.isNaN(n)) return '';
+  return '$' + n.toLocaleString('es-CL');
+}
+
+// El SII exige que metaData venga con namespace / conversationId / transactionId
+// rellenados; si no, responde 200 pero con data:null y una lista de errores.
+const SII_NAMESPACE = 'cl.sii.sdi.lob.bbrr.mapas.data.api.interfaces.MapasFacadeService';
+let siiConversationId = null; // se fija una vez por sesión de navegación
+let siiTransactionCounter = 0; // se incrementa en cada llamada
+
+function uuidv4() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+async function callProxy(path, data) {
+  if (!siiConversationId) siiConversationId = uuidv4();
+  siiTransactionCounter += 1;
+
+  const metaData = {
+    namespace: SII_NAMESPACE + path,       // ej: .../MapasFacadeService/getServicioPredio
+    conversationId: siiConversationId,
+    transactionId: uuidv4(),
+  };
+
+  const resp = await fetch(PROXY_BASE + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ metaData, data })
+  });
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  const json = await resp.json();
+  if (json && json.metaData && Array.isArray(json.metaData.errors) && json.metaData.errors.length) {
+    console.error('SII metaData errors:', json.metaData.errors);
+  }
+  return json;
+}
+</script>
+</body>
+</html>
