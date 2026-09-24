@@ -768,6 +768,12 @@ function comunasCandidatas(lat, lng) {
   return [...dentro, ...cerca.map((o) => o.c)];
 }
 
+// En el SII, Santiago está dividida en tres zonas con capas propias, pero en
+// comunas.geojson es una sola comuna. Al caer un clic en ella se prueban las tres.
+const SUBCOMUNAS_SII = { '13101': ['13101', '13134', '13135'] };
+const nombreSiiPorCodigo = {};
+COMUNAS_SII.forEach(([codigo, nombre]) => { nombreSiiPorCodigo[codigo] = nombre; });
+
 // Servicios/capas del SII por comuna (se piden una sola vez y se recuerdan).
 const serviciosCache = {};
 async function obtenerServiciosComuna(codigo) {
@@ -807,30 +813,42 @@ map.on('click', async (e) => {
 
     let ultimoSinRol = null;
     for (const c of candidatas.slice(0, 3)) {
+      // Una comuna del geojson puede corresponder a varias "comunas" del SII
+      // (Santiago → Santiago, Santiago Oeste, Santiago Sur). Se consultan todas
+      // en paralelo y gana la que devuelva un rol en ese punto.
+      const codigos = SUBCOMUNAS_SII[c.codigo] || [c.codigo];
       setStatus('Consultando rol en ' + c.nombre + '…');
-      let cfg;
-      try {
-        cfg = await obtenerServiciosComuna(c.codigo);
-      } catch (err) {
-        console.error(err);
-        if (seq === clickSeq) setStatus('Falló la conexión con el proxy/SII al pedir la comuna ' + c.nombre + ': ' + err.message, true);
+
+      const respuestas = await Promise.all(codigos.map(async (codigo) => {
+        try {
+          const cfg = await obtenerServiciosComuna(codigo);
+          if (!cfg) return { vacio: true };
+          const r = await consultarRolConReintentos(e.latlng, cfg.layer);
+          if (!r) return { vacio: true };
+          r.comunaCodigo = codigo;
+          r.comunaNombre = nombreSiiPorCodigo[codigo] || c.nombre;
+          return { r };
+        } catch (err) {
+          console.error(err);
+          return { error: err };
+        }
+      }));
+      if (seq !== clickSeq) return;
+
+      const conError = respuestas.filter((x) => x.error);
+      if (conError.length === respuestas.length) {
+        setStatus('Falló la conexión con el proxy/SII al consultar ' + c.nombre + ': ' + conError[0].error.message, true);
         return;
       }
-      if (seq !== clickSeq) return;
-      if (!cfg) continue;
 
-      const resuelto = await consultarRolConReintentos(e.latlng, cfg.layer);
-      if (seq !== clickSeq) return;
-      if (!resuelto) continue;
-
-      resuelto.comunaCodigo = c.codigo;
-      resuelto.comunaNombre = c.nombre;
-      if (resuelto.rol) {
-        showResult(resuelto);
+      const resultados = respuestas.filter((x) => x.r).map((x) => x.r);
+      const conRol = resultados.find((r) => r.rol);
+      if (conRol) {
+        showResult(conRol);
         setStatus('');
         return;
       }
-      ultimoSinRol = resuelto; // hay entidad pero sin rol individual
+      if (resultados.length) ultimoSinRol = resultados[0]; // hay entidad pero sin rol individual
     }
 
     if (ultimoSinRol) {
