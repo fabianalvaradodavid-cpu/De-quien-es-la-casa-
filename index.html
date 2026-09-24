@@ -502,10 +502,20 @@ function popupMonumento(props) {
 }
 
 function onEachMonumento(feature, layer) {
-  // No frenamos la propagación del clic: así se abre el popup del monumento
-  // Y además el clic le sigue llegando al mapa, que dispara la consulta de rol
-  // del SII para ese mismo punto.
-  layer.bindPopup(popupMonumento(feature.properties || {}));
+  const html = popupMonumento(feature.properties || {});
+  // OJO: no se usa layer.bindPopup(). Internamente Leaflet llama a DomEvent.stop()
+  // en el clic para "evitar el clic del mapa", y por eso el clic nunca llegaba
+  // al mapa y no se consultaba el rol del SII. Abriendo el popup a mano, el clic
+  // sigue su camino: se abre el popup del monumento Y además se consulta el rol.
+  layer.on('click', (e) => {
+    // Si hay comuna elegida, el mapa va a poner el pin de rol en este mismo
+    // punto: se sube el popup para que no lo tape (el pin mide ~41px de alto).
+    const offset = currentLayerName ? [0, -34] : [0, 7];
+    L.popup({ offset })
+      .setLatLng(e.latlng)
+      .setContent(html)
+      .openOn(map);
+  });
 }
 
 function crearCapaCategoria(categoria, features) {
@@ -548,7 +558,18 @@ async function cargarDatosMonumentos() {
         return r.json();
       }),
     ]).then(([puntos, poligonos]) => {
-      const todas = [...puntos.features, ...poligonos.features];
+      // Los monumentos que tienen polígono traen además un punto (centroide) con
+      // el mismo codigo_cmn. Ese punto se descarta para que no aparezca en medio
+      // del polígono; solo quedan los puntos de monumentos sin polígono.
+      const codigosConPoligono = new Set(
+        poligonos.features
+          .map((f) => f.properties && f.properties.codigo_cmn)
+          .filter(Boolean)
+      );
+      const puntosSinPoligono = puntos.features.filter(
+        (f) => !codigosConPoligono.has(f.properties && f.properties.codigo_cmn)
+      );
+      const todas = [...puntosSinPoligono, ...poligonos.features];
       const porCategoria = {};
       todas.forEach((f) => {
         const cat = (f.properties && f.properties.categoria) || 'Otro';
