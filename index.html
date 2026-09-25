@@ -988,20 +988,34 @@ function hideResult() {
 }
 
 // ---- Capa de deslindes de predios (WMS del SII) ----
-// Confirmado capturando dos peticiones reales del mapa oficial:
-//   comuna 1201  (IQUIQUE)  → layers=sii:BR_CART_IQUIQUE_WMS
-//   comuna 13159 (RECOLETA) → layers=sii:BR_CART_RECOLETA_WMS
-// El patrón parece ser "BR_CART_" + nombre de comuna en mayúsculas sin tildes/
-// espacios + "_WMS". Para comunas de un solo nombre (la mayoría) debería andar
-// igual; para comunas compuestas (ej. "SAN FERNANDO") es una suposición sin
-// confirmar — si el overlay sale en blanco para alguna, es la primera sospecha.
+// Confirmado capturando peticiones reales del mapa oficial:
+//   comuna 1201  (IQUIQUE)             → layers=sii:BR_CART_IQUIQUE_WMS
+//   comuna 13159 (RECOLETA)            → layers=sii:BR_CART_RECOLETA_WMS
+//   comuna 16162 (PEDRO AGUIRRE CERDA) → layers=sii:BR_CART_P_AGUIRRE_CERDA_WMS
+// El patrón es "BR_CART_" + nombre de comuna en mayúsculas sin tildes, con las
+// palabras separadas por "_" (no pegadas) + "_WMS". Cuando el nombre completo
+// es muy largo, el SII trunca alguna palabra a mano (ej. "PEDRO"→"P") sin una
+// regla fija — el GetCapabilities del WMS está bloqueado por su proxy, así que
+// no hay forma de sacar la lista completa de una vez; estas excepciones se van
+// agregando a mano a medida que aparecen (si el overlay sale en blanco para
+// una comuna compuesta, es la primera sospechosa).
 const SII_WMS_BASE = 'https://www4.sii.cl/mapasui/services/ui/wmsProxyService/call';
 
-function nombreWmsComuna(nombre) {
+const EXCEPCIONES_WMS_COMUNA = {
+  '16162': 'P_AGUIRRE_CERDA', // Pedro Aguirre Cerda
+};
+
+function nombreWmsComuna(nombre, codigoComuna) {
+  if (codigoComuna && EXCEPCIONES_WMS_COMUNA[codigoComuna]) {
+    return EXCEPCIONES_WMS_COMUNA[codigoComuna];
+  }
   return (nombre || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '') // quita tildes (á→a, ñ→n, etc.)
-    .replace(/[^A-Za-z0-9]/g, '')    // quita espacios, apóstrofos, guiones
+    .trim()
+    .split(/\s+/)                    // separa por palabras
+    .join('_')                       // las une con guion bajo (no las pega)
+    .replace(/[^A-Za-z0-9_]/g, '')   // limpia cualquier caracter raro remanente
     .toUpperCase();
 }
 
@@ -1024,7 +1038,7 @@ function actualizarCapaDeslindes(codigoComuna) {
   if (!nombre) return;
 
   capaDeslindes = L.tileLayer.wms(SII_WMS_BASE, {
-    layers: 'sii:BR_CART_' + nombreWmsComuna(nombre) + '_WMS',
+    layers: 'sii:BR_CART_' + nombreWmsComuna(nombre, String(codigo)) + '_WMS',
     styles: 'PREDIOS_WMS_V0',
     format: 'image/png',
     transparent: true,
