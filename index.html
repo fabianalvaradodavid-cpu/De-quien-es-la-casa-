@@ -496,6 +496,18 @@
       <img id="mascot" src="mascota.jpg" alt="Mascota">
     </div>
     <div class="layers-box">
+      <span class="layers-title">Mapa base</span>
+      <label class="layer-toggle">
+        <input type="radio" name="mapa-base" value="satelital" checked>
+        Satelital
+      </label>
+      <label class="layer-toggle">
+        <input type="radio" name="mapa-base" value="callejero">
+        Callejero
+      </label>
+    </div>
+
+    <div class="layers-box">
       <span class="layers-title">Monumentos Nacionales</span>
       <label class="layer-toggle">
         <input type="checkbox" id="toggle-mh">
@@ -583,26 +595,51 @@ const map = L.map('map', {
   bearing: 0
 }).setView([-33.4489, -70.6693], 12);
 
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-  maxZoom: 19,
-  attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, GIS User Community'
-}).addTo(map);
+// Mapa satelital: imagen + etiquetas + calles (estas últimas solo desde zoom 15).
+const capaSatelital = L.layerGroup([
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, GIS User Community'
+  }),
+  // Capa de referencia con nombres de comunas, lugares, etc. sobre la imagen satelital
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    attribution: 'Labels &copy; Esri'
+  }),
+  // Calles con nombre. Solo al acercarse: a zoom de ciudad Esri las dibuja como
+  // autopistas gruesas que tapan la imagen; de cerca son calles finas con nombre.
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    minZoom: 15,
+    attribution: 'Streets &copy; Esri'
+  })
+]);
 
-// Capa de referencia con nombres de calles, comunas, etc. sobre la imagen satelital
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+// Mapa callejero (no satelital): Esri World Street Map, trae calles y nombres propios.
+const capaCallejera = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
   maxZoom: 19,
-  attribution: 'Labels &copy; Esri'
-}).addTo(map);
+  attribution: 'Tiles &copy; Esri — Source: Esri, HERE, Garmin, OpenStreetMap contributors, GIS User Community'
+});
 
-// Capa de calles y su nomenclatura (World_Boundaries_and_Places casi no trae calles,
-// esta capa sí las dibuja con su nombre). Se muestra solo al acercarse: a zoom
-// de ciudad completa, Esri la dibuja como autopistas gruesas resaltadas, que
-// tapan la imagen satelital; al acercarse pasa a mostrar calles finas con nombre.
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
-  maxZoom: 19,
-  minZoom: 15,
-  attribution: 'Streets &copy; Esri'
-}).addTo(map);
+const MAPAS_BASE = { satelital: capaSatelital, callejero: capaCallejera };
+let mapaBaseActual = capaSatelital;
+capaSatelital.addTo(map);
+
+document.querySelectorAll('input[name="mapa-base"]').forEach((radio) => {
+  radio.addEventListener('change', () => {
+    if (!radio.checked) return;
+    const nueva = MAPAS_BASE[radio.value];
+    if (nueva === mapaBaseActual) return;
+    map.removeLayer(mapaBaseActual);
+    nueva.addTo(map);
+    // Las capas base van siempre debajo (deslindes SII, monumentos, etc. quedan encima)
+    if (nueva.bringToBack) nueva.bringToBack();
+    // En el grupo satelital se mandan al fondo en orden inverso para que la imagen
+    // quede abajo y las etiquetas/calles encima de ella.
+    else nueva.getLayers().slice().reverse().forEach((l) => l.bringToBack && l.bringToBack());
+    mapaBaseActual = nueva;
+  });
+});
 
 // ---- Ocultar/mostrar el panel lateral ----
 const mainEl = document.querySelector('main');
@@ -679,6 +716,23 @@ const RotateControl = L.Control.extend({
 });
 map.addControl(new RotateControl());
 
+// ---- El mapa solo queda en orientaciones ortogonales (0°, 90°, 180°, 270°) ----
+function anguloRecto(bearing) {
+  return ((Math.round(bearing / 90) * 90) % 360 + 360) % 360;
+}
+function ajustarAAnguloRecto() {
+  const b = map.getBearing() || 0;
+  const recto = anguloRecto(b);
+  if (Math.abs(recto - b) > 0.01) map.setBearing(recto);
+  actualizarBotonRotar(recto);
+}
+
+// El giro con dos dedos (pantallas táctiles) es libre mientras se hace; al soltar,
+// el mapa se endereza a la orientación ortogonal más cercana.
+map.getContainer().addEventListener('touchend', (e) => {
+  if (e.touches.length === 0) setTimeout(ajustarAAnguloRecto, 0);
+});
+
 // ---- Girar con Shift + arrastrar (a mano, sin depender del plugin) ----
 let girando = null;
 const mapContainer = map.getContainer();
@@ -692,16 +746,19 @@ mapContainer.addEventListener('mousedown', (e) => {
 window.addEventListener('mousemove', (e) => {
   if (!girando) return;
   const dx = e.clientX - girando.x;
-  const nuevo = ((girando.bearing + dx * 0.5) % 360 + 360) % 360; // 0.5°/px arrastrado
-  map.setBearing(nuevo);
-  sincronizarFlechaRotar(nuevo);
+  const libre = girando.bearing + dx * 0.5; // 0.5°/px arrastrado
+  const nuevo = anguloRecto(libre); // salta de 90° en 90°, nunca queda en diagonal
+  if (nuevo !== (map.getBearing() || 0)) {
+    map.setBearing(nuevo);
+    sincronizarFlechaRotar(nuevo);
+  }
 });
 window.addEventListener('mouseup', () => {
   if (!girando) return;
   girando = false;
   map.dragging.enable();
   mapContainer.style.cursor = '';
-  actualizarBotonRotar(map.getBearing() || 0);
+  ajustarAAnguloRecto();
   girando = null;
 });
 
