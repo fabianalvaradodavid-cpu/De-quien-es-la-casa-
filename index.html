@@ -485,6 +485,21 @@
   </div>
 </header>
 
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <filter id="filtro-deslindes" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
+    <!-- Luminosidad del píxel pasada al canal alfa -->
+    <feColorMatrix in="SourceGraphic" type="matrix"
+      values="0 0 0 0 0
+              0 0 0 0 0
+              0 0 0 0 0
+              0.299 0.587 0.114 0 0" result="lum"/>
+    <!-- Oscuro (línea) → 1; claro (relleno) → opacidad del slider -->
+    <feComponentTransfer in="lum" result="factor">
+      <feFuncA id="filtro-deslindes-tabla" type="table" tableValues="1 1 1 0.85 0.85 0.85 0.85 0.85 0.85 0.85"/>
+    </feComponentTransfer>
+    <feComposite in="SourceGraphic" in2="factor" operator="in"/>
+  </filter>
+</svg>
 <audio id="click-sound" src="click.mp3" preload="auto"></audio>
 
 <main>
@@ -1262,91 +1277,18 @@ function nombreWmsComuna(nombre, codigoComuna) {
 
 let capaDeslindes = null;
 
-// Capa WMS del SII que regula la transparencia solo del relleno de los predios.
-// Cada tesela se dibuja en un canvas y se recorre píxel a píxel: los píxeles
-// oscuros (las líneas de deslinde) conservan su opacidad; los claros/coloreados
-// (el relleno) se multiplican por la opacidad elegida. Los píxeles intermedios
-// (bordes suavizados de las líneas) se mezclan gradualmente para que no se vean
-// dentados.
-// Requiere que el servidor del SII entregue las imágenes con CORS; si no lo hace,
-// el navegador no deja leer los píxeles y la capa vuelve al comportamiento
-// anterior (transparencia pareja de líneas y relleno).
-const LUM_LINEA = 70;   // bajo esto, el píxel es línea (opacidad completa)
-const LUM_RELLENO = 130; // sobre esto, el píxel es relleno (opacidad regulable)
-
-function procesarPixelesDeslindes(original, destino, opacidad) {
-  const o = original.data, d = destino.data;
-  for (let i = 0; i < o.length; i += 4) {
-    const a = o[i + 3];
-    d[i] = o[i]; d[i + 1] = o[i + 1]; d[i + 2] = o[i + 2];
-    if (a === 0) { d[i + 3] = 0; continue; }
-    const lum = 0.299 * o[i] + 0.587 * o[i + 1] + 0.114 * o[i + 2];
-    let t = (lum - LUM_LINEA) / (LUM_RELLENO - LUM_LINEA); // 0 = línea, 1 = relleno
-    t = t < 0 ? 0 : t > 1 ? 1 : t;
-    d[i + 3] = a * (1 - t * (1 - opacidad));
-  }
+// Transparencia solo del relleno de los predios, con un filtro SVG aplicado a la
+// capa del SII (no necesita CORS, a diferencia de leer los píxeles en un canvas).
+// El filtro calcula la luminosidad de cada píxel: los oscuros (líneas de deslinde)
+// quedan con opacidad completa; los claros o coloreados (relleno) se multiplican
+// por la opacidad elegida en el slider.
+const PASOS_FILTRO = 10;   // la tabla cubre luminosidad 0 → 1 en 10 tramos
+const PASOS_LINEA = 3;     // hasta ~30 % de luminosidad cuenta como línea
+function actualizarFiltroDeslindes(opacidad) {
+  const valores = [];
+  for (let i = 0; i < PASOS_FILTRO; i++) valores.push(i < PASOS_LINEA ? 1 : opacidad);
+  document.getElementById('filtro-deslindes-tabla').setAttribute('tableValues', valores.join(' '));
 }
-
-const CapaDeslindesSII = L.TileLayer.WMS.extend({
-  createTile: function (coords, done) {
-    const size = this.getTileSize();
-    const canvas = document.createElement('canvas');
-    canvas.width = size.x;
-    canvas.height = size.y;
-    const url = this.getTileUrl(coords);
-    const capa = this;
-
-    const dibujar = (img, conCors) => {
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      ctx.drawImage(img, 0, 0, size.x, size.y);
-      if (conCors) {
-        try {
-          canvas._original = ctx.getImageData(0, 0, size.x, size.y);
-          capa._pintarTesela(canvas);
-        } catch (e) {
-          capa._sinCors();
-        }
-      }
-      done(null, canvas);
-    };
-
-    const img = new Image();
-    if (!this._corsFallido) img.crossOrigin = 'anonymous';
-    img.onload = () => dibujar(img, !capa._corsFallido);
-    img.onerror = () => {
-      if (capa._corsFallido || !img.crossOrigin) { done(new Error('tesela SII'), canvas); return; }
-      // Probablemente el SII no permite CORS: se reintenta como imagen normal.
-      capa._sinCors();
-      const img2 = new Image();
-      img2.onload = () => dibujar(img2, false);
-      img2.onerror = () => done(new Error('tesela SII'), canvas);
-      img2.src = url;
-    };
-    img.src = url;
-    return canvas;
-  },
-
-  _pintarTesela: function (canvas) {
-    if (!canvas._original) return;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    const salida = ctx.createImageData(canvas._original);
-    procesarPixelesDeslindes(canvas._original, salida, this.options.opacidadRelleno);
-    ctx.putImageData(salida, 0, 0);
-  },
-
-  _sinCors: function () {
-    if (this._corsFallido) return;
-    this._corsFallido = true;
-    console.warn('El SII no entrega las teselas con CORS: la transparencia afectará también a las líneas.');
-    this.setOpacity(Math.max(this.options.opacidadRelleno, 0.1));
-  },
-
-  setOpacidadRelleno: function (opacidad) {
-    this.options.opacidadRelleno = opacidad;
-    if (this._corsFallido) { this.setOpacity(Math.max(opacidad, 0.1)); return; }
-    Object.values(this._tiles || {}).forEach((t) => this._pintarTesela(t.el));
-  }
-});
 let comunaDeslindesActual = null;
 let opacidadDeslindes = 0.85;
 
@@ -1366,7 +1308,7 @@ function actualizarCapaDeslindes(codigoComuna) {
   const nombre = nombreSiiPorCodigo[codigo];
   if (!nombre) return;
 
-  capaDeslindes = new CapaDeslindesSII(SII_WMS_BASE, {
+  capaDeslindes = L.tileLayer.wms(SII_WMS_BASE, {
     layers: 'sii:BR_CART_' + nombreWmsComuna(nombre, String(codigo)) + '_WMS',
     styles: 'PREDIOS_WMS_V0',
     format: 'image/png',
@@ -1376,9 +1318,10 @@ function actualizarCapaDeslindes(codigoComuna) {
     eac: 0,
     eacano: 0,
     maxZoom: 21,
-    zIndex: 5,
-    opacidadRelleno: opacidadDeslindes
+    zIndex: 5
   }).addTo(map);
+  capaDeslindes.getContainer().style.filter = 'url(#filtro-deslindes)';
+  actualizarFiltroDeslindes(opacidadDeslindes);
 }
 
 document.getElementById('toggle-deslindes').addEventListener('change', () => {
@@ -1387,7 +1330,7 @@ document.getElementById('toggle-deslindes').addEventListener('change', () => {
 
 document.getElementById('deslindes-opacity').addEventListener('input', (e) => {
   opacidadDeslindes = Number(e.target.value);
-  if (capaDeslindes) capaDeslindes.setOpacidadRelleno(opacidadDeslindes);
+  actualizarFiltroDeslindes(opacidadDeslindes);
 });
 
 function showResult(data) {
