@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Luckiest+Guy&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://unpkg.com/leaflet-rotate@0.1.4/dist/leaflet-rotate-src.js"></script>
 <script src="comunas.js"></script>
 <style>
   :root{
@@ -82,6 +83,31 @@
     display:grid;
     grid-template-columns: minmax(0,1fr) 320px;
     min-height:0;
+    transition: grid-template-columns 0.25s ease;
+  }
+  main.panel-hidden{
+    grid-template-columns: minmax(0,1fr) 0px;
+  }
+  main.panel-hidden aside{
+    padding:0;
+    border-left:none;
+    overflow:hidden;
+  }
+  #panel-toggle{
+    position:absolute;
+    top:12px;
+    right:12px;
+    z-index:1000;
+    width:34px;
+    height:34px;
+    border-radius:50%;
+    border:1px solid var(--line);
+    background:var(--panel);
+    color:var(--moss-dark);
+    font-size:1.05rem;
+    line-height:1;
+    cursor:pointer;
+    box-shadow:0 1px 4px rgba(0,0,0,0.35);
   }
   #map{
     width:100%;
@@ -439,7 +465,9 @@
 <audio id="click-sound" src="click.mp3" preload="auto"></audio>
 
 <main>
-  <div id="map"></div>
+  <div id="map">
+    <button id="panel-toggle" type="button" aria-label="Ocultar panel" title="Ocultar panel">»</button>
+  </div>
   <aside>
     <div class="mascot-wrap">
       <img id="mascot" src="mascota.jpg" alt="Mascota">
@@ -522,11 +550,19 @@ function playClickSound() {
 }
 
 // ---- Mapa base: satelital + etiquetas (Esri, sin necesidad de API key) ----
-const map = L.map('map', { zoomControl: true }).setView([-33.4489, -70.6693], 12);
+const map = L.map('map', {
+  zoomControl: true,
+  rotate: true,
+  rotateControl: { closeOnZeroBearing: false },
+  touchRotate: true,
+  shiftKeyRotate: true,
+  bearing: 0
+}).setView([-33.4489, -70.6693], 12);
 
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-  maxZoom: 19,
-  attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, GIS User Community'
+L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+  maxZoom: 20,
+  subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+  attribution: 'Imagery &copy; Google'
 }).addTo(map);
 
 // Capa de referencia con nombres de calles, comunas, etc. sobre la imagen satelital
@@ -544,6 +580,19 @@ L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/Worl
   minZoom: 15,
   attribution: 'Streets &copy; Esri'
 }).addTo(map);
+
+// ---- Ocultar/mostrar el panel lateral ----
+const mainEl = document.querySelector('main');
+const panelToggleBtn = document.getElementById('panel-toggle');
+panelToggleBtn.addEventListener('click', () => {
+  const oculto = mainEl.classList.toggle('panel-hidden');
+  panelToggleBtn.textContent = oculto ? '«' : '»';
+  panelToggleBtn.title = oculto ? 'Mostrar panel' : 'Ocultar panel';
+  panelToggleBtn.setAttribute('aria-label', panelToggleBtn.title);
+  // El mapa cambia de tamaño con la transición CSS del grid; Leaflet necesita
+  // que se le avise para recalcular las teselas visibles.
+  setTimeout(() => map.invalidateSize(), 260);
+});
 
 let marker = null;
 
