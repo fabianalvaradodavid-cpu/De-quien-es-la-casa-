@@ -1353,6 +1353,31 @@ function resolverCamposPredio(data) {
   return { rol, nombreComuna, direccion, destinoDescripcion, valorTotal, raw: data };
 }
 
+// Busca el avalúo en una unidad: primero en los nombres de campo conocidos y, si
+// no está, en cualquier campo (o sub-objeto) cuyo nombre hable de avalúo/valor
+// y traiga un número mayor que 0.
+function buscarAvaluo(u) {
+  const conocido = pick(u, ['valorTotal', 'avaluoTotal', 'avaluo', 'AVALUO_TOTAL', 'monto', 'valorAvaluo']);
+  if (Number(conocido) > 0) return conocido;
+  const patron = /aval|valor|monto/i;
+  const revisar = (obj, prof) => {
+    if (!obj || typeof obj !== 'object' || prof > 2) return undefined;
+    // Se prefieren los totales ("...total...") sobre otros montos
+    const claves = Object.keys(obj).sort((a, b) => /total/i.test(b) - /total/i.test(a));
+    for (const k of claves) {
+      const v = obj[k];
+      if (patron.test(k) && v !== null && v !== '' && Number(v) > 0) return v;
+    }
+    for (const k of claves) {
+      const r = revisar(obj[k], prof + 1);
+      if (r !== undefined) return r;
+    }
+    return undefined;
+  };
+  const r = revisar(u, 0);
+  return r !== undefined ? r : conocido;
+}
+
 function pick(obj, keys) {
   for (const k of keys) {
     const v = obj[k];
@@ -1631,7 +1656,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
 
       // --- Detalles ocultos (se muestran con "Ver") ---
       const destino = pick(u, ['destinoDescripcion', 'destino', 'DESTINO', 'destinoPredio']);
-      const avaluoRaw = pick(u, ['valorTotal', 'avaluoTotal', 'avaluo', 'AVALUO_TOTAL', 'monto', 'valorAvaluo']);
+      const avaluoRaw = buscarAvaluo(u);
       // Un avalúo 0 es el SII diciendo "no lo incluí en esta respuesta", no un valor real
       const avaluoNum = avaluoRaw !== undefined ? Number(avaluoRaw) : undefined;
       const avaluo = avaluoNum > 0 ? avaluoNum : undefined;
