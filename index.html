@@ -579,7 +579,7 @@ const map = L.map('map', {
   rotate: true,
   rotateControl: false, // se reemplaza por el botón de giro en 90° de más abajo
   touchRotate: true,
-  shiftKeyRotate: true,
+  shiftKeyRotate: false, // se reemplaza por el gesto manual de más abajo (no giraba)
   bearing: 0
 }).setView([-33.4489, -70.6693], 12);
 
@@ -628,9 +628,19 @@ let rotateArrowEl = null;
 let rotateLabelEl = null;
 let rotateBtnEl = null;
 
-function actualizarBotonRotar(bearing) {
-  const actual = ORIENTACIONES.find((o) => o.bearing === bearing) || ORIENTACIONES[0];
+function sincronizarFlechaRotar(bearing) {
   if (rotateArrowEl) rotateArrowEl.style.transform = 'rotate(' + (-bearing) + 'deg)';
+}
+
+// Actualiza el botón para que quede alineado con la orientación exacta más cercana
+// (N/E/S/O). Se usa al terminar de arrastrar con Shift, cuando el ángulo puede no
+// caer justo en un múltiplo de 90°.
+function actualizarBotonRotar(bearing) {
+  sincronizarFlechaRotar(bearing);
+  const actual = ORIENTACIONES.reduce((mejor, o) => {
+    const d = Math.min(Math.abs(o.bearing - bearing), 360 - Math.abs(o.bearing - bearing));
+    return d < mejor.d ? { o, d } : mejor;
+  }, { o: ORIENTACIONES[0], d: Infinity }).o;
   if (rotateLabelEl) rotateLabelEl.textContent = actual.letra;
   if (rotateBtnEl) {
     rotateBtnEl.title = actual.texto + ' — clic para girar 90°';
@@ -648,8 +658,15 @@ const RotateControl = L.Control.extend({
     L.DomEvent.disableClickPropagation(div);
     L.DomEvent.on(btn, 'click', L.DomEvent.stop);
     L.DomEvent.on(btn, 'click', () => {
-      const actualIdx = ORIENTACIONES.findIndex((o) => o.bearing === map.getBearing());
-      const siguiente = ORIENTACIONES[(actualIdx + 1 + ORIENTACIONES.length) % ORIENTACIONES.length];
+      // Se busca la orientación más cercana a la actual (por si quedó en un ángulo
+      // intermedio tras arrastrar con Shift) y se avanza a la siguiente.
+      const actualIdx = ORIENTACIONES.reduce((mejorIdx, o, i) => {
+        const b = map.getBearing() || 0;
+        const d = Math.min(Math.abs(o.bearing - b), 360 - Math.abs(o.bearing - b));
+        const dMejor = Math.min(Math.abs(ORIENTACIONES[mejorIdx].bearing - b), 360 - Math.abs(ORIENTACIONES[mejorIdx].bearing - b));
+        return d < dMejor ? i : mejorIdx;
+      }, 0);
+      const siguiente = ORIENTACIONES[(actualIdx + 1) % ORIENTACIONES.length];
       map.setBearing(siguiente.bearing);
       actualizarBotonRotar(siguiente.bearing);
     });
@@ -661,6 +678,32 @@ const RotateControl = L.Control.extend({
   },
 });
 map.addControl(new RotateControl());
+
+// ---- Girar con Shift + arrastrar (a mano, sin depender del plugin) ----
+let girando = null;
+const mapContainer = map.getContainer();
+mapContainer.addEventListener('mousedown', (e) => {
+  if (!e.shiftKey || e.button !== 0) return;
+  e.preventDefault();
+  girando = { x: e.clientX, bearing: map.getBearing() || 0 };
+  map.dragging.disable();
+  mapContainer.style.cursor = 'grabbing';
+});
+window.addEventListener('mousemove', (e) => {
+  if (!girando) return;
+  const dx = e.clientX - girando.x;
+  const nuevo = ((girando.bearing + dx * 0.5) % 360 + 360) % 360; // 0.5°/px arrastrado
+  map.setBearing(nuevo);
+  sincronizarFlechaRotar(nuevo);
+});
+window.addEventListener('mouseup', () => {
+  if (!girando) return;
+  girando = false;
+  map.dragging.enable();
+  mapContainer.style.cursor = '';
+  actualizarBotonRotar(map.getBearing() || 0);
+  girando = null;
+});
 
 let marker = null;
 
