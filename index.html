@@ -486,18 +486,37 @@
 </header>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <!-- Deslindes del SII: el relleno azul se regula con el slider; las líneas se
+       aíslan, se engrosan un poco y se dibujan siempre en negro opaco encima. -->
   <filter id="filtro-deslindes" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
-    <!-- Luminosidad del píxel pasada al canal alfa -->
+    <!-- 1. ¿Es azul? (azul menos rojo). Neutro → posible línea; azul → relleno -->
     <feColorMatrix in="SourceGraphic" type="matrix"
-      values="0 0 0 0 0
-              0 0 0 0 0
-              0 0 0 0 0
-              0.299 0.587 0.114 0 0" result="lum"/>
-    <!-- Oscuro (línea) → 1; claro (relleno) → opacidad del slider -->
-    <feComponentTransfer in="lum" result="factor">
-      <feFuncA id="filtro-deslindes-tabla" type="table" tableValues="1 1 1 0.85 0.85 0.85 0.85 0.85 0.85 0.85"/>
+      values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -1 0 1 0 0" result="azul"/>
+    <feComponentTransfer in="azul" result="noAzul">
+      <feFuncA type="table" tableValues="1 1 0 0 0 0 0 0 0 0"/>
     </feComponentTransfer>
-    <feComposite in="SourceGraphic" in2="factor" operator="in"/>
+    <!-- 2. ¿Es oscuro? Negro y grises medios cuentan como línea; blanco no -->
+    <feColorMatrix in="SourceGraphic" type="matrix"
+      values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0.299 0.587 0.114 0 0" result="lum"/>
+    <feComponentTransfer in="lum" result="oscuro">
+      <feFuncA type="table" tableValues="1 1 1 1 1 1 0.5 0 0 0"/>
+    </feComponentTransfer>
+    <!-- 3. Línea = neutro y oscuro, con la opacidad original del píxel -->
+    <feComposite in="oscuro" in2="noAzul" operator="arithmetic" k1="1" result="esLinea"/>
+    <feComposite in="SourceAlpha" in2="esLinea" operator="in" result="lineas"/>
+    <!-- 4. Engrosar: se difumina apenas y se refuerza la opacidad (≈2 px, bordes suaves) -->
+    <feGaussianBlur in="lineas" stdDeviation="0.6" result="lineasDifusas"/>
+    <feComponentTransfer in="lineasDifusas" result="lineasGruesas">
+      <feFuncA type="linear" slope="3"/>
+    </feComponentTransfer>
+    <!-- 5. Relleno con la opacidad del slider -->
+    <feComponentTransfer in="SourceGraphic" result="relleno">
+      <feFuncA id="filtro-deslindes-relleno" type="linear" slope="0.85"/>
+    </feComponentTransfer>
+    <feMerge>
+      <feMergeNode in="relleno"/>
+      <feMergeNode in="lineasGruesas"/>
+    </feMerge>
   </filter>
 </svg>
 <audio id="click-sound" src="click.mp3" preload="auto"></audio>
@@ -1300,15 +1319,11 @@ let capaDeslindes = null;
 
 // Transparencia solo del relleno de los predios, con un filtro SVG aplicado a la
 // capa del SII (no necesita CORS, a diferencia de leer los píxeles en un canvas).
-// El filtro calcula la luminosidad de cada píxel: los oscuros (líneas de deslinde)
-// quedan con opacidad completa; los claros o coloreados (relleno) se multiplican
-// por la opacidad elegida en el slider.
-const PASOS_FILTRO = 10;   // la tabla cubre luminosidad 0 → 1 en 10 tramos
-const PASOS_LINEA = 3;     // hasta ~30 % de luminosidad cuenta como línea
+// El filtro separa las líneas (píxeles oscuros y no azules) del relleno azul:
+// el relleno sigue la opacidad del slider y las líneas se engrosan y quedan
+// siempre opacas encima. Ver el <svg id="filtro-deslindes"> al inicio del body.
 function actualizarFiltroDeslindes(opacidad) {
-  const valores = [];
-  for (let i = 0; i < PASOS_FILTRO; i++) valores.push(i < PASOS_LINEA ? 1 : opacidad);
-  document.getElementById('filtro-deslindes-tabla').setAttribute('tableValues', valores.join(' '));
+  document.getElementById('filtro-deslindes-relleno').setAttribute('slope', opacidad);
 }
 let comunaDeslindesActual = null;
 let opacidadDeslindes = 0.85;
