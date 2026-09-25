@@ -1603,13 +1603,15 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
       // --- Detalles ocultos (se muestran con "Ver") ---
       const destino = pick(u, ['destinoDescripcion', 'destino', 'DESTINO', 'destinoPredio']);
       const avaluoRaw = pick(u, ['valorTotal', 'avaluoTotal', 'avaluo', 'AVALUO_TOTAL', 'monto', 'valorAvaluo']);
-      const avaluo = avaluoRaw !== undefined ? Number(avaluoRaw) : undefined;
+      // Un avalúo 0 es el SII diciendo "no lo incluí en esta respuesta", no un valor real
+      const avaluoNum = avaluoRaw !== undefined ? Number(avaluoRaw) : undefined;
+      const avaluo = avaluoNum > 0 ? avaluoNum : undefined;
 
       const details = document.createElement('div');
       details.className = 'unit-details';
       details.innerHTML = `
         <div><span>Destino:</span><span>${escapeHtml(destino || '—')}</span></div>
-        <div><span>Avalúo total:</span><span>${escapeHtml(formatCLP(avaluo) || '—')}</span></div>
+        <div><span>Avalúo total:</span><span>${escapeHtml(formatCLP(avaluo) || 'No informado por el SII en esta búsqueda')}</span></div>
       `;
       li.appendChild(details);
 
@@ -1677,17 +1679,32 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
 // esta consulta trae TODAS las unidades de esa calle/número en una sola llamada,
 // sin necesidad de recorrer números de predio uno por uno.
 async function buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero) {
-  const res = await callProxy('/getPrediosDireccion', {
-    rolDireccion: {
-      comuna: String(comunaCodigo),
-      nombreComuna: nombreComuna || '',
-      calle: calle.toLowerCase(),
-      numeroCalleStr: String(numero),
-      detalle: 0
-    },
-    servicios: []
-  });
-  return Array.isArray(res && res.data) ? res.data : [];
+  // Con detalle: 0 el SII responde la lista resumida y el avalúo viene en 0.
+  // Se pide primero con detalle: 1 (lista completa); si esa variante falla o no
+  // trae nada, se vuelve a la resumida para no perder la lista de unidades.
+  const pedir = async (detalle) => {
+    const res = await callProxy('/getPrediosDireccion', {
+      rolDireccion: {
+        comuna: String(comunaCodigo),
+        nombreComuna: nombreComuna || '',
+        calle: calle.toLowerCase(),
+        numeroCalleStr: String(numero),
+        detalle
+      },
+      servicios: []
+    });
+    return Array.isArray(res && res.data) ? res.data : [];
+  };
+  let unidades = [];
+  try {
+    unidades = await pedir(1);
+  } catch (err) {
+    console.warn('getPrediosDireccion con detalle 1 falló; se usa detalle 0', err);
+  }
+  if (!unidades.length) unidades = await pedir(0);
+  // DEBUG: para ver en la consola qué campos trae cada unidad (ej. dónde viene el avalúo)
+  if (unidades.length) console.log('Unidad de ejemplo (getPrediosDireccion):', unidades[0]);
+  return unidades;
 }
 
 // El rol del SII viene con el formato "MANZANA-PROPIEDAD" (ej: "1234-56").
