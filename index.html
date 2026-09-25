@@ -186,6 +186,14 @@
   #buscador-resultados li button:hover,
   #buscador-resultados li button:focus{ background:var(--paper); outline:none; }
   #buscador-resultados li button strong{ display:block; font-size:0.88rem; }
+  #buscador-resultados .precision{
+    display:block;
+    margin-top:0.15rem;
+    font-size:0.72rem;
+    color:#7a5a68;
+  }
+  #buscador-resultados .precision-exacta{ color:#2f8e5a; }
+  #buscador-resultados .precision-calle{ color:#a3402b; }
   #buscador-resultados li.aviso{
     padding:0.5rem 0.7rem;
     font-size:0.82rem;
@@ -1775,8 +1783,10 @@ async function callProxy(path, data) {
 }
 
 // ---- Buscador de direcciones ----
-// Usa Nominatim (OpenStreetMap): gratis y sin API key. Su política de uso pide no
-// hacer autocompletado, por eso se busca solo al apretar Enter o "Buscar".
+// 1º Esri World Geocoder: tiene puntos de dirección (número exacto) para Chile y,
+//    cuando no, interpola el número a lo largo de la cuadra. Sin API key.
+// 2º Si Esri falla o no encuentra nada, Nominatim (OpenStreetMap) como respaldo;
+//    en Santiago muchas veces solo conoce la calle, no el número.
 // Al elegir un resultado se centra el mapa ahí y se consulta el rol, igual que
 // al hacer clic en ese punto.
 const buscadorEl = document.getElementById('buscador');
@@ -1798,27 +1808,56 @@ function avisoBusqueda(texto) {
 
 function irADireccion(lugar) {
   limpiarResultadosBusqueda();
-  const latlng = L.latLng(Number(lugar.lat), Number(lugar.lon));
-  map.setView(latlng, Math.max(map.getZoom(), 18));
+  const latlng = L.latLng(lugar.lat, lugar.lng);
+  map.setView(latlng, Math.max(map.getZoom(), lugar.precision === 'calle' ? 17 : 19));
   map.fire('click', { latlng });
 }
 
-function partesDireccion(lugar) {
-  const a = lugar.address || {};
-  const calle = [a.road || a.pedestrian || a.footway || lugar.name, a.house_number].filter(Boolean).join(' ');
-  const zona = [a.suburb || a.neighbourhood, a.city || a.town || a.village || a.municipality].filter(Boolean).join(', ');
-  return {
-    principal: calle || lugar.display_name.split(',')[0],
-    secundaria: zona || lugar.display_name.split(',').slice(1, 3).join(',').trim()
-  };
+const ETIQUETA_PRECISION = {
+  exacta: 'Número exacto',
+  interpolada: 'Número aproximado en la cuadra',
+  calle: 'Solo la calle (número no encontrado)',
+  lugar: 'Lugar'
+};
+
+// ¿El texto buscado trae un número de calle?
+function traeNumero(q) { return /\d/.test(q); }
+
+async function buscarEsri(q) {
+  const params = new URLSearchParams({
+    SingleLine: q,
+    f: 'json',
+    outFields: 'Addr_type,Match_addr,City,Subregion',
+    sourceCountry: 'CHL',
+    langCode: 'ES',
+    location: '-70.6693,-33.4489', // prioriza Santiago sin excluir el resto del país
+    maxLocations: '6',
+    forStorage: 'false'
+  });
+  const resp = await fetch('https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?' + params);
+  if (!resp.ok) throw new Error('Esri HTTP ' + resp.status);
+  const data = await resp.json();
+  if (data.error) throw new Error('Esri: ' + (data.error.message || data.error.code));
+  return (data.candidates || [])
+    .filter((c) => c.score >= 80)
+    .map((c) => {
+      const tipo = c.attributes && c.attributes.Addr_type;
+      const precision = tipo === 'PointAddress' || tipo === 'Subaddress' ? 'exacta'
+        : tipo === 'StreetAddress' || tipo === 'StreetAddressExt' ? 'interpolada'
+        : tipo === 'StreetName' || tipo === 'StreetInt' ? 'calle'
+        : 'lugar';
+      const partes = c.address.split(',');
+      return {
+        lat: c.location.y,
+        lng: c.location.x,
+        principal: partes[0].trim(),
+        secundaria: partes.slice(1, 3).join(',').trim(),
+        precision
+      };
+    });
 }
 
-buscadorForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const q = buscadorInput.value.trim();
-  if (!q) return;
-  avisoBusqueda('Buscando…');
-
+async function buscarNominatim(q) {
   const params = new URLSearchParams({
     q,
     format: 'jsonv2',
@@ -1826,40 +1865,90 @@ buscadorForm.addEventListener('submit', async (e) => {
     countrycodes: 'cl',
     limit: '6',
     'accept-language': 'es',
-    // Prioriza la Región Metropolitana sin excluir el resto del país
     viewbox: '-71.75,-32.9,-69.75,-34.3',
     bounded: '0'
   });
+  const resp = await fetch('https://nominatim.openstreetmap.org/search?' + params);
+  if (!resp.ok) throw new Error('Nominatim HTTP ' + resp.status);
+  const lugares = await resp.json();
+  return lugares.map((lugar) => {
+    const a = lugar.address || {};
+    const calle = [a.road || a.pedestrian || a.footway || lugar.name, a.house_number].filter(Boolean).join(' ');
+    const zona = [a.suburb || a.neighbourhood, a.city || a.town || a.village || a.municipality].filter(Boolean).join(', ');
+    return {
+      lat: Number(lugar.lat),
+      lng: Number(lugar.lon),
+      principal: calle || lugar.display_name.split(',')[0],
+      secundaria: zona || lugar.display_name.split(',').slice(1, 3).join(',').trim(),
+      precision: a.house_number ? 'exacta' : (a.road ? 'calle' : 'lugar')
+    };
+  });
+}
 
-  try {
-    const resp = await fetch('https://nominatim.openstreetmap.org/search?' + params);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const lugares = await resp.json();
-
-    if (!lugares.length) {
-      avisoBusqueda('No se encontró esa dirección. Prueba con calle, número y comuna.');
-      return;
+function mostrarResultados(lugares, conNumero) {
+  buscadorResultados.innerHTML = '';
+  lugares.forEach((lugar) => {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    const strong = document.createElement('strong');
+    strong.textContent = lugar.principal;
+    btn.appendChild(strong);
+    btn.appendChild(document.createTextNode(lugar.secundaria));
+    if (conNumero || lugar.precision === 'lugar') {
+      const prec = document.createElement('span');
+      prec.className = 'precision precision-' + lugar.precision;
+      prec.textContent = ETIQUETA_PRECISION[lugar.precision];
+      btn.appendChild(prec);
     }
-    if (lugares.length === 1) { irADireccion(lugares[0]); return; }
+    btn.addEventListener('click', () => irADireccion(lugar));
+    li.appendChild(btn);
+    buscadorResultados.appendChild(li);
+  });
+}
 
-    buscadorResultados.innerHTML = '';
-    lugares.forEach((lugar) => {
-      const { principal, secundaria } = partesDireccion(lugar);
-      const li = document.createElement('li');
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      const strong = document.createElement('strong');
-      strong.textContent = principal;
-      btn.appendChild(strong);
-      btn.appendChild(document.createTextNode(secundaria));
-      btn.addEventListener('click', () => irADireccion(lugar));
-      li.appendChild(btn);
-      buscadorResultados.appendChild(li);
-    });
+buscadorForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const q = buscadorInput.value.trim();
+  if (!q) return;
+  avisoBusqueda('Buscando…');
+  const conNumero = traeNumero(q);
+
+  let lugares = [];
+  try {
+    lugares = await buscarEsri(q);
   } catch (err) {
-    console.error(err);
-    avisoBusqueda('No se pudo buscar ahora (' + err.message + '). Intenta de nuevo en unos segundos.');
+    console.warn('Geocodificador Esri no disponible, se usa Nominatim:', err);
   }
+  // Si Esri no dio un número (exacto o aproximado) y se pidió uno, se prueba OSM
+  const esriConNumero = lugares.some((l) => l.precision === 'exacta' || l.precision === 'interpolada');
+  if (!lugares.length || (conNumero && !esriConNumero)) {
+    try {
+      const osm = await buscarNominatim(q);
+      const osmConNumero = osm.filter((l) => l.precision === 'exacta');
+      lugares = osmConNumero.length ? osmConNumero.concat(lugares) : (lugares.length ? lugares : osm);
+    } catch (err) {
+      console.error(err);
+      if (!lugares.length) {
+        avisoBusqueda('No se pudo buscar ahora (' + err.message + '). Intenta de nuevo en unos segundos.');
+        return;
+      }
+    }
+  }
+
+  if (!lugares.length) {
+    avisoBusqueda('No se encontró esa dirección. Prueba con calle, número y comuna.');
+    return;
+  }
+  // Las coincidencias con número van primero
+  const orden = { exacta: 0, interpolada: 1, calle: 2, lugar: 3 };
+  lugares.sort((x, y) => orden[x.precision] - orden[y.precision]);
+
+  // Un único resultado con número: directo al punto
+  const conPunto = lugares.filter((l) => l.precision === 'exacta' || l.precision === 'interpolada');
+  if (conNumero && conPunto.length === 1) { irADireccion(conPunto[0]); return; }
+  if (lugares.length === 1) { irADireccion(lugares[0]); return; }
+  mostrarResultados(lugares.slice(0, 6), conNumero);
 });
 
 // Esc cierra la lista; clic fuera del buscador también
