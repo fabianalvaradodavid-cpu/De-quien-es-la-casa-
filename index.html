@@ -918,6 +918,12 @@ async function consultarRolConReintentos(latlng, layerName) {
 
     const res = await callProxy('/getFeatureInfo', { clickInfo });
     const data = res && res.data;
+    if (data) {
+      // DEBUG temporal: para ver si el SII trae geometría (polígono) del predio/manzana
+      // en la respuesta y así poder dibujarlo en el mapa. Se puede quitar después.
+      window.__ultimoRawPredio = data;
+      console.log('RAW getFeatureInfo (debug polígonos):', data);
+    }
     if (!data || !data.existePredio) continue;
 
     const resuelto = resolverCamposPredio(data);
