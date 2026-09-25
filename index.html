@@ -1664,10 +1664,13 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
       const details = document.createElement('div');
       details.className = 'unit-details';
       details.innerHTML = `
-        <div><span>Destino:</span><span>${escapeHtml(destino || '—')}</span></div>
-        <div><span>Avalúo total:</span><span>${escapeHtml(formatCLP(avaluo) || 'No informado por el SII en esta búsqueda')}</span></div>
+        <div><span>Destino:</span><span class="unit-destino">${escapeHtml(destino || '—')}</span></div>
+        <div><span>Avalúo total:</span><span class="unit-avaluo">${escapeHtml(formatCLP(avaluo) || '—')}</span></div>
       `;
       li.appendChild(details);
+      // La búsqueda por dirección no trae el avalúo de cada unidad: se pide aparte
+      // (getPredioNacional) la primera vez que se abre "Ver".
+      let avaluoPedido = !!avaluo;
 
       // --- Botonera ---
       const btns = document.createElement('div');
@@ -1676,9 +1679,23 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
       const verBtn = document.createElement('button');
       verBtn.type = 'button';
       verBtn.textContent = 'Ver';
-      verBtn.onclick = () => {
+      verBtn.onclick = async () => {
         const abierto = details.classList.toggle('visible');
         verBtn.textContent = abierto ? 'Ocultar' : 'Ver';
+        if (!abierto || avaluoPedido || !mz || !pr) return;
+        avaluoPedido = true;
+        const avaluoEl = details.querySelector('.unit-avaluo');
+        avaluoEl.textContent = 'Consultando al SII…';
+        try {
+          const d = await obtenerPredioNacional(comunaCodigo, mz, pr);
+          const valor = d && Number(d.valorTotal);
+          avaluoEl.textContent = valor > 0 ? formatCLP(valor) : 'El SII no informa avalúo para esta unidad';
+          if (d && d.destinoDescripcion) details.querySelector('.unit-destino').textContent = d.destinoDescripcion;
+        } catch (err) {
+          console.error('getPredioNacional', err);
+          avaluoEl.textContent = 'No se pudo consultar (' + (err.message || err) + ')';
+          avaluoPedido = false; // permite reintentar cerrando y abriendo "Ver"
+        }
       };
       btns.appendChild(verBtn);
 
@@ -1759,6 +1776,27 @@ async function buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero) {
   // DEBUG: para ver en la consola qué campos trae cada unidad (ej. dónde viene el avalúo)
   if (unidades.length) console.log('Unidad de ejemplo (getPrediosDireccion):', unidades[0]);
   return unidades;
+}
+
+// Datos de un predio por su rol (comuna + manzana + predio). Es la consulta que
+// usa el mapa del SII al abrir una unidad desde la búsqueda por dirección, y la
+// única que trae el avalúo de cada departamento, bodega o estacionamiento.
+const predioNacionalCache = {};
+async function obtenerPredioNacional(comunaCodigo, manzana, predio) {
+  const clave = comunaCodigo + ':' + manzana + '-' + predio;
+  if (predioNacionalCache[clave]) return predioNacionalCache[clave];
+  const cfg = await obtenerServiciosComuna(comunaCodigo);
+  const servicios = ((cfg && cfg.servicios) || [])
+    .filter((s) => s.aliasServicio !== 'HS') // el SII no manda "Área Homogénea Seleccionada"
+    .map((s) => ({ comuna: s.comuna, layer: s.layer, style: s.style, eac: s.eac, eacano: s.eacano }));
+  const res = await callProxy('/getPredioNacional', {
+    predio: { comuna: Number(comunaCodigo), manzana: Number(manzana), predio: Number(predio) },
+    servicios
+  });
+  const data = res && res.data;
+  if (!data) throw new Error('el SII no devolvió datos');
+  predioNacionalCache[clave] = data;
+  return data;
 }
 
 // El rol del SII viene con el formato "MANZANA-PROPIEDAD" (ej: "1234-56").
