@@ -116,6 +116,81 @@
     font-weight:bold;
     letter-spacing:0.03em;
   }
+  /* ---- Buscador de direcciones (sobre el mapa) ---- */
+  #buscador{
+    position:absolute;
+    top:12px;
+    left:56px;
+    right:58px;
+    max-width:420px;
+    z-index:1000;
+    font-family:inherit;
+  }
+  #buscador form{
+    display:flex;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:6px;
+    box-shadow:0 1px 4px rgba(0,0,0,0.35);
+    overflow:hidden;
+  }
+  #buscador input{
+    flex:1;
+    min-width:0;
+    border:none;
+    padding:0.5rem 0.7rem;
+    font:inherit;
+    font-size:0.9rem;
+    color:var(--ink);
+    background:transparent;
+  }
+  #buscador input:focus{ outline:none; }
+  #buscador form:focus-within{ border-color:var(--clay); }
+  #buscador button[type="submit"]{
+    border:none;
+    border-left:1px solid var(--line);
+    background:var(--paper);
+    color:var(--moss-dark);
+    padding:0 0.8rem;
+    font:inherit;
+    font-size:0.85rem;
+    cursor:pointer;
+  }
+  #buscador button[type="submit"]:hover{ background:var(--line); }
+  #buscador-resultados{
+    margin:4px 0 0;
+    padding:0;
+    list-style:none;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:6px;
+    box-shadow:0 1px 4px rgba(0,0,0,0.35);
+    max-height:260px;
+    overflow-y:auto;
+  }
+  #buscador-resultados:empty{ display:none; }
+  #buscador-resultados li button{
+    display:block;
+    width:100%;
+    text-align:left;
+    border:none;
+    background:none;
+    padding:0.5rem 0.7rem;
+    font:inherit;
+    font-size:0.82rem;
+    line-height:1.35;
+    color:var(--ink);
+    cursor:pointer;
+  }
+  #buscador-resultados li + li button{ border-top:1px solid var(--paper); }
+  #buscador-resultados li button:hover,
+  #buscador-resultados li button:focus{ background:var(--paper); outline:none; }
+  #buscador-resultados li button strong{ display:block; font-size:0.88rem; }
+  #buscador-resultados li.aviso{
+    padding:0.5rem 0.7rem;
+    font-size:0.82rem;
+    color:#7a5a68;
+  }
   #panel-toggle{
     position:absolute;
     top:12px;
@@ -523,6 +598,13 @@
 
 <main>
   <div id="map">
+    <div id="buscador">
+      <form id="buscador-form" role="search">
+        <input type="search" id="buscador-input" placeholder="Buscar dirección (ej: Lastarria 70, Santiago)" aria-label="Buscar dirección" autocomplete="off">
+        <button type="submit">Buscar</button>
+      </form>
+      <ul id="buscador-resultados" aria-live="polite"></ul>
+    </div>
     <button id="panel-toggle" type="button" aria-label="Ocultar panel" title="Ocultar panel">»</button>
   </div>
   <aside>
@@ -787,6 +869,7 @@ let girando = null;
 const mapContainer = map.getContainer();
 mapContainer.addEventListener('mousedown', (e) => {
   if (!e.shiftKey || e.button !== 0) return;
+  if (e.target.closest('#buscador')) return;
   e.preventDefault();
   girando = { x: e.clientX, bearing: map.getBearing() || 0 };
   map.dragging.disable();
@@ -1690,6 +1773,102 @@ async function callProxy(path, data) {
   }
   return json;
 }
+
+// ---- Buscador de direcciones ----
+// Usa Nominatim (OpenStreetMap): gratis y sin API key. Su política de uso pide no
+// hacer autocompletado, por eso se busca solo al apretar Enter o "Buscar".
+// Al elegir un resultado se centra el mapa ahí y se consulta el rol, igual que
+// al hacer clic en ese punto.
+const buscadorEl = document.getElementById('buscador');
+const buscadorForm = document.getElementById('buscador-form');
+const buscadorInput = document.getElementById('buscador-input');
+const buscadorResultados = document.getElementById('buscador-resultados');
+L.DomEvent.disableClickPropagation(buscadorEl);
+L.DomEvent.disableScrollPropagation(buscadorEl);
+
+function limpiarResultadosBusqueda() { buscadorResultados.innerHTML = ''; }
+
+function avisoBusqueda(texto) {
+  buscadorResultados.innerHTML = '';
+  const li = document.createElement('li');
+  li.className = 'aviso';
+  li.textContent = texto;
+  buscadorResultados.appendChild(li);
+}
+
+function irADireccion(lugar) {
+  limpiarResultadosBusqueda();
+  const latlng = L.latLng(Number(lugar.lat), Number(lugar.lon));
+  map.setView(latlng, Math.max(map.getZoom(), 18));
+  map.fire('click', { latlng });
+}
+
+function partesDireccion(lugar) {
+  const a = lugar.address || {};
+  const calle = [a.road || a.pedestrian || a.footway || lugar.name, a.house_number].filter(Boolean).join(' ');
+  const zona = [a.suburb || a.neighbourhood, a.city || a.town || a.village || a.municipality].filter(Boolean).join(', ');
+  return {
+    principal: calle || lugar.display_name.split(',')[0],
+    secundaria: zona || lugar.display_name.split(',').slice(1, 3).join(',').trim()
+  };
+}
+
+buscadorForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const q = buscadorInput.value.trim();
+  if (!q) return;
+  avisoBusqueda('Buscando…');
+
+  const params = new URLSearchParams({
+    q,
+    format: 'jsonv2',
+    addressdetails: '1',
+    countrycodes: 'cl',
+    limit: '6',
+    'accept-language': 'es',
+    // Prioriza la Región Metropolitana sin excluir el resto del país
+    viewbox: '-71.75,-32.9,-69.75,-34.3',
+    bounded: '0'
+  });
+
+  try {
+    const resp = await fetch('https://nominatim.openstreetmap.org/search?' + params);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const lugares = await resp.json();
+
+    if (!lugares.length) {
+      avisoBusqueda('No se encontró esa dirección. Prueba con calle, número y comuna.');
+      return;
+    }
+    if (lugares.length === 1) { irADireccion(lugares[0]); return; }
+
+    buscadorResultados.innerHTML = '';
+    lugares.forEach((lugar) => {
+      const { principal, secundaria } = partesDireccion(lugar);
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      const strong = document.createElement('strong');
+      strong.textContent = principal;
+      btn.appendChild(strong);
+      btn.appendChild(document.createTextNode(secundaria));
+      btn.addEventListener('click', () => irADireccion(lugar));
+      li.appendChild(btn);
+      buscadorResultados.appendChild(li);
+    });
+  } catch (err) {
+    console.error(err);
+    avisoBusqueda('No se pudo buscar ahora (' + err.message + '). Intenta de nuevo en unos segundos.');
+  }
+});
+
+// Esc cierra la lista; clic fuera del buscador también
+buscadorEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { limpiarResultadosBusqueda(); buscadorInput.focus(); }
+});
+document.addEventListener('click', (e) => {
+  if (!buscadorEl.contains(e.target)) limpiarResultadosBusqueda();
+});
 </script>
 </body>
 </html>
