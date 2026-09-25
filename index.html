@@ -557,6 +557,13 @@
     main{ grid-template-columns:1fr; grid-template-rows:1fr auto; }
     aside{ border-left:none; border-top:1px solid var(--line); max-height:46vh; }
   }
+  /* La ventana de unidades flota sobre el mapa y se arrastra por su encabezado;
+     el fondo no se oscurece ni bloquea, así el mapa sigue usable detrás. */
+  .modal-overlay{ background:transparent !important; pointer-events:none; }
+  .modal-overlay .modal{ pointer-events:auto; }
+  .modal-header{ cursor:move; user-select:none; touch-action:none; }
+  .modal-header .modal-close{ cursor:pointer; }
+  .modal.arrastrando{ opacity:0.92; }
 </style>
 </head>
 <body>
@@ -2038,6 +2045,50 @@ buscadorEl.addEventListener('keydown', (e) => {
 document.addEventListener('click', (e) => {
   if (!buscadorEl.contains(e.target)) limpiarResultadosBusqueda();
 });
+
+// ---- Ventana de unidades movible ----
+// Se arrastra tomando el encabezado (con mouse o dedo). Cada vez que se abre
+// vuelve al centro. Esc la cierra.
+(function () {
+  const ventana = document.querySelector('#modal-overlay .modal');
+  const cabecera = ventana && ventana.querySelector('.modal-header');
+  if (!ventana || !cabecera) return;
+  let dx = 0, dy = 0, inicio = null;
+
+  const aplicar = () => { ventana.style.transform = `translate(${dx}px, ${dy}px)`; };
+
+  cabecera.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.target.closest('.modal-close')) return;
+    inicio = { x: e.clientX, y: e.clientY, dx, dy, rect: ventana.getBoundingClientRect() };
+    cabecera.setPointerCapture(e.pointerId);
+    ventana.classList.add('arrastrando');
+    e.preventDefault();
+  });
+  cabecera.addEventListener('pointermove', (e) => {
+    if (!inicio) return;
+    let nx = inicio.dx + (e.clientX - inicio.x);
+    let ny = inicio.dy + (e.clientY - inicio.y);
+    // Que el encabezado nunca quede fuera de la pantalla
+    const r = inicio.rect, margen = 40;
+    const minX = inicio.dx - (r.left + r.width - margen), maxX = inicio.dx + (window.innerWidth - r.left - margen);
+    const minY = inicio.dy - r.top, maxY = inicio.dy + (window.innerHeight - r.top - margen);
+    dx = Math.min(Math.max(nx, minX), maxX);
+    dy = Math.min(Math.max(ny, minY), maxY);
+    aplicar();
+  });
+  const soltar = () => { inicio = null; ventana.classList.remove('arrastrando'); };
+  cabecera.addEventListener('pointerup', soltar);
+  cabecera.addEventListener('pointercancel', soltar);
+
+  // Al abrir, volver al centro
+  new MutationObserver(() => {
+    if (modalOverlay.classList.contains('visible') && !inicio) { dx = 0; dy = 0; aplicar(); }
+  }).observe(modalOverlay, { attributes: true, attributeFilter: ['class'] });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modalOverlay.classList.contains('visible')) cerrarModalUnidades();
+  });
+})();
 </script>
 </body>
 </html>
