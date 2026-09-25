@@ -6,21 +6,22 @@
 <title>Rol de propiedad → Certificado de deuda TGR</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Luckiest+Guy&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://unpkg.com/leaflet-rotate@0.1.4/dist/leaflet-rotate-src.js"></script>
 <script src="../comunas.js"></script>
 <style>
   :root{
-    --ink:#2a1a1f;
-    --paper:#fbf3f6;
-    --line:#e6c9d6;
-    --moss:#7c1f3e;
-    --moss-dark:#54142a;
-    --clay:#e2007a;
-    --clay-dark:#b8005f;
-    --leather:#2c1c16;
+    /* Paleta sobria: grises azulados y azul acero (versión /simple) */
+    --ink:#1f2a33;
+    --paper:#f4f6f8;
+    --line:#d3dae1;
+    --moss:#2c4a63;
+    --moss-dark:#1c3347;
+    --clay:#2f5f82;
+    --clay-dark:#234a66;
+    --leather:#1e2830;
     --panel:#ffffff;
     font-size:16px;
   }
@@ -36,7 +37,7 @@
   header{
     padding:1.1rem 1.4rem 0.9rem;
     border-bottom:2px solid var(--clay);
-    background:linear-gradient(120deg, #fdf1f6 0%, #fbe1ee 55%, #f7d4e8 100%);
+    background:linear-gradient(120deg, #f7f9fb 0%, #edf1f5 55%, #e2e8ee 100%);
     display:flex;
     align-items:center;
     gap:0.9rem;
@@ -48,21 +49,19 @@
     gap:0.2rem;
   }
   header h1{
-    font-family:'Luckiest Guy', 'Iowan Old Style', cursive;
-    font-size:1.9rem;
+    font-family:'Source Serif 4', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+    font-size:1.75rem;
     margin:0;
-    font-weight:400;
-    letter-spacing:0.02em;
-    color:var(--clay);
-    text-shadow:2px 2px 0 var(--moss-dark);
-    transform:rotate(-1.5deg);
-    display:inline-block;
+    font-weight:600;
+    letter-spacing:0;
+    line-height:1.15;
+    color:var(--moss-dark);
   }
   header p{
     margin:0;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     font-size:0.82rem;
-    color:#7a5a68;
+    color:#5a6873;
   }
   main{
     flex:1;
@@ -176,14 +175,14 @@
     display:block;
     margin-top:0.15rem;
     font-size:0.72rem;
-    color:#7a5a68;
+    color:#5a6873;
   }
   #buscador-resultados .precision-exacta{ color:#2f8e5a; }
   #buscador-resultados .precision-calle{ color:#a3402b; }
   #buscador-resultados li.aviso{
     padding:0.5rem 0.7rem;
     font-size:0.82rem;
-    color:#7a5a68;
+    color:#5a6873;
   }
   #panel-toggle{
     position:absolute;
@@ -221,7 +220,7 @@
     font-size:0.72rem;
     text-transform:uppercase;
     letter-spacing:0.06em;
-    color:#9a6f80;
+    color:#7b8791;
     margin-bottom:0.35rem;
   }
   select{
@@ -237,7 +236,7 @@
   .status{
     margin-top:0.9rem;
     font-size:0.85rem;
-    color:#7a5a68;
+    color:#5a6873;
   }
   .status.error{ color:#a3402b; }
   .layers-box{
@@ -252,7 +251,7 @@
     font-size:0.72rem;
     text-transform:uppercase;
     letter-spacing:0.06em;
-    color:#9a6f80;
+    color:#7b8791;
     margin-bottom:0.5rem;
   }
   .layer-toggle{
@@ -268,7 +267,7 @@
   .layer-toggle input{
     width:15px;
     height:15px;
-    accent-color:#a3402b;
+    accent-color:#2f5f82;
     cursor:pointer;
   }
   .layer-toggle .swatch{
@@ -291,20 +290,20 @@
   }
   .opacity-row input[type="range"]{
     flex:1;
-    accent-color:#a3402b;
+    accent-color:#2f5f82;
     cursor:pointer;
   }
   .layer-loading{
     font-size:0.75rem;
-    color:#9a6f80;
+    color:#7b8791;
     margin-left:1.6rem;
   }
   .monumento-popup{ font-size:0.85rem; line-height:1.4; max-width:240px; }
   .monumento-popup h4{ margin:0 0 0.3rem; font-size:0.9rem; }
   .monumento-popup dl{ margin:0; }
-  .monumento-popup dt{ font-weight:600; color:#7a5a68; float:left; clear:left; margin-right:0.3rem; }
+  .monumento-popup dt{ font-weight:600; color:#5a6873; float:left; clear:left; margin-right:0.3rem; }
   .monumento-popup dd{ margin:0 0 0.15rem; }
-  .monumento-popup a{ color:#a3402b; }
+  .monumento-popup a{ color:#2f5f82; }
   .result{
     margin-top:0.9rem;
     border:1px solid var(--line);
@@ -315,7 +314,7 @@
   .result.visible{ display:block; }
   .result-rol{
     background:var(--moss);
-    color:#fbf9f2;
+    color:#f7f9fb;
     padding:0.9rem 1rem;
   }
   .result-rol .label{
@@ -342,10 +341,10 @@
     justify-content:space-between;
     gap:0.6rem;
     padding:0.32rem 0;
-    border-bottom:1px solid #f0ede3;
+    border-bottom:1px solid #e6ebef;
   }
   dl.details div:last-child{ border-bottom:none; }
-  dl.details dt{ color:#9a6f80; }
+  dl.details dt{ color:#7b8791; }
   dl.details dd{ margin:0; text-align:right; }
   .actions{
     padding:0.85rem 1rem 1rem;
@@ -377,7 +376,7 @@
     border-radius:4px;
     cursor:pointer;
   }
-  button.secondary:hover{ background:#fbeef4; }
+  button.secondary:hover{ background:#eef2f5; }
   button.secondary:active{ transform:translateY(1px); }
   button:disabled{ opacity:0.45; cursor:not-allowed; }
   .copied{
@@ -392,7 +391,7 @@
   .modal-overlay{
     position:fixed;
     inset:0;
-    background:rgba(20,10,14,0.6);
+    background:rgba(15,22,30,0.6);
     display:none;
     align-items:center;
     justify-content:center;
@@ -429,7 +428,7 @@
     border:none;
     font-size:1.4rem;
     line-height:1;
-    color:#9a6f80;
+    color:#7b8791;
     cursor:pointer;
     padding:0.1rem 0.3rem;
   }
@@ -440,7 +439,7 @@
   }
   .modal-loading, .modal-error{
     font-size:0.88rem;
-    color:#7a5a68;
+    color:#5a6873;
   }
   .modal-error{ color:#a3402b; }
   ul.unit-list{
@@ -452,7 +451,7 @@
   ul.unit-list li{
     display:block;
     padding:0.65rem 0;
-    border-bottom:1px solid #f0ede3;
+    border-bottom:1px solid #e6ebef;
     font-size:0.85rem;
   }
   ul.unit-list li:last-child{ border-bottom:none; }
@@ -479,7 +478,7 @@
     border:1px solid var(--line);
     border-radius:3px;
     font-size:0.8rem;
-    color:#7a5a68;
+    color:#5a6873;
   }
   .unit-details.visible{ display:block; }
   .unit-details div{
@@ -505,7 +504,7 @@
     color:var(--moss-dark);
     line-height:1.2;
   }
-  .unit-buttons button:hover{ background:#fbeef4; }
+  .unit-buttons button:hover{ background:#eef2f5; }
   .unit-buttons button:active{ transform:translateY(1px); }
   .unit-buttons button.primary{
     background:var(--clay);
@@ -521,7 +520,7 @@
     font-size:0.72rem;
     text-transform:uppercase;
     letter-spacing:0.06em;
-    color:#9a6f80;
+    color:#7b8791;
     margin-bottom:0.35rem;
   }
   .modal-filter input{
@@ -536,7 +535,7 @@
   }
   .modal-filter .filter-hint{
     font-size:0.72rem;
-    color:#9a6f80;
+    color:#7b8791;
     margin-top:0.3rem;
   }
   @media (max-width:720px){
@@ -896,7 +895,7 @@ const COLOR_POR_CATEGORIA = {
   'Santuario de la Naturaleza': '#2f8e5a',
 };
 function colorCategoria(categoria) {
-  return COLOR_POR_CATEGORIA[categoria] || '#7a5a68';
+  return COLOR_POR_CATEGORIA[categoria] || '#5a6873';
 }
 
 function popupMonumento(props) {
@@ -942,7 +941,7 @@ function crearCapaCategoria(categoria, features) {
     pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
       radius: 5,
       weight: 1,
-      color: '#2b1a20',
+      color: '#1c252c',
       fillColor: color,
       fillOpacity: 0.85,
     }),
