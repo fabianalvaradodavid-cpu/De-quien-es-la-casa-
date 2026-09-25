@@ -448,6 +448,15 @@
       <div class="layer-loading" id="loading-monumentos" style="display:none;">Cargando datos del CMN…</div>
     </div>
 
+    <div class="layers-box">
+      <span class="layers-title">Cartografía SII</span>
+      <label class="layer-toggle">
+        <input type="checkbox" id="toggle-deslindes">
+        <span class="swatch poligonos" style="background:transparent; border:1.5px solid #b5622f;"></span>
+        Deslindes de predios
+      </label>
+    </div>
+
     <div class="status" id="status"></div>
 
     <div class="result" id="result">
@@ -800,6 +809,10 @@ async function obtenerServiciosComuna(codigo) {
   if (serviciosCache[codigo]) return serviciosCache[codigo];
   const info = await callProxy('/getServicioPredio', { comuna: Number(codigo) });
   const servicios = (info && info.data) || [];
+  // DEBUG temporal: ver qué otras capas/servicios expone el SII para esta comuna
+  // (buscamos alguna de tipo "manzana" o similar, aparte de "Predios").
+  window.__ultimosServicios = servicios;
+  console.log('SERVICIOS comuna', codigo, ':', servicios);
   const predios = servicios.find((s) => s.aliasServicio === 'P') || servicios[0];
   if (!predios) return null;
   serviciosCache[codigo] = { layer: predios.layer, servicios };
@@ -843,7 +856,7 @@ map.on('click', async (e) => {
         try {
           const cfg = await obtenerServiciosComuna(codigo);
           if (!cfg) return { vacio: true };
-          const r = await consultarRolConReintentos(e.latlng, cfg.layer);
+          const r = await consultarRolConReintentos(e.latlng, cfg.layer, cfg.servicios);
           if (!r) return { vacio: true };
           r.comunaCodigo = codigo;
           r.comunaNombre = nombreSiiPorCodigo[codigo] || c.nombre;
@@ -888,7 +901,7 @@ map.on('click', async (e) => {
 // donde el pixel consultado cae sobre la línea divisoria), reintenta consultando
 // unos pocos píxeles alrededor del punto original hasta encontrar un resultado
 // con rol, o hasta agotar los intentos.
-async function consultarRolConReintentos(latlng, layerName) {
+async function consultarRolConReintentos(latlng, layerName, todosLosServicios) {
   const offsets = [
     [0, 0],
     [4, 0], [-4, 0], [0, 4], [0, -4],
@@ -913,7 +926,12 @@ async function consultarRolConReintentos(latlng, layerName) {
       layer: layerName,
       width: size.x,
       height: size.y,
-      servicios: [{ layer: layerName }]
+      // DEBUG temporal: antes solo pedíamos la capa de Predios; ahora pedimos
+      // todas las capas/servicios de la comuna, a ver si el SII devuelve algo
+      // (geometría de manzana, etc.) en "datosCapas" para las capas extra.
+      servicios: (todosLosServicios && todosLosServicios.length
+        ? todosLosServicios.map((s) => ({ layer: s.layer }))
+        : [{ layer: layerName }])
     };
 
     const res = await callProxy('/getFeatureInfo', { clickInfo });
@@ -923,6 +941,7 @@ async function consultarRolConReintentos(latlng, layerName) {
       // en la respuesta y así poder dibujarlo en el mapa. Se puede quitar después.
       window.__ultimoRawPredio = data;
       console.log('RAW getFeatureInfo (debug polígonos):', data);
+      console.log('datosCapas (debug polígonos):', data.datosCapas);
     }
     if (!data || !data.existePredio) continue;
 
@@ -968,9 +987,65 @@ function hideResult() {
   document.getElementById('copied-msg').classList.remove('visible');
 }
 
+// ---- Capa de deslindes de predios (WMS del SII) ----
+// Confirmado capturando dos peticiones reales del mapa oficial:
+//   comuna 1201  (IQUIQUE)  → layers=sii:BR_CART_IQUIQUE_WMS
+//   comuna 13159 (RECOLETA) → layers=sii:BR_CART_RECOLETA_WMS
+// El patrón parece ser "BR_CART_" + nombre de comuna en mayúsculas sin tildes/
+// espacios + "_WMS". Para comunas de un solo nombre (la mayoría) debería andar
+// igual; para comunas compuestas (ej. "SAN FERNANDO") es una suposición sin
+// confirmar — si el overlay sale en blanco para alguna, es la primera sospecha.
+const SII_WMS_BASE = 'https://www4.sii.cl/mapasui/services/ui/wmsProxyService/call';
+
+function nombreWmsComuna(nombre) {
+  return (nombre || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // quita tildes (á→a, ñ→n, etc.)
+    .replace(/[^A-Za-z0-9]/g, '')    // quita espacios, apóstrofos, guiones
+    .toUpperCase();
+}
+
+let capaDeslindes = null;
+let comunaDeslindesActual = null;
+
+function actualizarCapaDeslindes(codigoComuna) {
+  if (codigoComuna) comunaDeslindesActual = codigoComuna;
+
+  if (capaDeslindes) {
+    map.removeLayer(capaDeslindes);
+    capaDeslindes = null;
+  }
+
+  const activo = document.getElementById('toggle-deslindes').checked;
+  const codigo = codigoComuna || comunaDeslindesActual;
+  if (!activo || !codigo) return;
+
+  const nombre = nombreSiiPorCodigo[codigo];
+  if (!nombre) return;
+
+  capaDeslindes = L.tileLayer.wms(SII_WMS_BASE, {
+    layers: 'sii:BR_CART_' + nombreWmsComuna(nombre) + '_WMS',
+    styles: 'PREDIOS_WMS_V0',
+    format: 'image/png',
+    transparent: true,
+    version: '1.1.1',
+    comuna: Number(codigo),
+    eac: 0,
+    eacano: 0,
+    maxZoom: 21,
+    zIndex: 5
+  }).addTo(map);
+}
+
+document.getElementById('toggle-deslindes').addEventListener('change', () => {
+  actualizarCapaDeslindes(comunaDeslindesActual);
+});
+
 function showResult(data) {
   playClickSound();
   document.getElementById('rol-value').textContent = data.rol || '—';
+
+  if (data.comunaCodigo) actualizarCapaDeslindes(data.comunaCodigo);
 
   const details = document.getElementById('details');
   const rows = [
