@@ -619,13 +619,15 @@ function capasReferenciaEsri() {
   return [
     // Nombres de comunas, lugares, etc.
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19,
+      maxZoom: 21,
+      maxNativeZoom: 19,
       attribution: 'Labels &copy; Esri'
     }),
     // Calles con nombre. Solo al acercarse: a zoom de ciudad Esri las dibuja como
     // autopistas gruesas que tapan la imagen; de cerca son calles finas con nombre.
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19,
+      maxZoom: 21,
+      maxNativeZoom: 19,
       minZoom: 15,
       attribution: 'Streets &copy; Esri'
     })
@@ -636,7 +638,8 @@ function capasReferenciaEsri() {
 // toma oblicua, por eso los edificios altos se ven "tumbados".
 const capaSatelital = L.layerGroup([
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 19,
+    maxZoom: 21,
+      maxNativeZoom: 19,
     attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, GIS User Community'
   }),
   ...capasReferenciaEsri()
@@ -647,7 +650,12 @@ const capaSatelital = L.layerGroup([
 // más cenitales (edificios menos inclinados), aunque pueden ser más antiguas.
 const capaSatelitalVertical = L.layerGroup([
   L.tileLayer('https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 19,
+    maxZoom: 21,
+    maxNativeZoom: 19,
+    // Este servidor responde lento: no pedir teselas en cada paso intermedio del
+    // zoom y guardar más teselas alrededor para que el paneo no las vuelva a pedir.
+    updateWhenZooming: false,
+    keepBuffer: 4,
     attribution: 'Tiles &copy; Esri World Imagery (Clarity) — Source: Esri, Maxar, Earthstar Geographics, GIS User Community'
   }),
   ...capasReferenciaEsri()
@@ -655,7 +663,8 @@ const capaSatelitalVertical = L.layerGroup([
 
 // Mapa callejero (no satelital): Esri World Street Map, trae calles y nombres propios.
 const capaCallejera = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
-  maxZoom: 19,
+  maxZoom: 21,
+      maxNativeZoom: 19,
   attribution: 'Tiles &copy; Esri — Source: Esri, HERE, Garmin, OpenStreetMap contributors, GIS User Community'
 });
 
@@ -771,8 +780,20 @@ window.addEventListener('mousemove', (e) => {
   map.setBearing(nuevo);
   sincronizarFlechaRotar(nuevo);
 });
+// Al terminar un giro, el navegador dispara un "click" en el punto donde se soltó
+// el mouse (o el dedo), y eso consultaba un rol. Se bloquea ese clic.
+let ultimoGiro = 0;
+map.on('rotate', () => { ultimoGiro = Date.now(); });
+window.addEventListener('click', (e) => {
+  if (Date.now() - ultimoGiro < 400 && mapContainer.contains(e.target)) {
+    e.stopPropagation();
+    e.preventDefault();
+  }
+}, true);
+
 window.addEventListener('mouseup', () => {
   if (!girando) return;
+  ultimoGiro = Date.now(); // cuenta aunque el mouse quedara quieto antes de soltar
   girando = false;
   map.dragging.enable();
   mapContainer.style.cursor = '';
