@@ -93,6 +93,29 @@
     border-left:none;
     overflow:hidden;
   }
+  .rotate-btn{
+    width:30px;
+    height:30px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-direction:column;
+    line-height:1;
+    background:var(--panel);
+    color:var(--moss-dark);
+    text-decoration:none;
+    user-select:none;
+  }
+  .rotate-btn:hover{ background:var(--paper); }
+  .rotate-arrow{
+    font-size:1rem;
+    transition:transform 0.2s ease;
+  }
+  .rotate-label{
+    font-size:0.55rem;
+    font-weight:bold;
+    letter-spacing:0.03em;
+  }
   #panel-toggle{
     position:absolute;
     top:12px;
@@ -552,17 +575,17 @@ function playClickSound() {
 // ---- Mapa base: satelital + etiquetas (Esri, sin necesidad de API key) ----
 const map = L.map('map', {
   zoomControl: true,
+  boxZoom: false, // Shift+arrastrar lo usa ahora el giro del mapa, no el zoom por recuadro
   rotate: true,
-  rotateControl: { closeOnZeroBearing: false },
+  rotateControl: false, // se reemplaza por el botón de giro en 90° de más abajo
   touchRotate: true,
   shiftKeyRotate: true,
   bearing: 0
 }).setView([-33.4489, -70.6693], 12);
 
-L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-  maxZoom: 20,
-  subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-  attribution: 'Imagery &copy; Google'
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 19,
+  attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, GIS User Community'
 }).addTo(map);
 
 // Capa de referencia con nombres de calles, comunas, etc. sobre la imagen satelital
@@ -593,6 +616,51 @@ panelToggleBtn.addEventListener('click', () => {
   // que se le avise para recalcular las teselas visibles.
   setTimeout(() => map.invalidateSize(), 260);
 });
+
+// ---- Botón de giro en pasos de 90° (Norte, Este, Sur, Oeste arriba) ----
+const ORIENTACIONES = [
+  { bearing: 0, letra: 'N', texto: 'Norte arriba' },
+  { bearing: 90, letra: 'E', texto: 'Este arriba' },
+  { bearing: 180, letra: 'S', texto: 'Sur arriba' },
+  { bearing: 270, letra: 'O', texto: 'Oeste arriba' },
+];
+let rotateArrowEl = null;
+let rotateLabelEl = null;
+let rotateBtnEl = null;
+
+function actualizarBotonRotar(bearing) {
+  const actual = ORIENTACIONES.find((o) => o.bearing === bearing) || ORIENTACIONES[0];
+  if (rotateArrowEl) rotateArrowEl.style.transform = 'rotate(' + (-bearing) + 'deg)';
+  if (rotateLabelEl) rotateLabelEl.textContent = actual.letra;
+  if (rotateBtnEl) {
+    rotateBtnEl.title = actual.texto + ' — clic para girar 90°';
+    rotateBtnEl.setAttribute('aria-label', rotateBtnEl.title);
+  }
+}
+
+const RotateControl = L.Control.extend({
+  options: { position: 'topleft' },
+  onAdd: function () {
+    const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+    const btn = L.DomUtil.create('a', 'rotate-btn', div);
+    btn.href = '#';
+    btn.innerHTML = '<span class="rotate-arrow">&uarr;</span><span class="rotate-label">N</span>';
+    L.DomEvent.disableClickPropagation(div);
+    L.DomEvent.on(btn, 'click', L.DomEvent.stop);
+    L.DomEvent.on(btn, 'click', () => {
+      const actualIdx = ORIENTACIONES.findIndex((o) => o.bearing === map.getBearing());
+      const siguiente = ORIENTACIONES[(actualIdx + 1 + ORIENTACIONES.length) % ORIENTACIONES.length];
+      map.setBearing(siguiente.bearing);
+      actualizarBotonRotar(siguiente.bearing);
+    });
+    rotateArrowEl = btn.querySelector('.rotate-arrow');
+    rotateLabelEl = btn.querySelector('.rotate-label');
+    rotateBtnEl = btn;
+    actualizarBotonRotar(map.getBearing() || 0);
+    return div;
+  },
+});
+map.addControl(new RotateControl());
 
 let marker = null;
 
