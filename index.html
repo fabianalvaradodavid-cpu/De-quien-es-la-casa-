@@ -502,6 +502,10 @@
         Satelital
       </label>
       <label class="layer-toggle">
+        <input type="radio" name="mapa-base" value="satelital-vertical">
+        Satelital alternativo (más vertical)
+      </label>
+      <label class="layer-toggle">
         <input type="radio" name="mapa-base" value="callejero">
         Callejero
       </label>
@@ -535,8 +539,8 @@
         Deslindes de predios
       </label>
       <div class="opacity-row" id="deslindes-opacity-row" style="display:none;">
-        <label for="deslindes-opacity">Transparencia</label>
-        <input type="range" id="deslindes-opacity" min="0.1" max="1" step="0.05" value="0.85">
+        <label for="deslindes-opacity">Relleno</label>
+        <input type="range" id="deslindes-opacity" min="0" max="1" step="0.05" value="0.85">
       </div>
     </div>
 
@@ -595,24 +599,43 @@ const map = L.map('map', {
   bearing: 0
 }).setView([-33.4489, -70.6693], 12);
 
-// Mapa satelital: imagen + etiquetas + calles (estas últimas solo desde zoom 15).
+// Etiquetas y calles de Esri, comunes a ambas versiones satelitales.
+function capasReferenciaEsri() {
+  return [
+    // Nombres de comunas, lugares, etc.
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      attribution: 'Labels &copy; Esri'
+    }),
+    // Calles con nombre. Solo al acercarse: a zoom de ciudad Esri las dibuja como
+    // autopistas gruesas que tapan la imagen; de cerca son calles finas con nombre.
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+      minZoom: 15,
+      attribution: 'Streets &copy; Esri'
+    })
+  ];
+}
+
+// Satelital estándar: la imagen más reciente de Esri. En Santiago suele ser una
+// toma oblicua, por eso los edificios altos se ven "tumbados".
 const capaSatelital = L.layerGroup([
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     maxZoom: 19,
     attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, GIS User Community'
   }),
-  // Capa de referencia con nombres de comunas, lugares, etc. sobre la imagen satelital
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+  ...capasReferenciaEsri()
+]);
+
+// Satelital alternativo: Esri World Imagery (Clarity). Usa imágenes de archivo
+// elegidas por nitidez y geometría en vez de por fecha; en muchas zonas son tomas
+// más cenitales (edificios menos inclinados), aunque pueden ser más antiguas.
+const capaSatelitalVertical = L.layerGroup([
+  L.tileLayer('https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     maxZoom: 19,
-    attribution: 'Labels &copy; Esri'
+    attribution: 'Tiles &copy; Esri World Imagery (Clarity) — Source: Esri, Maxar, Earthstar Geographics, GIS User Community'
   }),
-  // Calles con nombre. Solo al acercarse: a zoom de ciudad Esri las dibuja como
-  // autopistas gruesas que tapan la imagen; de cerca son calles finas con nombre.
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 19,
-    minZoom: 15,
-    attribution: 'Streets &copy; Esri'
-  })
+  ...capasReferenciaEsri()
 ]);
 
 // Mapa callejero (no satelital): Esri World Street Map, trae calles y nombres propios.
@@ -621,7 +644,7 @@ const capaCallejera = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/s
   attribution: 'Tiles &copy; Esri — Source: Esri, HERE, Garmin, OpenStreetMap contributors, GIS User Community'
 });
 
-const MAPAS_BASE = { satelital: capaSatelital, callejero: capaCallejera };
+const MAPAS_BASE = { satelital: capaSatelital, 'satelital-vertical': capaSatelitalVertical, callejero: capaCallejera };
 let mapaBaseActual = capaSatelital;
 capaSatelital.addTo(map);
 
@@ -716,23 +739,6 @@ const RotateControl = L.Control.extend({
 });
 map.addControl(new RotateControl());
 
-// ---- El mapa solo queda en orientaciones ortogonales (0°, 90°, 180°, 270°) ----
-function anguloRecto(bearing) {
-  return ((Math.round(bearing / 90) * 90) % 360 + 360) % 360;
-}
-function ajustarAAnguloRecto() {
-  const b = map.getBearing() || 0;
-  const recto = anguloRecto(b);
-  if (Math.abs(recto - b) > 0.01) map.setBearing(recto);
-  actualizarBotonRotar(recto);
-}
-
-// El giro con dos dedos (pantallas táctiles) es libre mientras se hace; al soltar,
-// el mapa se endereza a la orientación ortogonal más cercana.
-map.getContainer().addEventListener('touchend', (e) => {
-  if (e.touches.length === 0) setTimeout(ajustarAAnguloRecto, 0);
-});
-
 // ---- Girar con Shift + arrastrar (a mano, sin depender del plugin) ----
 let girando = null;
 const mapContainer = map.getContainer();
@@ -746,19 +752,16 @@ mapContainer.addEventListener('mousedown', (e) => {
 window.addEventListener('mousemove', (e) => {
   if (!girando) return;
   const dx = e.clientX - girando.x;
-  const libre = girando.bearing + dx * 0.5; // 0.5°/px arrastrado
-  const nuevo = anguloRecto(libre); // salta de 90° en 90°, nunca queda en diagonal
-  if (nuevo !== (map.getBearing() || 0)) {
-    map.setBearing(nuevo);
-    sincronizarFlechaRotar(nuevo);
-  }
+  const nuevo = ((girando.bearing + dx * 0.5) % 360 + 360) % 360; // 0.5°/px arrastrado
+  map.setBearing(nuevo);
+  sincronizarFlechaRotar(nuevo);
 });
 window.addEventListener('mouseup', () => {
   if (!girando) return;
   girando = false;
   map.dragging.enable();
   mapContainer.style.cursor = '';
-  ajustarAAnguloRecto();
+  actualizarBotonRotar(map.getBearing() || 0);
   girando = null;
 });
 
@@ -1258,6 +1261,92 @@ function nombreWmsComuna(nombre, codigoComuna) {
 }
 
 let capaDeslindes = null;
+
+// Capa WMS del SII que regula la transparencia solo del relleno de los predios.
+// Cada tesela se dibuja en un canvas y se recorre píxel a píxel: los píxeles
+// oscuros (las líneas de deslinde) conservan su opacidad; los claros/coloreados
+// (el relleno) se multiplican por la opacidad elegida. Los píxeles intermedios
+// (bordes suavizados de las líneas) se mezclan gradualmente para que no se vean
+// dentados.
+// Requiere que el servidor del SII entregue las imágenes con CORS; si no lo hace,
+// el navegador no deja leer los píxeles y la capa vuelve al comportamiento
+// anterior (transparencia pareja de líneas y relleno).
+const LUM_LINEA = 70;   // bajo esto, el píxel es línea (opacidad completa)
+const LUM_RELLENO = 130; // sobre esto, el píxel es relleno (opacidad regulable)
+
+function procesarPixelesDeslindes(original, destino, opacidad) {
+  const o = original.data, d = destino.data;
+  for (let i = 0; i < o.length; i += 4) {
+    const a = o[i + 3];
+    d[i] = o[i]; d[i + 1] = o[i + 1]; d[i + 2] = o[i + 2];
+    if (a === 0) { d[i + 3] = 0; continue; }
+    const lum = 0.299 * o[i] + 0.587 * o[i + 1] + 0.114 * o[i + 2];
+    let t = (lum - LUM_LINEA) / (LUM_RELLENO - LUM_LINEA); // 0 = línea, 1 = relleno
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    d[i + 3] = a * (1 - t * (1 - opacidad));
+  }
+}
+
+const CapaDeslindesSII = L.TileLayer.WMS.extend({
+  createTile: function (coords, done) {
+    const size = this.getTileSize();
+    const canvas = document.createElement('canvas');
+    canvas.width = size.x;
+    canvas.height = size.y;
+    const url = this.getTileUrl(coords);
+    const capa = this;
+
+    const dibujar = (img, conCors) => {
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, size.x, size.y);
+      if (conCors) {
+        try {
+          canvas._original = ctx.getImageData(0, 0, size.x, size.y);
+          capa._pintarTesela(canvas);
+        } catch (e) {
+          capa._sinCors();
+        }
+      }
+      done(null, canvas);
+    };
+
+    const img = new Image();
+    if (!this._corsFallido) img.crossOrigin = 'anonymous';
+    img.onload = () => dibujar(img, !capa._corsFallido);
+    img.onerror = () => {
+      if (capa._corsFallido || !img.crossOrigin) { done(new Error('tesela SII'), canvas); return; }
+      // Probablemente el SII no permite CORS: se reintenta como imagen normal.
+      capa._sinCors();
+      const img2 = new Image();
+      img2.onload = () => dibujar(img2, false);
+      img2.onerror = () => done(new Error('tesela SII'), canvas);
+      img2.src = url;
+    };
+    img.src = url;
+    return canvas;
+  },
+
+  _pintarTesela: function (canvas) {
+    if (!canvas._original) return;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const salida = ctx.createImageData(canvas._original);
+    procesarPixelesDeslindes(canvas._original, salida, this.options.opacidadRelleno);
+    ctx.putImageData(salida, 0, 0);
+  },
+
+  _sinCors: function () {
+    if (this._corsFallido) return;
+    this._corsFallido = true;
+    console.warn('El SII no entrega las teselas con CORS: la transparencia afectará también a las líneas.');
+    this.setOpacity(Math.max(this.options.opacidadRelleno, 0.1));
+  },
+
+  setOpacidadRelleno: function (opacidad) {
+    this.options.opacidadRelleno = opacidad;
+    if (this._corsFallido) { this.setOpacity(Math.max(opacidad, 0.1)); return; }
+    Object.values(this._tiles || {}).forEach((t) => this._pintarTesela(t.el));
+  }
+});
 let comunaDeslindesActual = null;
 let opacidadDeslindes = 0.85;
 
@@ -1277,7 +1366,7 @@ function actualizarCapaDeslindes(codigoComuna) {
   const nombre = nombreSiiPorCodigo[codigo];
   if (!nombre) return;
 
-  capaDeslindes = L.tileLayer.wms(SII_WMS_BASE, {
+  capaDeslindes = new CapaDeslindesSII(SII_WMS_BASE, {
     layers: 'sii:BR_CART_' + nombreWmsComuna(nombre, String(codigo)) + '_WMS',
     styles: 'PREDIOS_WMS_V0',
     format: 'image/png',
@@ -1288,7 +1377,7 @@ function actualizarCapaDeslindes(codigoComuna) {
     eacano: 0,
     maxZoom: 21,
     zIndex: 5,
-    opacity: opacidadDeslindes
+    opacidadRelleno: opacidadDeslindes
   }).addTo(map);
 }
 
@@ -1298,7 +1387,7 @@ document.getElementById('toggle-deslindes').addEventListener('change', () => {
 
 document.getElementById('deslindes-opacity').addEventListener('input', (e) => {
   opacidadDeslindes = Number(e.target.value);
-  if (capaDeslindes) capaDeslindes.setOpacity(opacidadDeslindes);
+  if (capaDeslindes) capaDeslindes.setOpacidadRelleno(opacidadDeslindes);
 });
 
 function showResult(data) {
