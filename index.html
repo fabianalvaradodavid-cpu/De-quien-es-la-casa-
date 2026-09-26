@@ -331,6 +331,17 @@
     color:#9a6f80;
     margin-left:1.6rem;
   }
+  .leaflet-tooltip.avaluo-label{
+    background:var(--clay);
+    color:#fff;
+    border:none;
+    font-weight:600;
+    font-size:0.75rem;
+    padding:2px 7px;
+    border-radius:3px;
+    box-shadow:0 1px 4px rgba(0,0,0,0.35);
+  }
+  .leaflet-tooltip.avaluo-label::before{ border-top-color:var(--clay); }
   .deslindes-list{
     list-style:none;
     margin:0.4rem 0 0;
@@ -472,7 +483,9 @@
   .modal-overlay.visible{ display:flex; }
   .modal{
     background:var(--panel);
-    border-radius:8px;
+    border-radius:0 0 6px 6px;
+    border:1.5px solid var(--moss-dark);
+    border-top:none;
     width:100%;
     max-width:440px;
     max-height:78vh;
@@ -480,6 +493,18 @@
     flex-direction:column;
     box-shadow:0 8px 30px rgba(0,0,0,0.35);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    /* El borde superior queda recortado con forma de "skyline" (un perfil de
+       edificios de distinta altura), para que la ventana de unidades luzca como
+       un edificio. Los "huecos" entre torres dejan ver el mapa detrás, porque
+       .modal-overlay es transparente (ver más abajo). */
+    clip-path: polygon(
+      0 16px, 0 8px, 8% 8px, 8% 2px, 16% 2px, 16% 10px, 24% 10px, 24% 0,
+      32% 0, 32% 12px, 40% 12px, 40% 6px, 48% 6px, 48% 14px, 56% 14px, 56% 4px,
+      64% 4px, 64% 10px, 72% 10px, 72% 2px, 80% 2px, 80% 12px, 88% 12px, 88% 6px,
+      96% 6px, 96% 16px, 100% 16px,
+      100% 100%, 0 100%
+    );
+    padding-top:16px; /* deja el "techo" libre para que no tape el encabezado */
   }
   .modal-header{
     display:flex;
@@ -730,6 +755,11 @@
         <input type="range" id="deslindes-opacity" min="0" max="1" step="0.05" value="0.85">
       </div>
       <ul class="deslindes-list" id="deslindes-list"></ul>
+      <label class="layer-toggle">
+        <input type="checkbox" id="toggle-avaluos">
+        <span class="swatch" style="background:var(--clay);"></span>
+        Mostrar avalúos
+      </label>
     </div>
 
     <div class="status" id="status"></div>
@@ -1690,11 +1720,39 @@ document.getElementById('deslindes-opacity').addEventListener('input', (e) => {
   actualizarFiltroDeslindes(opacidadDeslindes);
 });
 
+// ---- Etiquetas de avalúo sobre las propiedades clickeadas ----
+// Mientras la casilla "Mostrar avalúos" está marcada, cada predio que se
+// consulta (clic o "Ir a mi ubicación") deja flotando su avalúo encima. Se usan
+// marcadores invisibles con un tooltip permanente en vez de dibujar sobre el
+// marcador visible del clic, porque ese marcador se reemplaza en cada clic
+// nuevo y estas etiquetas deben quedarse aunque se consulte otro predio.
+let etiquetasAvaluo = [];
+
+function agregarEtiquetaAvaluo(latlng, valorTotal) {
+  if (!document.getElementById('toggle-avaluos').checked) return;
+  const texto = formatCLP(valorTotal);
+  if (!texto) return; // esta respuesta no trajo avalúo; no hay nada que mostrar
+  const etiqueta = L.marker(latlng, { opacity: 0, interactive: false, keyboard: false })
+    .bindTooltip(texto, { permanent: true, direction: 'top', offset: [0, -8], className: 'avaluo-label' })
+    .addTo(map);
+  etiquetasAvaluo.push(etiqueta);
+}
+
+function quitarEtiquetasAvaluo() {
+  etiquetasAvaluo.forEach((e) => map.removeLayer(e));
+  etiquetasAvaluo = [];
+}
+
+document.getElementById('toggle-avaluos').addEventListener('change', (e) => {
+  if (!e.target.checked) quitarEtiquetasAvaluo();
+});
+
 function showResult(data) {
   playClickSound();
   document.getElementById('rol-value').textContent = data.rol || '—';
 
   if (data.comunaCodigo) agregarCapaDeslindes(data.comunaCodigo);
+  if (marker) agregarEtiquetaAvaluo(marker.getLatLng(), data.valorTotal);
 
   const details = document.getElementById('details');
   const rows = [
