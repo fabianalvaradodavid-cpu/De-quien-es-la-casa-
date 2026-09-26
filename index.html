@@ -313,6 +313,44 @@
     color:#9a6f80;
     margin-left:1.6rem;
   }
+  .deslindes-list{
+    list-style:none;
+    margin:0.4rem 0 0;
+    padding:0.3rem 0 0;
+    border-top:1px dashed var(--line);
+  }
+  .deslindes-list:empty{ display:none; }
+  .deslindes-list li{
+    display:flex;
+    align-items:center;
+    gap:0.4rem;
+    padding:0.2rem 0;
+    font-size:0.8rem;
+    color:var(--ink);
+  }
+  .deslindes-list li input[type="checkbox"]{
+    width:14px;
+    height:14px;
+    accent-color:#a3402b;
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  .deslindes-list li .nombre{
+    flex:1;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .deslindes-list li .quitar{
+    border:none;
+    background:none;
+    color:#9a6f80;
+    font-size:0.95rem;
+    line-height:1;
+    padding:0.1rem 0.3rem;
+    cursor:pointer;
+  }
+  .deslindes-list li .quitar:hover{ color:var(--clay); }
   .monumento-popup{ font-size:0.85rem; line-height:1.4; max-width:240px; }
   .monumento-popup h4{ margin:0 0 0.3rem; font-size:0.9rem; }
   .monumento-popup dl{ margin:0; }
@@ -673,6 +711,7 @@
         <label for="deslindes-opacity">Relleno</label>
         <input type="range" id="deslindes-opacity" min="0" max="1" step="0.05" value="0.85">
       </div>
+      <ul class="deslindes-list" id="deslindes-list"></ul>
     </div>
 
     <div class="status" id="status"></div>
@@ -1501,18 +1540,63 @@ function agregarCapaDeslindes(codigoComuna) {
 
   const capa = crearCapaDeslindes(codigo);
   if (!capa) return;
-  capasDeslindes[codigo] = capa;
+  capasDeslindes[codigo] = { capa, nombre: nombreSiiPorCodigo[codigo] || String(codigo), visible: true };
   capa.addTo(map);
   // El filtro SVG (líneas opacas + relleno regulable) es compartido por todas las
   // capas vía "url(#filtro-deslindes)"; basta con aplicarlo al contenedor de cada
   // una y el slider de opacidad ya existente las controla a todas por igual.
   capa.getContainer().style.filter = 'url(#filtro-deslindes)';
   actualizarFiltroDeslindes(opacidadDeslindes);
+  renderListaDeslindes();
 }
 
 function quitarCapasDeslindes() {
-  Object.values(capasDeslindes).forEach((capa) => map.removeLayer(capa));
+  Object.values(capasDeslindes).forEach((info) => map.removeLayer(info.capa));
   capasDeslindes = {};
+  renderListaDeslindes();
+}
+
+// Panel lateral con las comunas ya agregadas: cada una con una casilla para
+// mostrarla/ocultarla sin perderla, y un botón para sacarla de la lista.
+function renderListaDeslindes() {
+  const ul = document.getElementById('deslindes-list');
+  ul.innerHTML = '';
+  Object.entries(capasDeslindes).forEach(([codigo, info]) => {
+    const li = document.createElement('li');
+
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.checked = info.visible;
+    chk.title = 'Mostrar u ocultar esta comuna';
+    chk.addEventListener('change', () => {
+      info.visible = chk.checked;
+      if (info.visible) {
+        info.capa.addTo(map);
+        info.capa.getContainer().style.filter = 'url(#filtro-deslindes)';
+      } else {
+        map.removeLayer(info.capa);
+      }
+    });
+
+    const nombre = document.createElement('span');
+    nombre.className = 'nombre';
+    nombre.textContent = info.nombre;
+    nombre.title = info.nombre;
+
+    const quitar = document.createElement('button');
+    quitar.type = 'button';
+    quitar.className = 'quitar';
+    quitar.textContent = '✕';
+    quitar.title = 'Quitar esta comuna de la lista';
+    quitar.addEventListener('click', () => {
+      map.removeLayer(info.capa);
+      delete capasDeslindes[codigo];
+      renderListaDeslindes();
+    });
+
+    li.append(chk, nombre, quitar);
+    ul.appendChild(li);
+  });
 }
 
 document.getElementById('toggle-deslindes').addEventListener('change', (e) => {
