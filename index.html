@@ -510,19 +510,6 @@
     overflow:hidden;
     position:relative;
   }
-  /* Parteluz vertical, solo a la altura del encabezado (imita la cruz de la
-     ventana de referencia). */
-  .modal-glass::after{
-    content:"";
-    position:absolute;
-    left:50%;
-    top:0;
-    width:5px;
-    height:52px;
-    background:#8b9aa1;
-    transform:translateX(-50%);
-    pointer-events:none;
-  }
   .modal-header{
     position:relative;
     z-index:1;
@@ -657,6 +644,11 @@
   @media (max-width:720px){
     main{ grid-template-columns:1fr; grid-template-rows:1fr auto; }
     aside{ border-left:none; border-top:1px solid var(--line); max-height:46vh; }
+    /* En móvil el panel va en una fila abajo, no en una columna a la derecha;
+       sin esto, ocultar el panel no achicaba nada porque solo existía la regla
+       de columna de más arriba. */
+    main.panel-hidden{ grid-template-rows:1fr 0px; }
+    main.panel-hidden aside{ max-height:0; }
   }
   /* La ventana de unidades flota sobre el mapa y se arrastra por su encabezado;
      el fondo no se oscurece ni bloquea, así el mapa sigue usable detrás. */
@@ -835,7 +827,7 @@ const map = L.map('map', {
   rotate: true,
   rotateControl: false, // se reemplaza por el botón de giro en 90° de más abajo
   touchRotate: true,
-  shiftKeyRotate: false, // se reemplaza por el gesto manual de más abajo (no giraba)
+  shiftKeyRotate: true,
   bearing: 0
 }).setView([-33.4489, -70.6693], 12);
 
@@ -916,11 +908,29 @@ document.querySelectorAll('input[name="mapa-base"]').forEach((radio) => {
 // ---- Ocultar/mostrar el panel lateral ----
 const mainEl = document.querySelector('main');
 const panelToggleBtn = document.getElementById('panel-toggle');
-panelToggleBtn.addEventListener('click', () => {
-  const oculto = mainEl.classList.toggle('panel-hidden');
-  panelToggleBtn.textContent = oculto ? '«' : '»';
+// El botón vive dentro de #map, así que sin esto un tap también le llega al
+// mapa como si fuera un clic sobre el terreno (dispara la consulta de rol).
+L.DomEvent.disableClickPropagation(panelToggleBtn);
+
+function actualizarIconoPanelToggle(oculto) {
+  const esMovil = window.matchMedia('(max-width:720px)').matches;
+  // En escritorio el panel se esconde hacia la derecha (flechas horizontales);
+  // en móvil se esconde hacia abajo (flechas verticales).
+  const iconoMostrar = esMovil ? '▲' : '«';
+  const iconoOcultar = esMovil ? '▼' : '»';
+  panelToggleBtn.textContent = oculto ? iconoMostrar : iconoOcultar;
   panelToggleBtn.title = oculto ? 'Mostrar panel' : 'Ocultar panel';
   panelToggleBtn.setAttribute('aria-label', panelToggleBtn.title);
+}
+
+actualizarIconoPanelToggle(mainEl.classList.contains('panel-hidden'));
+window.addEventListener('resize', () => {
+  actualizarIconoPanelToggle(mainEl.classList.contains('panel-hidden'));
+});
+
+panelToggleBtn.addEventListener('click', () => {
+  const oculto = mainEl.classList.toggle('panel-hidden');
+  actualizarIconoPanelToggle(oculto);
   // El mapa cambia de tamaño con la transición CSS del grid; Leaflet necesita
   // que se le avise para recalcular las teselas visibles.
   setTimeout(() => map.invalidateSize(), 260);
@@ -1045,44 +1055,21 @@ const LocateControl = L.Control.extend({
 });
 map.addControl(new LocateControl());
 
-// ---- Girar con Shift + arrastrar (a mano, sin depender del plugin) ----
-let girando = null;
-const mapContainer = map.getContainer();
-mapContainer.addEventListener('mousedown', (e) => {
-  if (!e.shiftKey || e.button !== 0) return;
-  if (e.target.closest('#buscador')) return;
-  e.preventDefault();
-  girando = { x: e.clientX, bearing: map.getBearing() || 0 };
-  map.dragging.disable();
-  mapContainer.style.cursor = 'grabbing';
-});
-window.addEventListener('mousemove', (e) => {
-  if (!girando) return;
-  const dx = e.clientX - girando.x;
-  const nuevo = ((girando.bearing + dx * 0.5) % 360 + 360) % 360; // 0.5°/px arrastrado
-  map.setBearing(nuevo);
-  sincronizarFlechaRotar(nuevo);
-});
 // Al terminar un giro, el navegador dispara un "click" en el punto donde se soltó
 // el mouse (o el dedo), y eso consultaba un rol. Se bloquea ese clic.
+const mapContainer = map.getContainer();
 let ultimoGiro = 0;
-map.on('rotate', () => { ultimoGiro = Date.now(); });
+map.on('rotate', (e) => {
+  ultimoGiro = Date.now();
+  sincronizarFlechaRotar((e && e.bearing) || map.getBearing() || 0);
+});
+map.on('rotateend', () => actualizarBotonRotar(map.getBearing() || 0));
 window.addEventListener('click', (e) => {
   if (Date.now() - ultimoGiro < 400 && mapContainer.contains(e.target)) {
     e.stopPropagation();
     e.preventDefault();
   }
 }, true);
-
-window.addEventListener('mouseup', () => {
-  if (!girando) return;
-  ultimoGiro = Date.now(); // cuenta aunque el mouse quedara quieto antes de soltar
-  girando = false;
-  map.dragging.enable();
-  mapContainer.style.cursor = '';
-  actualizarBotonRotar(map.getBearing() || 0);
-  girando = null;
-});
 
 let marker = null;
 
