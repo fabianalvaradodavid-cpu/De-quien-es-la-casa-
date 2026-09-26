@@ -116,6 +116,24 @@
     font-weight:bold;
     letter-spacing:0.03em;
   }
+  .locate-btn{
+    width:30px;
+    height:30px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:var(--panel);
+    color:var(--moss-dark);
+    text-decoration:none;
+    font-size:1.05rem;
+    user-select:none;
+  }
+  .locate-btn:hover{ background:var(--paper); }
+  .locate-btn.cargando{ animation:locate-pulso 1s ease-in-out infinite; }
+  @keyframes locate-pulso{
+    0%, 100%{ opacity:1; }
+    50%{ opacity:0.35; }
+  }
   /* ---- Buscador de direcciones (sobre el mapa) ---- */
   #buscador{
     position:absolute;
@@ -918,6 +936,63 @@ const RotateControl = L.Control.extend({
 });
 map.addControl(new RotateControl());
 
+// ---- Botón "Ir a mi ubicación" (geolocalización del navegador) ----
+let circuloUbicacion = null;
+
+function irAMiUbicacion(btn) {
+  if (!navigator.geolocation) {
+    setStatus('Este navegador no permite compartir tu ubicación.', true);
+    return;
+  }
+  btn.classList.add('cargando');
+  setStatus('Obteniendo tu ubicación…');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      btn.classList.remove('cargando');
+      const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+
+      if (circuloUbicacion) map.removeLayer(circuloUbicacion);
+      circuloUbicacion = L.circle(latlng, {
+        radius: pos.coords.accuracy || 30,
+        color: '#2f8e5a',
+        weight: 1,
+        fillColor: '#2f8e5a',
+        fillOpacity: 0.15,
+      }).addTo(map);
+
+      map.setView(latlng, Math.max(map.getZoom(), 18));
+      consultarPuntoEnMapa(latlng); // consulta el rol ahí mismo, igual que un clic
+    },
+    (err) => {
+      btn.classList.remove('cargando');
+      const MENSAJES_ERROR = {
+        1: 'Se denegó el permiso de ubicación. Actívalo en el navegador e inténtalo de nuevo.',
+        2: 'No se pudo determinar tu ubicación (señal GPS o de red insuficiente).',
+        3: 'Se agotó el tiempo esperando tu ubicación. Inténtalo de nuevo.',
+      };
+      setStatus(MENSAJES_ERROR[err.code] || ('No se pudo obtener tu ubicación: ' + err.message), true);
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+}
+
+const LocateControl = L.Control.extend({
+  options: { position: 'topleft' },
+  onAdd: function () {
+    const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+    const btn = L.DomUtil.create('a', 'locate-btn', div);
+    btn.href = '#';
+    btn.innerHTML = '📍';
+    btn.title = 'Ir a mi ubicación';
+    btn.setAttribute('aria-label', btn.title);
+    L.DomEvent.disableClickPropagation(div);
+    L.DomEvent.on(btn, 'click', L.DomEvent.stop);
+    L.DomEvent.on(btn, 'click', () => irAMiUbicacion(btn));
+    return div;
+  },
+});
+map.addControl(new LocateControl());
+
 // ---- Girar con Shift + arrastrar (a mano, sin depender del plugin) ----
 let girando = null;
 const mapContainer = map.getContainer();
@@ -1266,13 +1341,13 @@ async function obtenerServiciosComuna(codigo) {
   return serviciosCache[codigo];
 }
 
-// ---- Clic en el mapa → detectar comuna → consultar rol ----
-let clickSeq = 0; // para ignorar respuestas de clics anteriores
-map.on('click', async (e) => {
+// ---- Clic en el mapa (o "Ir a mi ubicación") → detectar comuna → consultar rol ----
+let clickSeq = 0; // para ignorar respuestas de clics/ubicaciones anteriores
+async function consultarPuntoEnMapa(latlng) {
   const seq = ++clickSeq;
 
   if (marker) map.removeLayer(marker);
-  marker = L.marker(e.latlng).addTo(map);
+  marker = L.marker(latlng).addTo(map);
 
   hideResult();
   setStatus('Detectando comuna…');
@@ -1285,7 +1360,7 @@ map.on('click', async (e) => {
       setStatus('No se pudieron cargar los límites de comunas: ' + err.message + '. Sube comunas_geo.js junto a index.html.', true);
       return;
     }
-    const candidatas = comunasCandidatas(e.latlng.lat, e.latlng.lng);
+    const candidatas = comunasCandidatas(latlng.lat, latlng.lng);
     if (!candidatas.length) {
       setStatus('No se pudo determinar la comuna de ese punto (¿está fuera de Chile?).', true);
       return;
@@ -1303,7 +1378,7 @@ map.on('click', async (e) => {
         try {
           const cfg = await obtenerServiciosComuna(codigo);
           if (!cfg) return { vacio: true };
-          const r = await consultarRolConReintentos(e.latlng, cfg.layer, cfg.servicios);
+          const r = await consultarRolConReintentos(latlng, cfg.layer, cfg.servicios);
           if (!r) return { vacio: true };
           r.comunaCodigo = codigo;
           r.comunaNombre = nombreSiiPorCodigo[codigo] || c.nombre;
@@ -1341,7 +1416,8 @@ map.on('click', async (e) => {
     console.error(err);
     if (seq === clickSeq) setStatus('No se pudo consultar el rol (' + err.message + ').', true);
   }
-});
+}
+map.on('click', (e) => consultarPuntoEnMapa(e.latlng));
 
 // Intenta obtener el rol en el punto clickeado. Si el SII devuelve existePredio
 // pero sin datos de rol resolubles (muy común justo en los bordes de un predio,
