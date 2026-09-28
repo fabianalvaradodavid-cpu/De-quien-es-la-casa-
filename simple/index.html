@@ -799,7 +799,7 @@ const map = L.map('map', {
   rotate: true,
   rotateControl: false, // se reemplaza por el botón de giro en 90° de más abajo
   touchRotate: true,
-  shiftKeyRotate: true,
+  shiftKeyRotate: false, // en PC el del plugin no gira: se usa el gesto manual de más abajo
   bearing: 0
 }).setView([-33.4489, -70.6693], 12);
 
@@ -1042,6 +1042,36 @@ window.addEventListener('click', (e) => {
     e.preventDefault();
   }
 }, true);
+
+// ---- Girar con Shift + arrastrar en PC (a mano, sin depender del plugin) ----
+// En el celular gira el gesto de dos dedos del plugin (touchRotate); en PC el
+// Shift+arrastrar del plugin no funciona con esta versión, así que se hace aquí.
+let girando = null;
+mapContainer.addEventListener('mousedown', (e) => {
+  if (!e.shiftKey || e.button !== 0) return;
+  if (e.target.closest('#buscador, .leaflet-control, #panel-toggle')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  girando = { x: e.clientX, y: e.clientY, bearing: map.getBearing() || 0 };
+  map.dragging.disable();
+  mapContainer.style.cursor = 'grabbing';
+}, true);
+window.addEventListener('mousemove', (e) => {
+  if (!girando) return;
+  const delta = e.clientX - girando.x; // arrastrar a la derecha gira en sentido horario
+  const nuevo = ((girando.bearing + delta * 0.5) % 360 + 360) % 360; // 0.5° por px
+  map.setBearing(nuevo);
+  ultimoGiro = Date.now();
+  sincronizarFlechaRotar(nuevo);
+});
+window.addEventListener('mouseup', () => {
+  if (!girando) return;
+  ultimoGiro = Date.now(); // bloquea el clic que el navegador dispara al soltar
+  girando = null;
+  map.dragging.enable();
+  mapContainer.style.cursor = '';
+  actualizarBotonRotar(map.getBearing() || 0);
+});
 
 let marker = null;
 
