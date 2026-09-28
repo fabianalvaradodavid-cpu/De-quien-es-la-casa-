@@ -746,6 +746,13 @@
         <label for="deslindes-opacity">Relleno</label>
         <input type="range" id="deslindes-opacity" min="0" max="1" step="0.05" value="0.85">
       </div>
+      <ul class="deslindes-list" id="deslindes-list"></ul>
+      <label class="layer-toggle">
+        <input type="checkbox" id="toggle-avaluos">
+        <span class="swatch" style="background:var(--clay);"></span>
+        Mostrar avalúos
+      </label>
+    </div>
 
     <div class="layers-box">
       <span class="layers-title">Monumentos Nacionales</span>
@@ -765,13 +772,6 @@
         Santuarios de la Naturaleza
       </label>
       <div class="layer-loading" id="loading-monumentos" style="display:none;">Cargando datos del CMN…</div>
-    </div>
-      <ul class="deslindes-list" id="deslindes-list"></ul>
-      <label class="layer-toggle">
-        <input type="checkbox" id="toggle-avaluos">
-        <span class="swatch" style="background:var(--clay);"></span>
-        Mostrar avalúos
-      </label>
     </div>
 
     <div class="status" id="status"></div>
