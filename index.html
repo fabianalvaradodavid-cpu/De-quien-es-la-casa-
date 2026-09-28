@@ -736,6 +736,18 @@
     </div>
 
     <div class="layers-box">
+      <span class="layers-title">Cartografía SII</span>
+      <label class="layer-toggle">
+        <input type="checkbox" id="toggle-deslindes">
+        <span class="swatch poligonos" style="background:transparent; border:1.5px solid #b5622f;"></span>
+        Deslindes de predios
+      </label>
+      <div class="opacity-row" id="deslindes-opacity-row" style="display:none;">
+        <label for="deslindes-opacity">Relleno</label>
+        <input type="range" id="deslindes-opacity" min="0" max="1" step="0.05" value="0.85">
+      </div>
+
+    <div class="layers-box">
       <span class="layers-title">Monumentos Nacionales</span>
       <label class="layer-toggle">
         <input type="checkbox" id="toggle-mh">
@@ -754,18 +766,6 @@
       </label>
       <div class="layer-loading" id="loading-monumentos" style="display:none;">Cargando datos del CMN…</div>
     </div>
-
-    <div class="layers-box">
-      <span class="layers-title">Cartografía SII</span>
-      <label class="layer-toggle">
-        <input type="checkbox" id="toggle-deslindes">
-        <span class="swatch poligonos" style="background:transparent; border:1.5px solid #b5622f;"></span>
-        Deslindes de predios
-      </label>
-      <div class="opacity-row" id="deslindes-opacity-row" style="display:none;">
-        <label for="deslindes-opacity">Relleno</label>
-        <input type="range" id="deslindes-opacity" min="0" max="1" step="0.05" value="0.85">
-      </div>
       <ul class="deslindes-list" id="deslindes-list"></ul>
       <label class="layer-toggle">
         <input type="checkbox" id="toggle-avaluos">
