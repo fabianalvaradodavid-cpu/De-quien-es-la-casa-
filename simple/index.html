@@ -642,31 +642,6 @@
   .modal-header{ cursor:move; user-select:none; touch-action:none; }
   .modal-header .modal-close{ cursor:pointer; }
   .modal.arrastrando{ opacity:0.92; }
-  /* Ficha para el trámite de la TGR: los 4 datos en el orden del formulario */
-  .tgr-ficha{
-    margin:0.8rem 0 0.2rem;
-    padding:0.6rem 0.7rem;
-    border:1px solid var(--line);
-    border-radius:6px;
-    background:var(--paper);
-    font-size:0.85rem;
-  }
-  .tgr-ficha .tgr-titulo{ font-weight:600; margin-bottom:0.35rem; }
-  .tgr-ficha ol{ margin:0; padding-left:1.2rem; }
-  .tgr-ficha li{ margin:0.2rem 0; }
-  .tgr-ficha li span.dato{ font-weight:600; }
-  .tgr-ficha button.copiar{
-    margin-left:0.4rem;
-    padding:0.05rem 0.45rem;
-    font:inherit;
-    font-size:0.75rem;
-    border:1px solid var(--line);
-    border-radius:4px;
-    background:var(--panel);
-    cursor:pointer;
-  }
-  .tgr-ficha button.copiar:hover{ border-color:var(--clay); }
-  .tgr-ficha .tgr-nota{ margin-top:0.35rem; font-size:0.75rem; opacity:0.8; }
 </style>
 </head>
 <body>
@@ -793,16 +768,6 @@
         <div class="value" id="rol-value">—</div>
       </div>
       <dl class="details" id="details"></dl>
-      <div class="tgr-ficha" id="tgr-ficha">
-        <div class="tgr-titulo">Datos para el certificado de la TGR</div>
-        <ol>
-          <li>Región: <span class="dato" id="tgr-region">—</span></li>
-          <li>Comuna: <span class="dato" id="tgr-comuna">—</span></li>
-          <li>Rol: <span class="dato" id="tgr-rol">—</span><button class="copiar" id="tgr-copiar-rol" type="button">Copiar</button></li>
-          <li>Subrol: <span class="dato" id="tgr-subrol">—</span><button class="copiar" id="tgr-copiar-subrol" type="button">Copiar</button></li>
-        </ol>
-        <div class="tgr-nota">En la TGR elige región y comuna en las listas, pega rol y subrol y resuelve el captcha.</div>
-      </div>
       <div class="actions">
         <button class="primary" id="copy-manzana-btn">Copiar rol manzana y abrir trámite TGR</button>
         <button class="secondary" id="copy-propiedad-btn">Copiar rol predio</button>
@@ -1839,28 +1804,6 @@ document.getElementById('toggle-avaluos').addEventListener('change', (e) => {
   if (!e.target.checked) quitarEtiquetasAvaluo();
 });
 
-// Región de una comuna a partir de su código SII. El código sigue la antigua
-// numeración de regiones y provincias: los 1-2 primeros dígitos son la región y
-// el siguiente la provincia (Arica/Parinacota, Ñuble y Valdivia/Ranco quedaron en
-// las regiones creadas después; 13 a 16 son todas Región Metropolitana).
-function regionDeComunaSII(codigo) {
-  const c = String(codigo || '');
-  if (!/^\d{4,5}$/.test(c)) return '';
-  const region = c.length === 4 ? c[0] : c.slice(0, 2);
-  const provincia = c.length === 4 ? c[1] : c[2];
-  const nombres = {
-    '2': 'Antofagasta', '3': 'Atacama', '4': 'Coquimbo', '5': 'Valparaíso',
-    '6': "Libertador General Bernardo O'Higgins", '7': 'Maule', '9': 'La Araucanía',
-    '11': 'Aysén del General Carlos Ibáñez del Campo', '12': 'Magallanes y de la Antártica Chilena',
-    '13': 'Metropolitana de Santiago', '14': 'Metropolitana de Santiago',
-    '15': 'Metropolitana de Santiago', '16': 'Metropolitana de Santiago'
-  };
-  if (region === '1') return provincia === '2' ? 'Tarapacá' : 'Arica y Parinacota';
-  if (region === '8') return provincia === '1' ? 'Ñuble' : 'Biobío';
-  if (region === '10') return provincia === '1' ? 'Los Ríos' : 'Los Lagos';
-  return nombres[region] || '';
-}
-
 function showResult(data) {
   document.getElementById('rol-value').textContent = data.rol || '—';
 
@@ -1907,18 +1850,6 @@ function showResult(data) {
     });
   };
 
-  // Ficha TGR: región, comuna, rol (manzana) y subrol (predio)
-  document.getElementById('tgr-region').textContent = regionDeComunaSII(data.comunaCodigo) || '—';
-  document.getElementById('tgr-comuna').textContent = data.nombreComuna || data.comunaNombre || '—';
-  document.getElementById('tgr-rol').textContent = manzana || '—';
-  document.getElementById('tgr-subrol').textContent = propiedad || '—';
-  const copiarRol = document.getElementById('tgr-copiar-rol');
-  const copiarSubrol = document.getElementById('tgr-copiar-subrol');
-  copiarRol.disabled = !manzana;
-  copiarSubrol.disabled = !propiedad;
-  copiarRol.onclick = () => navigator.clipboard.writeText(manzana).then(() => showCopiedMsg('Rol copiado.'));
-  copiarSubrol.onclick = () => navigator.clipboard.writeText(propiedad).then(() => showCopiedMsg('Subrol copiado.'));
-
   const unidadesBtn = document.getElementById('ver-unidades-btn');
   if (esUnidadDeCopropiedad(propiedad)) {
     unidadesBtn.style.display = '';
@@ -1952,10 +1883,33 @@ function cerrarModalUnidades() {
 // A partir de una dirección de unidad ("AV OHIGGINS 1650 DP 205 EDIF LEBLON")
 // intenta quedarse solo con "calle + número" ("AV OHIGGINS 1650"), cortando en
 // el primer número, para usarla como valor inicial del buscador por dirección.
+// "Calle + número" de una dirección del SII, sin el detalle de la unidad
+// ("LASTARRIA 70 DP 1" → "LASTARRIA 70"). La calle puede empezar con un número
+// ("4 ORIENTE 1271 EDIFICIO CONDOMINIO" → "4 ORIENTE 1271") o tenerlo en medio
+// ("21 DE MAYO 580", "PASAJE 12 NORTE 345 CS 2"). Candidatos a número de la
+// dirección: números que vienen después de alguna palabra con letras y no van
+// seguidos de "DE". Se elige el primero que va seguido de una marca de unidad
+// (DP, CS, LC, EDIFICIO…) o que es el último candidato.
+const MARCAS_UNIDAD = /^(DP|DPTO|DEPTO|DEP|OF|OFIC|OFICINA|LC|LOCAL|CS|CASA|BX|BOX|BOD|BODEGA|EST|ESTAC|PISO|TORRE|TO|BL|BLOCK|BLOQUE|EDIFICIO|EDIF|ED|LT|LOTE|SITIO|SIT|PARC|PARCELA|MZ|UNIDAD|UN)$/;
 function direccionBase(direccion) {
   if (!direccion) return '';
-  const m = direccion.match(/^(.*?\d+)/);
-  return (m ? m[1] : direccion).trim();
+  const t = direccion.trim().split(/\s+/);
+  const candidatos = [];
+  let hayLetras = false;
+  t.forEach((tok, i) => {
+    if (/^\d+$/.test(tok)) {
+      const sig = (t[i + 1] || '').toUpperCase();
+      if (hayLetras && sig !== 'DE' && sig !== 'DEL') candidatos.push(i);
+    } else if (/[A-Za-zÁÉÍÓÚÑáéíóúñ]/.test(tok)) {
+      hayLetras = true;
+    }
+  });
+  for (let k = 0; k < candidatos.length; k++) {
+    const i = candidatos[k];
+    const sig = (t[i + 1] || '').toUpperCase().replace(/[.,]/g, '');
+    if (!sig || MARCAS_UNIDAD.test(sig) || k === candidatos.length - 1) return t.slice(0, i + 1).join(' ');
+  }
+  return direccion.trim();
 }
 
 // Separa un texto tipo "Los Aliaga 531" en calle ("Los Aliaga") y número ("531"),
