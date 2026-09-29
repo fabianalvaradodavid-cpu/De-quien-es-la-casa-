@@ -739,6 +739,7 @@
         <span class="swatch poligonos" style="background:transparent; border:2px solid #1c3347;"></span>
         Manzanas
       </label>
+      <ul class="deslindes-list" id="manzanas-list"></ul>
       <label class="layer-toggle">
         <input type="checkbox" id="toggle-avaluos">
         <span class="swatch" style="background:var(--clay);"></span>
@@ -1770,7 +1771,9 @@ document.getElementById('deslindes-opacity').addEventListener('input', (e) => {
 // Capturado del mapa oficial: una sola capa para todo el país, filtrada por el
 // parámetro "comuna", servida por wmsProxyService/callComuna (no por /call).
 const SII_WMS_COMUNA = 'https://www4.sii.cl/mapasui/services/ui/wmsProxyService/callComuna';
-let capasManzanas = {};         // codigo comuna → capa
+// Igual que los deslindes: se van sumando comunas y cada una aparece en una
+// lista del panel para mostrarla/ocultarla o quitarla.
+let capasManzanas = {}; // codigo comuna → { capa, nombre, visible }
 let comunaManzanasActual = null;
 
 function agregarCapaManzanas(codigoComuna) {
@@ -1787,20 +1790,58 @@ function agregarCapaManzanas(codigoComuna) {
     eac: 0,
     eacano: 0,
     maxZoom: 21,
-    zIndex: 6 // sobre los deslindes de predios
+    zIndex: 6
   });
-  capasManzanas[codigo] = capa;
+  capasManzanas[codigo] = { capa, nombre: nombreSiiPorCodigo[codigo] || String(codigo), visible: true };
   capa.addTo(map);
+  renderListaManzanas();
 }
 
 function quitarCapasManzanas() {
-  Object.values(capasManzanas).forEach((capa) => map.removeLayer(capa));
+  Object.values(capasManzanas).forEach((info) => map.removeLayer(info.capa));
   capasManzanas = {};
+  renderListaManzanas();
+}
+
+function renderListaManzanas() {
+  const ul = document.getElementById('manzanas-list');
+  ul.innerHTML = '';
+  Object.entries(capasManzanas).forEach(([codigo, info]) => {
+    const li = document.createElement('li');
+
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.checked = info.visible;
+    chk.title = 'Mostrar u ocultar esta comuna';
+    chk.addEventListener('change', () => {
+      info.visible = chk.checked;
+      if (info.visible) info.capa.addTo(map);
+      else map.removeLayer(info.capa);
+    });
+
+    const nombre = document.createElement('span');
+    nombre.className = 'nombre';
+    nombre.textContent = info.nombre;
+    nombre.title = info.nombre;
+
+    const quitar = document.createElement('button');
+    quitar.type = 'button';
+    quitar.className = 'quitar';
+    quitar.textContent = '✕';
+    quitar.title = 'Quitar esta comuna de la lista';
+    quitar.addEventListener('click', () => {
+      map.removeLayer(info.capa);
+      delete capasManzanas[codigo];
+      renderListaManzanas();
+    });
+
+    li.append(chk, nombre, quitar);
+    ul.appendChild(li);
+  });
 }
 
 document.getElementById('toggle-manzanas').addEventListener('change', (e) => {
   if (e.target.checked) {
-    // Igual que los deslindes: sin clic, se usa la comuna donde está el mouse.
     agregarCapaManzanas((comunaBajoMouse && comunaBajoMouse.codigo) || comunaManzanasActual || comunaDeslindesActual);
   } else {
     quitarCapasManzanas();
