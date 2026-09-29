@@ -714,6 +714,11 @@
         <input type="radio" name="mapa-base" value="callejero">
         Callejero
       </label>
+      <label class="layer-toggle">
+        <input type="checkbox" id="toggle-limites-comunales">
+        <span class="swatch poligonos" style="background:transparent; border:1.5px solid #2b2b2b;"></span>
+        Límites comunales
+      </label>
     </div>
 
     <div class="layers-box">
@@ -1734,6 +1739,36 @@ document.getElementById('toggle-deslindes').addEventListener('change', (e) => {
 document.getElementById('deslindes-opacity').addEventListener('input', (e) => {
   opacidadDeslindes = Number(e.target.value);
   actualizarFiltroDeslindes(opacidadDeslindes);
+});
+
+// ---- Límites comunales ----
+// Solo el contorno de cada comuna (sin relleno, sin nombres, sin clics), a partir
+// de los mismos límites que ya se cargan para detectar la comuna del punto. Se
+// dibuja en canvas porque son 346 comunas con muchos vértices.
+let capaLimitesComunales = null;
+document.getElementById('toggle-limites-comunales').addEventListener('change', async (e) => {
+  if (!e.target.checked) {
+    if (capaLimitesComunales) map.removeLayer(capaLimitesComunales);
+    return;
+  }
+  if (!capaLimitesComunales) {
+    try {
+      const lista = await cargarComunasGeo();
+      capaLimitesComunales = L.geoJSON({
+        type: 'FeatureCollection',
+        features: lista.map((c) => ({ type: 'Feature', properties: {}, geometry: { type: 'MultiPolygon', coordinates: c.polys } }))
+      }, {
+        renderer: L.canvas({ padding: 0.5 }),
+        interactive: false,
+        style: { color: '#2b2b2b', weight: 1.6, opacity: 0.9, fill: false }
+      });
+    } catch (err) {
+      console.error('Límites comunales', err);
+      e.target.checked = false;
+      return;
+    }
+  }
+  if (e.target.checked) capaLimitesComunales.addTo(map);
 });
 
 // ---- Manzanas (WMS del SII) ----
