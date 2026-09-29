@@ -6,22 +6,21 @@
 <title>Rol de propiedad → Certificado de deuda TGR</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Luckiest+Guy&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://unpkg.com/leaflet-rotate@0.1.4/dist/leaflet-rotate-src.js"></script>
-<script src="../comunas.js"></script>
+<script src="comunas.js"></script>
 <style>
   :root{
-    /* Paleta sobria: grises azulados y azul acero (versión /simple) */
-    --ink:#1f2a33;
-    --paper:#f4f6f8;
-    --line:#d3dae1;
-    --moss:#2c4a63;
-    --moss-dark:#1c3347;
-    --clay:#2f5f82;
-    --clay-dark:#234a66;
-    --leather:#1e2830;
+    --ink:#2a1a1f;
+    --paper:#fbf3f6;
+    --line:#e6c9d6;
+    --moss:#7c1f3e;
+    --moss-dark:#54142a;
+    --clay:#e2007a;
+    --clay-dark:#b8005f;
+    --leather:#2c1c16;
     --panel:#ffffff;
     font-size:16px;
   }
@@ -37,7 +36,7 @@
   header{
     padding:1.1rem 1.4rem 0.9rem;
     border-bottom:2px solid var(--clay);
-    background:linear-gradient(120deg, #f7f9fb 0%, #edf1f5 55%, #e2e8ee 100%);
+    background:linear-gradient(120deg, #fdf1f6 0%, #fbe1ee 55%, #f7d4e8 100%);
     display:flex;
     align-items:center;
     gap:0.9rem;
@@ -49,19 +48,35 @@
     gap:0.2rem;
   }
   header h1{
-    font-family:'Source Serif 4', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
-    font-size:1.75rem;
+    font-family:'Luckiest Guy', 'Iowan Old Style', cursive;
+    font-size:1.9rem;
     margin:0;
-    font-weight:600;
-    letter-spacing:0;
-    line-height:1.15;
-    color:var(--moss-dark);
+    font-weight:400;
+    letter-spacing:0.02em;
+    color:var(--clay);
+    text-shadow:2px 2px 0 var(--moss-dark);
+    transform:rotate(-1.5deg);
+    display:inline-block;
   }
   header p{
     margin:0;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     font-size:0.82rem;
-    color:#5a6873;
+    color:#7a5a68;
+  }
+  .mascot-wrap{
+    margin:-1.1rem -1.1rem 1.1rem;
+    overflow:hidden;
+    border-bottom:2px solid var(--clay);
+  }
+  #mascot{
+    display:block;
+    width:100%;
+    height:230px;
+    object-fit:cover;
+    object-position:50% 18%;
+    user-select:none;
+    -webkit-user-drag:none;
   }
   main{
     flex:1;
@@ -193,14 +208,14 @@
     display:block;
     margin-top:0.15rem;
     font-size:0.72rem;
-    color:#5a6873;
+    color:#7a5a68;
   }
   #buscador-resultados .precision-exacta{ color:#2f8e5a; }
   #buscador-resultados .precision-calle{ color:#a3402b; }
   #buscador-resultados li.aviso{
     padding:0.5rem 0.7rem;
     font-size:0.82rem;
-    color:#5a6873;
+    color:#7a5a68;
   }
   #panel-toggle{
     position:absolute;
@@ -238,7 +253,7 @@
     font-size:0.72rem;
     text-transform:uppercase;
     letter-spacing:0.06em;
-    color:#7b8791;
+    color:#9a6f80;
     margin-bottom:0.35rem;
   }
   select{
@@ -254,7 +269,7 @@
   .status{
     margin-top:0.9rem;
     font-size:0.85rem;
-    color:#5a6873;
+    color:#7a5a68;
   }
   .status.error{ color:#a3402b; }
   .layers-box{
@@ -269,7 +284,7 @@
     font-size:0.72rem;
     text-transform:uppercase;
     letter-spacing:0.06em;
-    color:#7b8791;
+    color:#9a6f80;
     margin-bottom:0.5rem;
   }
   .layer-toggle{
@@ -285,7 +300,7 @@
   .layer-toggle input{
     width:15px;
     height:15px;
-    accent-color:#2f5f82;
+    accent-color:#a3402b;
     cursor:pointer;
   }
   .layer-toggle .swatch{
@@ -308,12 +323,12 @@
   }
   .opacity-row input[type="range"]{
     flex:1;
-    accent-color:#2f5f82;
+    accent-color:#a3402b;
     cursor:pointer;
   }
   .layer-loading{
     font-size:0.75rem;
-    color:#7b8791;
+    color:#9a6f80;
     margin-left:1.6rem;
   }
   .leaflet-tooltip.avaluo-label{
@@ -345,7 +360,7 @@
   .deslindes-list li input[type="checkbox"]{
     width:14px;
     height:14px;
-    accent-color:#2f5f82;
+    accent-color:#a3402b;
     cursor:pointer;
     flex-shrink:0;
   }
@@ -358,7 +373,7 @@
   .deslindes-list li .quitar{
     border:none;
     background:none;
-    color:#7b8791;
+    color:#9a6f80;
     font-size:0.95rem;
     line-height:1;
     padding:0.1rem 0.3rem;
@@ -368,9 +383,9 @@
   .monumento-popup{ font-size:0.85rem; line-height:1.4; max-width:240px; }
   .monumento-popup h4{ margin:0 0 0.3rem; font-size:0.9rem; }
   .monumento-popup dl{ margin:0; }
-  .monumento-popup dt{ font-weight:600; color:#5a6873; float:left; clear:left; margin-right:0.3rem; }
+  .monumento-popup dt{ font-weight:600; color:#7a5a68; float:left; clear:left; margin-right:0.3rem; }
   .monumento-popup dd{ margin:0 0 0.15rem; }
-  .monumento-popup a{ color:#2f5f82; }
+  .monumento-popup a{ color:#a3402b; }
   .result{
     margin-top:0.9rem;
     border:1px solid var(--line);
@@ -381,7 +396,7 @@
   .result.visible{ display:block; }
   .result-rol{
     background:var(--moss);
-    color:#f7f9fb;
+    color:#fbf9f2;
     padding:0.9rem 1rem;
   }
   .result-rol .label{
@@ -408,10 +423,10 @@
     justify-content:space-between;
     gap:0.6rem;
     padding:0.32rem 0;
-    border-bottom:1px solid #e6ebef;
+    border-bottom:1px solid #f0ede3;
   }
   dl.details div:last-child{ border-bottom:none; }
-  dl.details dt{ color:#7b8791; }
+  dl.details dt{ color:#9a6f80; }
   dl.details dd{ margin:0; text-align:right; }
   .actions{
     padding:0.85rem 1rem 1rem;
@@ -443,7 +458,7 @@
     border-radius:4px;
     cursor:pointer;
   }
-  button.secondary:hover{ background:#eef2f5; }
+  button.secondary:hover{ background:#fbeef4; }
   button.secondary:active{ transform:translateY(1px); }
   button:disabled{ opacity:0.45; cursor:not-allowed; }
   .copied{
@@ -458,7 +473,7 @@
   .modal-overlay{
     position:fixed;
     inset:0;
-    background:rgba(15,22,30,0.6);
+    background:rgba(20,10,14,0.6);
     display:none;
     align-items:center;
     justify-content:center;
@@ -527,7 +542,7 @@
   }
   .modal-loading, .modal-error{
     font-size:0.88rem;
-    color:#5a6873;
+    color:#7a5a68;
   }
   .modal-error{ color:#a3402b; }
   ul.unit-list{
@@ -539,7 +554,7 @@
   ul.unit-list li{
     display:block;
     padding:0.65rem 0;
-    border-bottom:1px solid #e6ebef;
+    border-bottom:1px solid #f0ede3;
     font-size:0.85rem;
   }
   ul.unit-list li:last-child{ border-bottom:none; }
@@ -566,7 +581,7 @@
     border:1px solid var(--line);
     border-radius:3px;
     font-size:0.8rem;
-    color:#5a6873;
+    color:#7a5a68;
   }
   .unit-details.visible{ display:block; }
   .unit-details div{
@@ -592,7 +607,7 @@
     color:var(--moss-dark);
     line-height:1.2;
   }
-  .unit-buttons button:hover{ background:#eef2f5; }
+  .unit-buttons button:hover{ background:#fbeef4; }
   .unit-buttons button:active{ transform:translateY(1px); }
   .unit-buttons button.primary{
     background:var(--clay);
@@ -608,7 +623,7 @@
     font-size:0.72rem;
     text-transform:uppercase;
     letter-spacing:0.06em;
-    color:#7b8791;
+    color:#9a6f80;
     margin-bottom:0.35rem;
   }
   .modal-filter input{
@@ -623,7 +638,7 @@
   }
   .modal-filter .filter-hint{
     font-size:0.72rem;
-    color:#7b8791;
+    color:#9a6f80;
     margin-top:0.3rem;
   }
   @media (max-width:720px){
@@ -689,6 +704,7 @@
     </feMerge>
   </filter>
 </svg>
+<audio id="click-sound" src="click.mp3" preload="auto"></audio>
 
 <main>
   <div id="map">
@@ -702,6 +718,9 @@
     <button id="panel-toggle" type="button" aria-label="Ocultar panel" title="Ocultar panel">»</button>
   </div>
   <aside>
+    <div class="mascot-wrap">
+      <img id="mascot" src="mascota.jpg" alt="Mascota">
+    </div>
     <div class="layers-box">
       <span class="layers-title">Mapa base</span>
       <label class="layer-toggle">
@@ -713,12 +732,8 @@
         Satelital alternativo (más vertical)
       </label>
       <label class="layer-toggle">
-        <input type="radio" name="mapa-base" value="callejero">
-        Callejero
-      </label>
-      <label class="layer-toggle">
         <input type="radio" name="mapa-base" value="osm">
-        OpenStreetMap (más referencias)
+        OpenStreetMap
       </label>
       <label class="layer-toggle">
         <input type="radio" name="mapa-base" value="limites">
@@ -808,6 +823,15 @@ const PROXY_BASE = "https://fabianalvaradodavid--eb6f8c9eb5fd11f1af9b1607ee4eb77
 
 const TGR_URL = "https://tgr.gob.cl/tramites-tgr/certificado-de-deuda-de-contribuciones/";
 
+// ---- Sonido de "rol encontrado" ----
+const clickSound = document.getElementById('click-sound');
+function playClickSound() {
+  try {
+    clickSound.currentTime = 0;
+    clickSound.play().catch(() => {});
+  } catch (e) { /* algunos navegadores bloquean audio hasta la primera interacción del usuario */ }
+}
+
 // ---- Mapa base: satelital + etiquetas (Esri, sin necesidad de API key) ----
 const map = L.map('map', {
   zoomControl: true,
@@ -866,15 +890,8 @@ const capaSatelitalVertical = L.layerGroup([
   ...capasReferenciaEsri()
 ]);
 
-// Mapa callejero (no satelital): Esri World Street Map, trae calles y nombres propios.
-const capaCallejera = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
-  maxZoom: 21,
-      maxNativeZoom: 19,
-  attribution: 'Tiles &copy; Esri — Source: Esri, HERE, Garmin, OpenStreetMap contributors, GIS User Community'
-});
-
 // OpenStreetMap estándar: suele mostrar más referencias (locales, servicios,
-// nombres de calles menores) que el callejero de Esri.
+// nombres de calles menores) que otros mapas callejeros.
 const capaOSM = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 21,
   maxNativeZoom: 19,
@@ -901,7 +918,7 @@ async function prepararLimitesComunales() {
   limitesComunalesListos = true;
 }
 
-const MAPAS_BASE = { satelital: capaSatelital, 'satelital-vertical': capaSatelitalVertical, callejero: capaCallejera, osm: capaOSM, limites: capaLimitesComunales };
+const MAPAS_BASE = { satelital: capaSatelital, 'satelital-vertical': capaSatelitalVertical, osm: capaOSM, limites: capaLimitesComunales };
 let mapaBaseActual = capaSatelital;
 capaSatelital.addTo(map);
 
@@ -1133,7 +1150,7 @@ const COLOR_POR_CATEGORIA = {
   'Santuario de la Naturaleza': '#2f8e5a',
 };
 function colorCategoria(categoria) {
-  return COLOR_POR_CATEGORIA[categoria] || '#5a6873';
+  return COLOR_POR_CATEGORIA[categoria] || '#7a5a68';
 }
 
 function popupMonumento(props) {
@@ -1179,7 +1196,7 @@ function crearCapaCategoria(categoria, features) {
     pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
       radius: 5,
       weight: 1,
-      color: '#1c252c',
+      color: '#2b1a20',
       fillColor: color,
       fillOpacity: 0.85,
     }),
@@ -1204,11 +1221,11 @@ async function cargarDatosMonumentos() {
   if (monumentosPorCategoria) return monumentosPorCategoria;
   if (!monumentosCargando) {
     monumentosCargando = Promise.all([
-      fetch('../monumentos_puntos.geojson').then((r) => {
+      fetch('monumentos_puntos.geojson').then((r) => {
         if (!r.ok) throw new Error('HTTP ' + r.status + ' en monumentos_puntos.geojson');
         return r.json();
       }),
-      fetch('../monumentos_poligonos.geojson').then((r) => {
+      fetch('monumentos_poligonos.geojson').then((r) => {
         if (!r.ok) throw new Error('HTTP ' + r.status + ' en monumentos_poligonos.geojson');
         return r.json();
       }),
@@ -1313,9 +1330,9 @@ function cargarComunasGeo() {
     });
     const origen = (typeof COMUNAS_GEO !== 'undefined')
       ? Promise.resolve(COMUNAS_GEO)
-      : cargarScript('../comunas_geo.js')
+      : cargarScript('comunas_geo.js')
           .then(() => COMUNAS_GEO)
-          .catch(() => fetch('../comunas.geojson').then((r) => {
+          .catch(() => fetch('comunas.geojson').then((r) => {
             if (!r.ok) throw new Error('HTTP ' + r.status + ' en comunas.geojson');
             return r.json();
           }));
@@ -1446,7 +1463,7 @@ async function consultarPuntoEnMapa(latlng) {
       await cargarComunasGeo();
     } catch (err) {
       console.error(err);
-      setStatus('No se pudieron cargar los límites de comunas: ' + err.message + '. Revisa que comunas_geo.js esté en la carpeta principal del sitio.', true);
+      setStatus('No se pudieron cargar los límites de comunas: ' + err.message + '. Sube comunas_geo.js junto a index.html.', true);
       return;
     }
     const candidatas = comunasCandidatas(latlng.lat, latlng.lng);
@@ -1674,7 +1691,6 @@ function candidatosWmsComuna(nombre, codigo) {
     const abrev = (arr) => [arr[0][0]].concat(arr.slice(1)).join('_');
     add(abrev(palabras));                                // S_PEDRO_DE_ATACAMA
     add(abrev(sinPrep));                                 // S_PEDRO_ATACAMA
-    // "SAN"/"SANTA"/"SANTO" pegado a la palabra siguiente
     if (/^SANT?[AO]?$/.test(palabras[0])) {
       add(palabras[0] + palabras.slice(1).join(''));
       add(palabras.slice(1).join('_'));                  // PEDRO_DE_ATACAMA
@@ -1953,6 +1969,7 @@ document.getElementById('toggle-avaluos').addEventListener('change', (e) => {
 });
 
 function showResult(data) {
+  playClickSound();
   document.getElementById('rol-value').textContent = data.rol || '—';
 
   if (data.comunaCodigo) {
