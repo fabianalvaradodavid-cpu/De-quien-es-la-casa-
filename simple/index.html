@@ -694,7 +694,7 @@
   <div id="map">
     <div id="buscador">
       <form id="buscador-form" role="search">
-        <input type="search" id="buscador-input" placeholder="Buscar dirección (ej: Lastarria 70, Santiago)" aria-label="Buscar dirección" autocomplete="off">
+        <input type="search" id="buscador-input" placeholder="Buscar dirección o lugar (ej: Lastarria 70, Santiago)" aria-label="Buscar dirección" autocomplete="off">
         <button type="submit">Buscar</button>
       </form>
       <ul id="buscador-resultados" aria-live="polite"></ul>
@@ -713,8 +713,8 @@
         Satelital alternativo (más vertical)
       </label>
       <label class="layer-toggle">
-        <input type="radio" name="mapa-base" value="callejero">
-        Callejero
+        <input type="radio" name="mapa-base" value="osm">
+        OpenStreetMap
       </label>
       <label class="layer-toggle">
         <input type="radio" name="mapa-base" value="limites">
@@ -862,11 +862,12 @@ const capaSatelitalVertical = L.layerGroup([
   ...capasReferenciaEsri()
 ]);
 
-// Mapa callejero (no satelital): Esri World Street Map, trae calles y nombres propios.
-const capaCallejera = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+// OpenStreetMap estándar: suele mostrar más referencias (locales, servicios,
+// nombres de calles menores) que el callejero de Esri.
+const capaOSM = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 21,
-      maxNativeZoom: 19,
-  attribution: 'Tiles &copy; Esri — Source: Esri, HERE, Garmin, OpenStreetMap contributors, GIS User Community'
+  maxNativeZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 });
 
 // Mapa base "Solo límites comunales": ninguna imagen de fondo, solo el contorno
@@ -889,7 +890,7 @@ async function prepararLimitesComunales() {
   limitesComunalesListos = true;
 }
 
-const MAPAS_BASE = { satelital: capaSatelital, 'satelital-vertical': capaSatelitalVertical, callejero: capaCallejera, limites: capaLimitesComunales };
+const MAPAS_BASE = { satelital: capaSatelital, 'satelital-vertical': capaSatelitalVertical, osm: capaOSM, limites: capaLimitesComunales };
 let mapaBaseActual = capaSatelital;
 capaSatelital.addTo(map);
 
@@ -1645,6 +1646,34 @@ function nombreWmsComuna(nombre, codigoComuna) {
     .toUpperCase();
 }
 
+// El SII abrevia a mano los nombres largos (ej. "P_AGUIRRE_CERDA"), sin regla fija.
+// Para las comunas compuestas se generan varias variantes probables y, si la
+// primera no devuelve imagen, se prueba la siguiente (ver crearCapaDeslindes).
+// Las que se confirmen se pueden fijar en EXCEPCIONES_WMS_COMUNA.
+function candidatosWmsComuna(nombre, codigo) {
+  const lista = [];
+  const add = (n) => { if (n && !lista.includes(n)) lista.push(n); };
+  if (EXCEPCIONES_WMS_COMUNA[codigo]) add(EXCEPCIONES_WMS_COMUNA[codigo]);
+  const completo = nombreWmsComuna(nombre, null);
+  add(completo);
+  const palabras = completo.split('_');
+  if (palabras.length > 1) {
+    const sinPrep = palabras.filter((p) => !['DE', 'DEL', 'LA', 'LAS', 'LOS', 'EL'].includes(p));
+    add(sinPrep.join('_'));                              // SAN_PEDRO_ATACAMA
+    const abrev = (arr) => [arr[0][0]].concat(arr.slice(1)).join('_');
+    add(abrev(palabras));                                // S_PEDRO_DE_ATACAMA
+    add(abrev(sinPrep));                                 // S_PEDRO_ATACAMA
+    // "SAN"/"SANTA"/"SANTO" pegado a la palabra siguiente
+    if (/^SANT?[AO]?$/.test(palabras[0])) {
+      add(palabras[0] + palabras.slice(1).join(''));
+      add(palabras.slice(1).join('_'));                  // PEDRO_DE_ATACAMA
+      add(sinPrep.slice(1).join('_'));                   // PEDRO_ATACAMA
+    }
+    add(palabras.join(''));                              // todo pegado
+  }
+  return lista;
+}
+
 // Transparencia solo del relleno de los predios, con un filtro SVG aplicado a la
 // capa del SII (no necesita CORS, a diferencia de leer los píxeles en un canvas).
 // El filtro separa las líneas (píxeles oscuros y no azules) del relleno azul:
@@ -1666,8 +1695,13 @@ let opacidadDeslindes = 0.85;
 function crearCapaDeslindes(codigo) {
   const nombre = nombreSiiPorCodigo[codigo];
   if (!nombre) return null;
-  return L.tileLayer.wms(SII_WMS_BASE, {
-    layers: 'sii:BR_CART_' + nombreWmsComuna(nombre, String(codigo)) + '_WMS',
+  const candidatos = candidatosWmsComuna(nombre, String(codigo)).map((n) => 'sii:BR_CART_' + n + '_WMS');
+  let idx = 0;
+  let cargoAlguna = false;
+  let errores = 0;
+
+  const capa = L.tileLayer.wms(SII_WMS_BASE, {
+    layers: candidatos[0],
     styles: 'PREDIOS_WMS_V0',
     format: 'image/png',
     transparent: true,
@@ -1678,6 +1712,38 @@ function crearCapaDeslindes(codigo) {
     maxZoom: 21,
     zIndex: 5
   });
+
+  const usar = (layers) => {
+    capa.setParams({ layers }, false);
+    errores = 0;
+    console.info('Deslindes ' + nombre + ': probando capa', layers);
+  };
+
+  // Si ninguna tesela ha cargado y van llegando errores, el nombre de la capa
+  // está mal: se pasa al siguiente candidato.
+  capa.on('tileload', () => { if (!cargoAlguna) console.info('Deslindes ' + nombre + ': capa OK →', capa.wmsParams.layers); cargoAlguna = true; });
+  capa.on('tileerror', () => {
+    if (cargoAlguna) return;
+    errores += 1;
+    if (errores >= 3 && idx < candidatos.length - 1) {
+      idx += 1;
+      usar(candidatos[idx]);
+    } else if (errores >= 3 && idx === candidatos.length - 1) {
+      console.warn('Deslindes ' + nombre + ': ningún nombre de capa funcionó', candidatos);
+    }
+  });
+
+  // El SII informa el nombre exacto de la capa de predios de cada comuna; si es
+  // de tipo WMS del SII, se usa ese como primera opción.
+  obtenerServiciosComuna(codigo).then((r) => {
+    const exacto = r && r.layer;
+    if (typeof exacto === 'string' && /BR_CART/i.test(exacto) && !cargoAlguna) {
+      const nombreCapa = exacto.startsWith('sii:') ? exacto : 'sii:' + exacto;
+      if (nombreCapa !== capa.wmsParams.layers) { candidatos.unshift(nombreCapa); idx = 0; usar(nombreCapa); }
+    }
+  }).catch(() => {});
+
+  return capa;
 }
 
 // Agrega al mapa los deslindes de una comuna si el checkbox está marcado y esa
@@ -2329,7 +2395,7 @@ async function buscarEsri(q) {
     outFields: 'Addr_type,Match_addr,City,Subregion',
     sourceCountry: 'CHL',
     langCode: 'ES',
-    location: '-70.6693,-33.4489', // prioriza Santiago sin excluir el resto del país
+    location: map.getCenter().lng + ',' + map.getCenter().lat, // prioriza la zona que se está viendo
     maxLocations: '6',
     forStorage: 'false'
   });
@@ -2357,14 +2423,18 @@ async function buscarEsri(q) {
 }
 
 async function buscarNominatim(q) {
+  // Sesga hacia la zona que se está viendo (si no, Nominatim favorece Santiago)
+  const b = map.getBounds();
   const params = new URLSearchParams({
     q,
     format: 'jsonv2',
     addressdetails: '1',
+    namedetails: '1',
     countrycodes: 'cl',
-    limit: '6',
+    limit: '8',
+    dedupe: '1',
     'accept-language': 'es',
-    viewbox: '-71.75,-32.9,-69.75,-34.3',
+    viewbox: [b.getWest(), b.getNorth(), b.getEast(), b.getSouth()].join(','),
     bounded: '0'
   });
   const resp = await fetch('https://nominatim.openstreetmap.org/search?' + params);
@@ -2372,16 +2442,35 @@ async function buscarNominatim(q) {
   const lugares = await resp.json();
   return lugares.map((lugar) => {
     const a = lugar.address || {};
-    const calle = [a.road || a.pedestrian || a.footway || lugar.name, a.house_number].filter(Boolean).join(' ');
-    const zona = [a.suburb || a.neighbourhood, a.city || a.town || a.village || a.municipality].filter(Boolean).join(', ');
+    const calleRaw = a.road || a.pedestrian || a.footway || a.path;
+    const calle = [calleRaw, a.house_number].filter(Boolean).join(' ');
+    const zona = [a.suburb || a.neighbourhood || a.hamlet, a.city || a.town || a.village || a.municipality || a.county].filter(Boolean).join(', ');
+    // Referencias de OSM (locales, plazas, iglesias, etc.): se muestran por su nombre
+    const nombre = lugar.name || (lugar.namedetails && lugar.namedetails.name) || '';
+    const esReferencia = nombre && (!calleRaw || nombre !== calleRaw);
+    const tipo = lugar.type && lugar.type !== 'yes' ? lugar.type.replace(/_/g, ' ') : '';
     return {
       lat: Number(lugar.lat),
       lng: Number(lugar.lon),
-      principal: calle || lugar.display_name.split(',')[0],
-      secundaria: zona || lugar.display_name.split(',').slice(1, 3).join(',').trim(),
-      precision: a.house_number ? 'exacta' : (a.road ? 'calle' : 'lugar')
+      principal: esReferencia ? nombre : (calle || lugar.display_name.split(',')[0]),
+      secundaria: esReferencia
+        ? [tipo, calle, zona].filter(Boolean).join(' · ')
+        : (zona || lugar.display_name.split(',').slice(1, 3).join(',').trim()),
+      precision: a.house_number ? 'exacta' : (esReferencia ? 'lugar' : (calleRaw ? 'calle' : 'lugar')),
+      fuente: 'OSM'
     };
   });
+}
+
+// Quita duplicados (mismo punto a ~40 m) entre Esri y OSM
+function deduplicarLugares(lugares) {
+  const salida = [];
+  lugares.forEach((l) => {
+    const dup = salida.find((o) => Math.abs(o.lat - l.lat) < 0.0004 && Math.abs(o.lng - l.lng) < 0.0004 &&
+      (o.principal.toLowerCase() === l.principal.toLowerCase() || o.precision === l.precision));
+    if (!dup) salida.push(l);
+  });
+  return salida;
 }
 
 function mostrarResultados(lugares, conNumero) {
@@ -2413,27 +2502,18 @@ buscadorForm.addEventListener('submit', async (e) => {
   avisoBusqueda('Buscando…');
   const conNumero = traeNumero(q);
 
-  let lugares = [];
-  try {
-    lugares = await buscarEsri(q);
-  } catch (err) {
-    console.warn('Geocodificador Esri no disponible, se usa Nominatim:', err);
+  // Esri y OpenStreetMap en paralelo: Esri es mejor con números de calle y OSM
+  // suma referencias (locales, plazas, servicios) y calles que Esri no conoce.
+  const [rEsri, rOsm] = await Promise.allSettled([buscarEsri(q), buscarNominatim(q)]);
+  if (rEsri.status === 'rejected') console.warn('Esri no disponible:', rEsri.reason);
+  if (rOsm.status === 'rejected') console.warn('Nominatim no disponible:', rOsm.reason);
+  if (rEsri.status === 'rejected' && rOsm.status === 'rejected') {
+    avisoBusqueda('No se pudo buscar ahora (' + rOsm.reason.message + '). Intenta de nuevo en unos segundos.');
+    return;
   }
-  // Si Esri no dio un número (exacto o aproximado) y se pidió uno, se prueba OSM
-  const esriConNumero = lugares.some((l) => l.precision === 'exacta' || l.precision === 'interpolada');
-  if (!lugares.length || (conNumero && !esriConNumero)) {
-    try {
-      const osm = await buscarNominatim(q);
-      const osmConNumero = osm.filter((l) => l.precision === 'exacta');
-      lugares = osmConNumero.length ? osmConNumero.concat(lugares) : (lugares.length ? lugares : osm);
-    } catch (err) {
-      console.error(err);
-      if (!lugares.length) {
-        avisoBusqueda('No se pudo buscar ahora (' + err.message + '). Intenta de nuevo en unos segundos.');
-        return;
-      }
-    }
-  }
+  const esri = rEsri.status === 'fulfilled' ? rEsri.value : [];
+  const osm = rOsm.status === 'fulfilled' ? rOsm.value : [];
+  let lugares = deduplicarLugares(esri.concat(osm));
 
   if (!lugares.length) {
     avisoBusqueda('No se encontró esa dirección. Prueba con calle, número y comuna.');
@@ -2447,7 +2527,7 @@ buscadorForm.addEventListener('submit', async (e) => {
   const conPunto = lugares.filter((l) => l.precision === 'exacta' || l.precision === 'interpolada');
   if (conNumero && conPunto.length === 1) { irADireccion(conPunto[0]); return; }
   if (lugares.length === 1) { irADireccion(lugares[0]); return; }
-  mostrarResultados(lugares.slice(0, 6), conNumero);
+  mostrarResultados(lugares.slice(0, 8), conNumero);
 });
 
 // Esc cierra la lista; clic fuera del buscador también
