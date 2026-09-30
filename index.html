@@ -865,30 +865,81 @@ function capasReferenciaEsri() {
 
 // Satelital estándar: la imagen más reciente de Esri. En Santiago suele ser una
 // toma oblicua, por eso los edificios altos se ven "tumbados".
+const teselasSatelital = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 21,
+  maxNativeZoom: 19,
+  attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, GIS User Community'
+});
 const capaSatelital = L.layerGroup([
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 21,
-      maxNativeZoom: 19,
-    attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, GIS User Community'
-  }),
+  teselasSatelital,
   ...capasReferenciaEsri()
 ]);
 
 // Satelital alternativo: Esri World Imagery (Clarity). Usa imágenes de archivo
 // elegidas por nitidez y geometría en vez de por fecha; en muchas zonas son tomas
 // más cenitales (edificios menos inclinados), aunque pueden ser más antiguas.
+const teselasSatelitalVertical = L.tileLayer('https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 21,
+  maxNativeZoom: 19,
+  // Este servidor responde lento: no pedir teselas en cada paso intermedio del
+  // zoom y guardar más teselas alrededor para que el paneo no las vuelva a pedir.
+  updateWhenZooming: false,
+  keepBuffer: 4,
+  attribution: 'Tiles &copy; Esri World Imagery (Clarity) — Source: Esri, Maxar, Earthstar Geographics, GIS User Community'
+});
 const capaSatelitalVertical = L.layerGroup([
-  L.tileLayer('https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom: 21,
-    maxNativeZoom: 19,
-    // Este servidor responde lento: no pedir teselas en cada paso intermedio del
-    // zoom y guardar más teselas alrededor para que el paneo no las vuelva a pedir.
-    updateWhenZooming: false,
-    keepBuffer: 4,
-    attribution: 'Tiles &copy; Esri World Imagery (Clarity) — Source: Esri, Maxar, Earthstar Geographics, GIS User Community'
-  }),
+  teselasSatelitalVertical,
   ...capasReferenciaEsri()
 ]);
+
+// ---- "Map data not yet available" ----
+// Esri no tiene imagen a todos los niveles de zoom en todas partes (en zonas
+// rurales o desérticas a veces llega solo hasta el nivel 15-17). Al acercarse más,
+// pide teselas que no existen y muestra ese cartel. Se consulta a Esri hasta qué
+// nivel hay imagen bajo el centro del mapa y se limita el zoom nativo a ese nivel:
+// más allá, Leaflet amplía la última imagen disponible en vez de pedir una vacía.
+const TILEMAP_ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tilemap';
+const cacheTilemap = new Map();
+
+async function hayImagenEsri(z, x, y) {
+  const clave = z + '/' + x + '/' + y;
+  if (cacheTilemap.has(clave)) return cacheTilemap.get(clave);
+  const resp = await fetch(TILEMAP_ESRI + '/' + z + '/' + y + '/' + x + '/1/1?f=json');
+  if (!resp.ok) throw new Error('tilemap HTTP ' + resp.status);
+  const json = await resp.json();
+  const ok = !!(json.data && json.data[0] === 1);
+  cacheTilemap.set(clave, ok);
+  return ok;
+}
+
+let ajusteZoomEnCurso = false;
+async function ajustarZoomNativoSatelital() {
+  if (ajusteZoomEnCurso || map.getZoom() < 16) return;
+  ajusteZoomEnCurso = true;
+  try {
+    const c = map.getCenter();
+    let nativo = 19;
+    for (; nativo > 12; nativo--) {
+      const p = map.project(c, nativo).divideBy(256).floor();
+      if (await hayImagenEsri(nativo, p.x, p.y)) break;
+    }
+    [teselasSatelital, teselasSatelitalVertical].forEach((capa) => {
+      if (capa.options.maxNativeZoom !== nativo) {
+        capa.options.maxNativeZoom = nativo;
+        if (map.hasLayer(capa) || (mapaBaseActual && mapaBaseActual.hasLayer && mapaBaseActual.hasLayer(capa))) capa.redraw();
+      }
+    });
+  } catch (e) {
+    console.warn('No se pudo consultar la cobertura de imagen satelital:', e);
+  } finally {
+    ajusteZoomEnCurso = false;
+  }
+}
+let temporizadorZoomNativo = null;
+map.on('moveend', () => {
+  clearTimeout(temporizadorZoomNativo);
+  temporizadorZoomNativo = setTimeout(ajustarZoomNativoSatelital, 400);
+});
 
 // OpenStreetMap estándar: suele mostrar más referencias (locales, servicios,
 // nombres de calles menores) que otros mapas callejeros.
@@ -1719,16 +1770,41 @@ let capasDeslindes = {};
 let comunaDeslindesActual = null; // última comuna detectada (clic o mouse), aunque ya esté agregada
 let opacidadDeslindes = 0.85;
 
+// Sondeo rápido: pide una imagen WMS diminuta con un nombre de capa candidato.
+// Si el nombre existe el SII devuelve un PNG (aunque vacío); si no existe devuelve
+// un error XML y la imagen falla. Se lanzan todos los candidatos a la vez.
+function sondearCapaWms(layers, codigo) {
+  return new Promise((resolve) => {
+    const c = map.getCenter();
+    const p = L.CRS.EPSG3857.project(c);
+    const r = 300; // metros alrededor del centro del mapa
+    const params = new URLSearchParams({
+      service: 'WMS', request: 'GetMap', version: '1.1.1',
+      layers, styles: 'PREDIOS_WMS_V0', format: 'image/png', transparent: 'true',
+      srs: 'EPSG:3857',
+      bbox: [p.x - r, p.y - r, p.x + r, p.y + r].join(','),
+      width: '64', height: '64',
+      comuna: String(Number(codigo)), eac: '0', eacano: '0'
+    });
+    const img = new Image();
+    const t = setTimeout(() => resolve(false), 8000);
+    img.onload = () => { clearTimeout(t); resolve(true); };
+    img.onerror = () => { clearTimeout(t); resolve(false); };
+    img.src = SII_WMS_BASE + '?' + params;
+  });
+}
+
 function crearCapaDeslindes(codigo) {
   const nombre = nombreSiiPorCodigo[codigo];
   if (!nombre) return null;
+  const clave = 'siiWmsCapa_' + codigo;
+  let guardado = null;
+  try { guardado = localStorage.getItem(clave); } catch (e) { /* sin almacenamiento */ }
+  const fija = EXCEPCIONES_WMS_COMUNA[codigo];
   const candidatos = candidatosWmsComuna(nombre, String(codigo)).map((n) => 'sii:BR_CART_' + n + '_WMS');
-  let idx = 0;
-  let cargoAlguna = false;
-  let errores = 0;
 
   const capa = L.tileLayer.wms(SII_WMS_BASE, {
-    layers: candidatos[0],
+    layers: guardado || candidatos[0],
     styles: 'PREDIOS_WMS_V0',
     format: 'image/png',
     transparent: true,
@@ -1740,35 +1816,41 @@ function crearCapaDeslindes(codigo) {
     zIndex: 5
   });
 
-  const usar = (layers) => {
-    capa.setParams({ layers }, false);
-    errores = 0;
-    console.info('Deslindes ' + nombre + ': probando capa', layers);
+  // Nombre ya conocido (excepción fija, recordado de una visita anterior o comuna
+  // de nombre simple): no hay nada que probar.
+  if (fija || candidatos.length === 1) return capa;
+  if (guardado) {
+    // Si un nombre recordado deja de funcionar, se olvida para volver a sondear
+    let cargo = false, fallos = 0;
+    capa.on('tileload', () => { cargo = true; });
+    capa.on('tileerror', () => {
+      if (!cargo && ++fallos >= 3) { try { localStorage.removeItem(clave); } catch (e) {} }
+    });
+    return capa;
+  }
+
+  let resuelto = false;
+  const elegir = (layers) => {
+    if (resuelto) return;
+    resuelto = true;
+    try { localStorage.setItem(clave, layers); } catch (e) {}
+    console.info('Deslindes ' + nombre + ': capa OK → ' + layers + '  (puedes fijarla en EXCEPCIONES_WMS_COMUNA[' + codigo + '])');
+    if (layers !== capa.wmsParams.layers) capa.setParams({ layers });
   };
 
-  // Si ninguna tesela ha cargado y van llegando errores, el nombre de la capa
-  // está mal: se pasa al siguiente candidato.
-  capa.on('tileload', () => { if (!cargoAlguna) console.info('Deslindes ' + nombre + ': capa OK →', capa.wmsParams.layers); cargoAlguna = true; });
-  capa.on('tileerror', () => {
-    if (cargoAlguna) return;
-    errores += 1;
-    if (errores >= 3 && idx < candidatos.length - 1) {
-      idx += 1;
-      usar(candidatos[idx]);
-    } else if (errores >= 3 && idx === candidatos.length - 1) {
-      console.warn('Deslindes ' + nombre + ': ningún nombre de capa funcionó', candidatos);
-    }
-  });
+  const sondeos = candidatos.map((l) => sondearCapaWms(l, codigo).then((ok) => { if (ok) elegir(l); return ok; }));
 
-  // El SII informa el nombre exacto de la capa de predios de cada comuna; si es
-  // de tipo WMS del SII, se usa ese como primera opción.
-  obtenerServiciosComuna(codigo).then((r) => {
+  // Nombre exacto que informa el SII para la comuna (si es del tipo BR_CART)
+  sondeos.push(obtenerServiciosComuna(codigo).then((r) => {
     const exacto = r && r.layer;
-    if (typeof exacto === 'string' && /BR_CART/i.test(exacto) && !cargoAlguna) {
-      const nombreCapa = exacto.startsWith('sii:') ? exacto : 'sii:' + exacto;
-      if (nombreCapa !== capa.wmsParams.layers) { candidatos.unshift(nombreCapa); idx = 0; usar(nombreCapa); }
-    }
-  }).catch(() => {});
+    if (typeof exacto !== 'string' || !/BR_CART/i.test(exacto)) return false;
+    const nombreCapa = exacto.startsWith('sii:') ? exacto : 'sii:' + exacto;
+    return sondearCapaWms(nombreCapa, codigo).then((ok) => { if (ok) elegir(nombreCapa); return ok; });
+  }).catch(() => false));
+
+  Promise.all(sondeos).then((res) => {
+    if (!resuelto) console.warn('Deslindes ' + nombre + ': ningún nombre de capa funcionó', candidatos);
+  });
 
   return capa;
 }
