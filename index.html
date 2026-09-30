@@ -1770,41 +1770,21 @@ let capasDeslindes = {};
 let comunaDeslindesActual = null; // última comuna detectada (clic o mouse), aunque ya esté agregada
 let opacidadDeslindes = 0.85;
 
-// Sondeo rápido: pide una imagen WMS diminuta con un nombre de capa candidato.
-// Si el nombre existe el SII devuelve un PNG (aunque vacío); si no existe devuelve
-// un error XML y la imagen falla. Se lanzan todos los candidatos a la vez.
-function sondearCapaWms(layers, codigo) {
-  return new Promise((resolve) => {
-    const c = map.getCenter();
-    const p = L.CRS.EPSG3857.project(c);
-    const r = 300; // metros alrededor del centro del mapa
-    const params = new URLSearchParams({
-      service: 'WMS', request: 'GetMap', version: '1.1.1',
-      layers, styles: 'PREDIOS_WMS_V0', format: 'image/png', transparent: 'true',
-      srs: 'EPSG:3857',
-      bbox: [p.x - r, p.y - r, p.x + r, p.y + r].join(','),
-      width: '64', height: '64',
-      comuna: String(Number(codigo)), eac: '0', eacano: '0'
-    });
-    const img = new Image();
-    const t = setTimeout(() => resolve(false), 8000);
-    img.onload = () => { clearTimeout(t); resolve(true); };
-    img.onerror = () => { clearTimeout(t); resolve(false); };
-    img.src = SII_WMS_BASE + '?' + params;
-  });
-}
+// Limpia lo que guardó la versión con sondeo en paralelo (ya no se usa)
+try {
+  Object.keys(localStorage).filter((k) => k.indexOf('siiWmsCapa_') === 0).forEach((k) => localStorage.removeItem(k));
+} catch (e) { /* sin almacenamiento */ }
 
 function crearCapaDeslindes(codigo) {
   const nombre = nombreSiiPorCodigo[codigo];
   if (!nombre) return null;
-  const clave = 'siiWmsCapa_' + codigo;
-  let guardado = null;
-  try { guardado = localStorage.getItem(clave); } catch (e) { /* sin almacenamiento */ }
-  const fija = EXCEPCIONES_WMS_COMUNA[codigo];
   const candidatos = candidatosWmsComuna(nombre, String(codigo)).map((n) => 'sii:BR_CART_' + n + '_WMS');
+  let idx = 0;
+  let cargoAlguna = false;
+  let errores = 0;
 
   const capa = L.tileLayer.wms(SII_WMS_BASE, {
-    layers: guardado || candidatos[0],
+    layers: candidatos[0],
     styles: 'PREDIOS_WMS_V0',
     format: 'image/png',
     transparent: true,
@@ -1816,41 +1796,35 @@ function crearCapaDeslindes(codigo) {
     zIndex: 5
   });
 
-  // Nombre ya conocido (excepción fija, recordado de una visita anterior o comuna
-  // de nombre simple): no hay nada que probar.
-  if (fija || candidatos.length === 1) return capa;
-  if (guardado) {
-    // Si un nombre recordado deja de funcionar, se olvida para volver a sondear
-    let cargo = false, fallos = 0;
-    capa.on('tileload', () => { cargo = true; });
-    capa.on('tileerror', () => {
-      if (!cargo && ++fallos >= 3) { try { localStorage.removeItem(clave); } catch (e) {} }
-    });
-    return capa;
-  }
-
-  let resuelto = false;
-  const elegir = (layers) => {
-    if (resuelto) return;
-    resuelto = true;
-    try { localStorage.setItem(clave, layers); } catch (e) {}
-    console.info('Deslindes ' + nombre + ': capa OK → ' + layers + '  (puedes fijarla en EXCEPCIONES_WMS_COMUNA[' + codigo + '])');
-    if (layers !== capa.wmsParams.layers) capa.setParams({ layers });
+  const usar = (layers) => {
+    capa.setParams({ layers }, false);
+    errores = 0;
+    console.info('Deslindes ' + nombre + ': probando capa', layers);
   };
 
-  const sondeos = candidatos.map((l) => sondearCapaWms(l, codigo).then((ok) => { if (ok) elegir(l); return ok; }));
-
-  // Nombre exacto que informa el SII para la comuna (si es del tipo BR_CART)
-  sondeos.push(obtenerServiciosComuna(codigo).then((r) => {
-    const exacto = r && r.layer;
-    if (typeof exacto !== 'string' || !/BR_CART/i.test(exacto)) return false;
-    const nombreCapa = exacto.startsWith('sii:') ? exacto : 'sii:' + exacto;
-    return sondearCapaWms(nombreCapa, codigo).then((ok) => { if (ok) elegir(nombreCapa); return ok; });
-  }).catch(() => false));
-
-  Promise.all(sondeos).then((res) => {
-    if (!resuelto) console.warn('Deslindes ' + nombre + ': ningún nombre de capa funcionó', candidatos);
+  // Si ninguna tesela ha cargado y van llegando errores, el nombre de la capa
+  // está mal: se pasa al siguiente candidato.
+  capa.on('tileload', () => { if (!cargoAlguna) console.info('Deslindes ' + nombre + ': capa OK →', capa.wmsParams.layers); cargoAlguna = true; });
+  capa.on('tileerror', () => {
+    if (cargoAlguna) return;
+    errores += 1;
+    if (errores >= 3 && idx < candidatos.length - 1) {
+      idx += 1;
+      usar(candidatos[idx]);
+    } else if (errores >= 3 && idx === candidatos.length - 1) {
+      console.warn('Deslindes ' + nombre + ': ningún nombre de capa funcionó', candidatos);
+    }
   });
+
+  // El SII informa el nombre exacto de la capa de predios de cada comuna; si es
+  // de tipo WMS del SII, se usa ese como primera opción.
+  obtenerServiciosComuna(codigo).then((r) => {
+    const exacto = r && r.layer;
+    if (typeof exacto === 'string' && /BR_CART/i.test(exacto) && !cargoAlguna) {
+      const nombreCapa = exacto.startsWith('sii:') ? exacto : 'sii:' + exacto;
+      if (nombreCapa !== capa.wmsParams.layers) { candidatos.unshift(nombreCapa); idx = 0; usar(nombreCapa); }
+    }
+  }).catch(() => {});
 
   return capa;
 }
