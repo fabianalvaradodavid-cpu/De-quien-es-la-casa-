@@ -740,6 +740,15 @@
         Manzanas
       </label>
       <ul class="deslindes-list" id="manzanas-list"></ul>
+      <div class="opacity-row" style="padding-left:0.2rem;" title="Pide al SII imágenes más grandes al alejarse para que no simplifique los polígonos">
+        <label for="detalle-alejado">Detalle al alejar</label>
+        <select id="detalle-alejado">
+          <option value="1">Normal</option>
+          <option value="2">Medio (x2)</option>
+          <option value="4">Alto (x4)</option>
+          <option value="8">Máximo (x8)</option>
+        </select>
+      </div>
       <label class="layer-toggle">
         <input type="checkbox" id="toggle-avaluos">
         <span class="swatch" style="background:var(--clay);"></span>
@@ -1682,6 +1691,27 @@ function hideResult() {
 // una comuna compuesta, es la primera sospechosa).
 const SII_WMS_BASE = 'https://www4.sii.cl/mapasui/services/ui/wmsProxyService/call';
 
+// ---- Detalle al alejar ----
+// El SII dibuja los polígonos según la escala: al alejarse el servidor los simplifica
+// u oculta detalle. La escala se calcula con el área que cubre la imagen y su tamaño
+// en píxeles, así que pidiendo imágenes más grandes para la misma área (se muestran
+// igual de chicas en pantalla) el servidor responde con la versión detallada.
+// Contrapartida: las líneas y textos salen más finos y las imágenes pesan más.
+// El factor máximo lo elige el selector "Detalle al alejar" del panel (1 = normal).
+let detalleAlejado = 1;
+try { detalleAlejado = Number(localStorage.getItem('siiDetalleAlejado')) || 1; } catch (e) {}
+const ZOOM_DETALLE_SII = 17; // zoom desde el cual el SII ya muestra todo el detalle
+
+const WmsSiiDetallado = L.TileLayer.WMS.extend({
+  getTileUrl(coords) {
+    const url = L.TileLayer.WMS.prototype.getTileUrl.call(this, coords);
+    if (detalleAlejado <= 1) return url;
+    const factor = Math.min(detalleAlejado, Math.pow(2, Math.max(0, ZOOM_DETALLE_SII - coords.z)));
+    if (factor <= 1) return url;
+    return url.replace(/([?&](?:width|height)=)(\d+)/gi, (m, pref, n) => pref + Math.round(Number(n) * factor));
+  }
+});
+
 const EXCEPCIONES_WMS_COMUNA = {
   '16162': 'P_AGUIRRE_CERDA', // Pedro Aguirre Cerda
   '13101': 'SANTIAGO_CENTRO', // Santiago (comuna simple, no Sur/Oeste)
@@ -1755,7 +1785,7 @@ function crearCapaDeslindes(codigo) {
   let cargoAlguna = false;
   let errores = 0;
 
-  const capa = L.tileLayer.wms(SII_WMS_BASE, {
+  const capa = new WmsSiiDetallado(SII_WMS_BASE, {
     layers: candidatos[0],
     styles: 'PREDIOS_WMS_V0',
     format: 'image/png',
@@ -1901,7 +1931,7 @@ function agregarCapaManzanas(codigoComuna) {
   if (codigoComuna) comunaManzanasActual = codigoComuna;
   const codigo = codigoComuna || comunaManzanasActual;
   if (!document.getElementById('toggle-manzanas').checked || !codigo || capasManzanas[codigo]) return;
-  const capa = L.tileLayer.wms(SII_WMS_COMUNA, {
+  const capa = new WmsSiiDetallado(SII_WMS_COMUNA, {
     layers: 'sii:BR_CART_MANZANAS',
     styles: 'MANZANAS_V2',
     format: 'image/png',
@@ -1968,6 +1998,20 @@ document.getElementById('toggle-manzanas').addEventListener('change', (e) => {
     quitarCapasManzanas();
   }
 });
+
+// Detalle al alejar: al cambiar el selector se vuelven a pedir las teselas de todas
+// las capas WMS del SII que estén en el mapa.
+(function () {
+  const sel = document.getElementById('detalle-alejado');
+  sel.value = String(detalleAlejado);
+  if (sel.value !== String(detalleAlejado)) { detalleAlejado = 1; sel.value = '1'; }
+  sel.addEventListener('change', () => {
+    detalleAlejado = Number(sel.value) || 1;
+    try { localStorage.setItem('siiDetalleAlejado', String(detalleAlejado)); } catch (e) {}
+    Object.values(capasDeslindes).forEach((info) => info.capa.redraw());
+    Object.values(capasManzanas).forEach((info) => info.capa.redraw());
+  });
+})();
 
 // ---- Etiquetas de avalúo sobre las propiedades clickeadas ----
 // Mientras la casilla "Mostrar avalúos" está marcada, cada predio que se
