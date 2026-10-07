@@ -820,6 +820,10 @@
 // ---- Configuración ----
 // URL del proxy (Cloudflare Worker / Val.town) que reenvía las llamadas al SII evitando el bloqueo de CORS.
 const PROXY_BASE = "https://fabianalvaradodavid--eb6f8c9eb5fd11f1af9b1607ee4eb77e.web.val.run";
+// Debe ser EXACTAMENTE el mismo valor que pongas en Val.town → Env vars → PROXY_TOKEN.
+// No es seguridad real (igual queda visible al ver el código fuente de esta página),
+// solo evita que un bot encuentre la URL del proxy y la use directo sin esfuerzo.
+const PROXY_TOKEN = "cB0FAOKyxlyfmRc-bsHmTLJvgqkwbM-y";
 
 const TGR_URL = "https://tgr.gob.cl/tramites-tgr/certificado-de-deuda-de-contribuciones/";
 
@@ -2420,7 +2424,7 @@ async function callProxy(path, data) {
 
   const resp = await fetch(PROXY_BASE + path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Proxy-Token': PROXY_TOKEN },
     body: JSON.stringify({ metaData, data })
   });
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
