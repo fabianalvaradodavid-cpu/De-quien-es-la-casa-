@@ -740,15 +740,15 @@
         Manzanas
       </label>
       <ul class="deslindes-list" id="manzanas-list"></ul>
-      <div class="opacity-row" style="padding-left:0.2rem;" title="Pide al SII imágenes más grandes al alejarse para que no simplifique los polígonos">
-        <label for="detalle-alejado">Detalle al alejar</label>
-        <select id="detalle-alejado">
-          <option value="1">Normal</option>
-          <option value="2">Medio (x2)</option>
-          <option value="4">Alto (x4)</option>
-          <option value="8">Máximo (x8)</option>
-        </select>
-      </div>
+      <div style="font-size:0.8rem; opacity:0.7; margin-top:0.5rem; padding-left:0.2rem;">Detalle de polígonos SII</div>
+      <label class="layer-toggle" title="El SII simplifica los polígonos al alejarse">
+        <input type="radio" name="detalle-sii" value="1">
+        Normal
+      </label>
+      <label class="layer-toggle" title="Mantiene la versión detallada al alejarse (zoom 15 o más cerca)">
+        <input type="radio" name="detalle-sii" value="2">
+        Detallado
+      </label>
       <label class="layer-toggle">
         <input type="checkbox" id="toggle-avaluos">
         <span class="swatch" style="background:var(--clay);"></span>
@@ -1691,24 +1691,89 @@ function hideResult() {
 // una comuna compuesta, es la primera sospechosa).
 const SII_WMS_BASE = 'https://www4.sii.cl/mapasui/services/ui/wmsProxyService/call';
 
-// ---- Detalle al alejar ----
+// ---- Detalle de polígonos: "Normal" / "Detallado" ----
 // El SII dibuja los polígonos según la escala: al alejarse el servidor los simplifica
-// u oculta detalle. La escala se calcula con el área que cubre la imagen y su tamaño
-// en píxeles, así que pidiendo imágenes más grandes para la misma área (se muestran
-// igual de chicas en pantalla) el servidor responde con la versión detallada.
-// Contrapartida: las líneas y textos salen más finos y las imágenes pesan más.
-// El factor máximo lo elige el selector "Detalle al alejar" del panel (1 = normal).
-let detalleAlejado = 1;
-try { detalleAlejado = Number(localStorage.getItem('siiDetalleAlejado')) || 1; } catch (e) {}
-const ZOOM_DETALLE_SII = 17; // zoom desde el cual el SII ya muestra todo el detalle
+// u oculta detalle. En modo "Detallado", entre los zooms ZOOM_MIN_DETALLE_SII y
+// ZOOM_DETALLE_SII el mapa sigue pidiendo las teselas del zoom detallado (17) y las
+// muestra reducidas, así que la imagen no cambia al alejarse. Con zoom menor a
+// ZOOM_MIN_DETALLE_SII vuelve a lo normal: cada nivel más lejos multiplica por 4 la
+// cantidad de teselas, y más allá de ese punto sería demasiado pesado.
+// Contrapartida: más teselas por pantalla y líneas/textos algo más finos.
+let detalleAlejado = 2; // 2 = Detallado (por defecto), 1 = Normal
+try { if (localStorage.getItem('siiDetalleAlejado') === '1') detalleAlejado = 1; } catch (e) {}
+const ZOOM_DETALLE_SII = 17;      // zoom desde el cual el SII ya muestra todo el detalle
+const ZOOM_MIN_DETALLE_SII = 15;  // zoom más lejano que mantiene el detalle
+
+// ---- Caché de teselas del SII ----
+// Las teselas se guardan en el navegador (Cache API) la primera vez que se ven y se
+// reutilizan hasta CACHE_DIAS días, sin volver a pedirlas al SII. Requiere que el SII
+// permita la lectura de sus imágenes desde esta página (CORS); si no la permite, o si
+// la página no está en https, se carga todo directo como antes (ver la consola).
+const CACHE_TESELAS = 'sii-wms-v1';
+const CACHE_DIAS = 30;
+const CACHE_MAX_TESELAS = 4000;
+let cacheTeselasActiva = typeof caches !== 'undefined';
+
+async function teselaDesdeCache(url) {
+  if (!cacheTeselasActiva) return { src: url, blob: false };
+  try {
+    const cache = await caches.open(CACHE_TESELAS);
+    const guardada = await cache.match(url);
+    if (guardada) {
+      const cuando = Number(guardada.headers.get('x-guardado')) || 0;
+      if (Date.now() - cuando < CACHE_DIAS * 86400000) {
+        return { src: URL.createObjectURL(await guardada.blob()), blob: true };
+      }
+      await cache.delete(url);
+    }
+    const resp = await fetch(url, { mode: 'cors' });
+    // Errores del servidor (ej. nombre de capa inexistente) no se guardan:
+    // se deja que la imagen falle normalmente para que actúe la lógica de variantes.
+    if (!resp.ok || !/^image\//.test(resp.headers.get('content-type') || '')) return { src: url, blob: false };
+    const blob = await resp.blob();
+    cache.put(url, new Response(blob, { headers: { 'content-type': blob.type, 'x-guardado': String(Date.now()) } })).catch(() => {});
+    return { src: URL.createObjectURL(blob), blob: true };
+  } catch (e) {
+    cacheTeselasActiva = false;
+    console.info('Caché de teselas SII desactivada (el SII no permite leer las imágenes desde esta página, o no hay https). Se carga directo.', e);
+    return { src: url, blob: false };
+  }
+}
+
+// Evita que la caché crezca sin límite: si pasa del tope, borra las más antiguas
+async function limpiarCacheTeselas() {
+  if (typeof caches === 'undefined') return;
+  try {
+    const cache = await caches.open(CACHE_TESELAS);
+    const claves = await cache.keys();
+    if (claves.length > CACHE_MAX_TESELAS) {
+      await Promise.all(claves.slice(0, claves.length - Math.round(CACHE_MAX_TESELAS * 0.75)).map((k) => cache.delete(k)));
+    }
+  } catch (e) { /* ignorar */ }
+}
+limpiarCacheTeselas();
 
 const WmsSiiDetallado = L.TileLayer.WMS.extend({
-  getTileUrl(coords) {
-    const url = L.TileLayer.WMS.prototype.getTileUrl.call(this, coords);
-    if (detalleAlejado <= 1) return url;
-    const factor = Math.min(detalleAlejado, Math.pow(2, Math.max(0, ZOOM_DETALLE_SII - coords.z)));
-    if (factor <= 1) return url;
-    return url.replace(/([?&](?:width|height)=)(\d+)/gi, (m, pref, n) => pref + Math.round(Number(n) * factor));
+  options: { keepBuffer: 4 },
+
+  // Modo Detallado: entre los zooms 15 y 16 se piden las teselas del zoom 17
+  _clampZoom(zoom) {
+    if (detalleAlejado > 1 && zoom >= ZOOM_MIN_DETALLE_SII && zoom < ZOOM_DETALLE_SII) return ZOOM_DETALLE_SII;
+    return L.TileLayer.WMS.prototype._clampZoom.call(this, zoom);
+  },
+
+  // Igual que la tesela estándar de Leaflet, pero pasando antes por la caché
+  createTile(coords, done) {
+    const tile = document.createElement('img');
+    L.DomEvent.on(tile, 'load', L.Util.bind(this._tileOnLoad, this, done, tile));
+    L.DomEvent.on(tile, 'error', L.Util.bind(this._tileOnError, this, done, tile));
+    tile.alt = '';
+    tile.setAttribute('role', 'presentation');
+    teselaDesdeCache(this.getTileUrl(coords)).then(({ src, blob }) => {
+      if (blob) tile.addEventListener('load', () => URL.revokeObjectURL(src), { once: true });
+      tile.src = src;
+    });
+    return tile;
   }
 });
 
@@ -1999,17 +2064,19 @@ document.getElementById('toggle-manzanas').addEventListener('change', (e) => {
   }
 });
 
-// Detalle al alejar: al cambiar el selector se vuelven a pedir las teselas de todas
+// Detalle de polígonos: al cambiar la opción se vuelven a pedir las teselas de todas
 // las capas WMS del SII que estén en el mapa.
 (function () {
-  const sel = document.getElementById('detalle-alejado');
-  sel.value = String(detalleAlejado);
-  if (sel.value !== String(detalleAlejado)) { detalleAlejado = 1; sel.value = '1'; }
-  sel.addEventListener('change', () => {
-    detalleAlejado = Number(sel.value) || 1;
-    try { localStorage.setItem('siiDetalleAlejado', String(detalleAlejado)); } catch (e) {}
-    Object.values(capasDeslindes).forEach((info) => info.capa.redraw());
-    Object.values(capasManzanas).forEach((info) => info.capa.redraw());
+  const radios = document.querySelectorAll('input[name="detalle-sii"]');
+  radios.forEach((r) => {
+    r.checked = Number(r.value) === detalleAlejado;
+    r.addEventListener('change', () => {
+      if (!r.checked) return;
+      detalleAlejado = Number(r.value);
+      try { localStorage.setItem('siiDetalleAlejado', String(detalleAlejado)); } catch (e) {}
+      Object.values(capasDeslindes).forEach((info) => info.capa.redraw());
+      Object.values(capasManzanas).forEach((info) => info.capa.redraw());
+    });
   });
 })();
 
