@@ -745,7 +745,7 @@
         <input type="radio" name="detalle-sii" value="1">
         Normal
       </label>
-      <label class="layer-toggle" title="Mantiene la versión detallada al alejarse (zoom 15 o más cerca)">
+      <label class="layer-toggle" title="Mantiene la versión detallada al alejarse (pide imágenes más grandes al SII)">
         <input type="radio" name="detalle-sii" value="2">
         Detallado
       </label>
@@ -1692,17 +1692,22 @@ function hideResult() {
 const SII_WMS_BASE = 'https://www4.sii.cl/mapasui/services/ui/wmsProxyService/call';
 
 // ---- Detalle de polígonos: "Normal" / "Detallado" ----
-// El SII dibuja los polígonos según la escala: al alejarse el servidor los simplifica
-// u oculta detalle. En modo "Detallado", entre los zooms ZOOM_MIN_DETALLE_SII y
-// ZOOM_DETALLE_SII el mapa sigue pidiendo las teselas del zoom detallado (17) y las
-// muestra reducidas, así que la imagen no cambia al alejarse. Con zoom menor a
-// ZOOM_MIN_DETALLE_SII vuelve a lo normal: cada nivel más lejos multiplica por 4 la
-// cantidad de teselas, y más allá de ese punto sería demasiado pesado.
-// Contrapartida: más teselas por pantalla y líneas/textos algo más finos.
+// El SII dibuja los polígonos según la escala, que calcula con el área que cubre la
+// imagen y su tamaño en píxeles. Al alejarse, el servidor simplifica o esconde detalle.
+// En modo "Detallado" se pide, para la misma área de cada tesela, una imagen más grande
+// (hasta FACTOR_MAX_DETALLE veces por lado) y el navegador la reduce a 256 px. Así el
+// SII cree que se está cerca y devuelve la versión detallada, sin cambiar la cantidad de
+// teselas pedidas. El factor necesario es 2^(17 - zoom): x2 en zoom 16, x4 en 15, x8 en 14.
+// Más lejos que eso el factor queda en el máximo y el detalle baja de a poco.
+// Contrapartida: imágenes más pesadas y líneas/textos más finos al verlos reducidos.
 let detalleAlejado = 2; // 2 = Detallado (por defecto), 1 = Normal
 try { if (localStorage.getItem('siiDetalleAlejado') === '1') detalleAlejado = 1; } catch (e) {}
-const ZOOM_DETALLE_SII = 17;      // zoom desde el cual el SII ya muestra todo el detalle
-const ZOOM_MIN_DETALLE_SII = 15;  // zoom más lejano que mantiene el detalle
+const ZOOM_DETALLE_SII = 18;     // zoom desde el cual el SII dibuja los predios con borde negro
+const FACTOR_MAX_DETALLE = 8;    // la imagen pedida crece hasta 8× por lado (2048 px)
+// Más lejos que eso, el resto de la escala se "engaña" con la opción dpi de GeoServer
+// (el servidor de mapas del SII): con menos dpi, el servidor calcula una escala más
+// cercana y dibuja la versión detallada sin pedir imágenes más grandes.
+const DPI_GEOSERVER = 90.7;
 
 // ---- Caché de teselas del SII ----
 // Las teselas se guardan en el navegador (Cache API) la primera vez que se ven y se
@@ -1756,23 +1761,64 @@ limpiarCacheTeselas();
 const WmsSiiDetallado = L.TileLayer.WMS.extend({
   options: { keepBuffer: 4 },
 
-  // Modo Detallado: entre los zooms 15 y 16 se piden las teselas del zoom 17
-  _clampZoom(zoom) {
-    if (detalleAlejado > 1 && zoom >= ZOOM_MIN_DETALLE_SII && zoom < ZOOM_DETALLE_SII) return ZOOM_DETALLE_SII;
-    return L.TileLayer.WMS.prototype._clampZoom.call(this, zoom);
+  // Cuánto "acercar" la escala para que el SII dibuje el detalle (1 = normal)
+  _factorNecesario(zoom) {
+    if (detalleAlejado <= 1) return 1;
+    return Math.pow(2, Math.max(0, ZOOM_DETALLE_SII - zoom));
   },
 
-  // Igual que la tesela estándar de Leaflet, pero pasando antes por la caché
+  // Variantes a probar, de la más detallada a la normal. Cada una: {img, dpi}
+  // img = agrandamiento de la imagen; dpi = dpi enviado a GeoServer (null = no enviar).
+  _variantes(zoom) {
+    const f = this._factorNecesario(zoom);
+    if (f <= 1) return [{ img: 1, dpi: null }];
+    const img = Math.min(FACTOR_MAX_DETALLE, f);
+    const resto = f / img;
+    const lista = [];
+    if (resto > 1) lista.push({ img, dpi: Math.max(1, Math.round(DPI_GEOSERVER / resto)) });
+    for (let k = img; k >= 2; k /= 2) lista.push({ img: k, dpi: null });
+    lista.push({ img: 1, dpi: null });
+    return lista;
+  },
+
+  getTileUrl(coords, variante) {
+    let url = L.TileLayer.WMS.prototype.getTileUrl.call(this, coords);
+    const v = variante || this._variantes(coords.z)[0];
+    if (v.img > 1) url = url.replace(/([?&](?:width|height)=)(\d+)/gi, (m, pref, n) => pref + Math.round(Number(n) * v.img));
+    if (v.dpi) url += '&format_options=' + encodeURIComponent('dpi:' + v.dpi);
+    return url;
+  },
+
+  // Igual que la tesela estándar de Leaflet, pero pasando por la caché y, si el SII
+  // rechaza la imagen grande, reintentando con tamaño normal.
   createTile(coords, done) {
     const tile = document.createElement('img');
-    L.DomEvent.on(tile, 'load', L.Util.bind(this._tileOnLoad, this, done, tile));
-    L.DomEvent.on(tile, 'error', L.Util.bind(this._tileOnError, this, done, tile));
     tile.alt = '';
     tile.setAttribute('role', 'presentation');
-    teselaDesdeCache(this.getTileUrl(coords)).then(({ src, blob }) => {
-      if (blob) tile.addEventListener('load', () => URL.revokeObjectURL(src), { once: true });
-      tile.src = src;
+    const variantes = this._variantes(coords.z);
+    const urls = variantes.map((v) => this.getTileUrl(coords, v));
+    let i = 0;
+    let actual = null;
+    const liberar = () => { if (actual) { URL.revokeObjectURL(actual); actual = null; } };
+    L.DomEvent.on(tile, 'load', (e) => { liberar(); this._tileOnLoad(done, tile, e); });
+    L.DomEvent.on(tile, 'error', (e) => {
+      liberar();
+      if (i < urls.length - 1) {
+        i += 1;
+        if (!this._avisoVariante) {
+          this._avisoVariante = true;
+          console.info('SII: la variante más detallada falló; se prueba', variantes[i]);
+        }
+        cargar();
+      } else { this._tileOnError(done, tile, e); }
     });
+    const cargar = () => {
+      teselaDesdeCache(urls[i]).then(({ src, blob }) => {
+        if (blob) actual = src;
+        tile.src = src;
+      });
+    };
+    cargar();
     return tile;
   }
 });
