@@ -644,6 +644,27 @@
   .modal.arrastrando{ opacity:0.92; }
   /* Mapa base "Solo límites comunales": sin imagen de fondo, papel claro */
   #map.fondo-limites{ background:#f4f3ee; }
+  /* Acceso directo al juego, a la derecha del encabezado */
+  .acceso-juego{
+    margin-left:auto;
+    display:flex;
+    flex-direction:column;
+    gap:0.1rem;
+    padding:0.5rem 0.85rem;
+    border:1px solid var(--clay);
+    border-radius:6px;
+    background:var(--panel);
+    color:var(--moss-dark);
+    text-decoration:none;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    line-height:1.2;
+  }
+  .acceso-juego:hover{ background:var(--clay); color:#fff; }
+  .acceso-juego:hover .acceso-juego-bajada{ color:#dbe6ef; }
+  .acceso-juego:focus-visible{ outline:2px solid var(--clay); outline-offset:2px; }
+  .acceso-juego-titulo{ font-weight:600; font-size:0.9rem; }
+  .acceso-juego-bajada{ font-size:0.75rem; color:#5a6873; }
+  @media (max-width:720px){ .acceso-juego{ margin-left:0; } }
 </style>
 </head>
 <body>
@@ -653,6 +674,10 @@
     <h1>¿DE QUIÉN ES LA CASA?</h1>
     <p>Clic en un punto del mapa para consultar el rol de esa propiedad ante el SII. Luego usa esos datos para abrir página de TGR para conocer al propietario.</p>
   </div>
+  <a class="acceso-juego" href="../juego/">
+    <span class="acceso-juego-titulo">Juego: ¿De qué comuna es?</span>
+    <span class="acceso-juego-bajada">Adivina la comuna por sus deslindes</span>
+  </a>
 </header>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
