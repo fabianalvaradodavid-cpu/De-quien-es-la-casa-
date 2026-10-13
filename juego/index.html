@@ -25,9 +25,12 @@
     --bad:#a3402b;
     --bad-bg:#f7e5e0;
     --panel:#ffffff;
+    --j1:#2f5f82;
+    --j2:#b5622f;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   }
   *{ box-sizing:border-box; }
+  [hidden]{ display:none !important; }
   html,body{ margin:0; }
   body{
     background:var(--paper);
@@ -48,6 +51,7 @@
   /* Barra de estado: ronda, puntaje y una marca por ronda */
   .estado{ display:none; align-items:center; justify-content:space-between; gap:12px; font-family:var(--sans); font-size:0.88rem; color:var(--muted); margin-bottom:8px; }
   .estado strong{ color:var(--ink); }
+  .estado .sep{ color:var(--soft); margin:0 6px; }
   .marcas{ display:flex; gap:4px; flex:1; max-width:260px; }
   .marcas span{ flex:1; height:6px; border-radius:3px; background:var(--line); }
   .marcas span.actual{ background:var(--soft); }
@@ -130,7 +134,7 @@
   .portada{
     position:absolute; inset:0; z-index:1000; overflow:auto;
     display:flex;
-    background:rgba(247,246,241,0.94); padding:18px;
+    background:rgba(247,246,241,0.98); padding:18px;
   }
   .portada.oculta{ display:none; }
   /* Con la portada o el resultado final a la vista, el marco crece lo necesario */
@@ -169,6 +173,39 @@
   .final .ok{ color:var(--ok); }
   .final .no{ color:var(--bad); }
 
+  /* Jugadores, ranking y retos */
+  .campos{ display:flex; gap:8px; flex-wrap:wrap; }
+  .campo{ flex:1; min-width:140px; font-family:var(--sans); font-size:0.9rem; padding:8px 10px; border:1px solid var(--line); border-radius:7px; background:var(--panel); color:var(--ink); }
+  .campo:focus{ outline:2px solid var(--clay); outline-offset:1px; border-color:var(--clay); }
+  .campo.j1{ border-left:4px solid var(--j1); }
+  .campo.j2{ border-left:4px solid var(--j2); }
+  .turno{ display:none; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px; font-family:var(--sans); font-size:0.95rem; }
+  .turno .ficha{ width:12px; height:12px; border-radius:50%; flex-shrink:0; }
+  .turno .sub{ color:var(--soft); font-size:0.82rem; }
+  .chapa{ display:inline-block; margin-left:auto; font-size:0.72rem; font-weight:600; color:#fff; padding:2px 7px; border-radius:10px; white-space:nowrap; }
+  .chapa + .chapa{ margin-left:4px; }
+  .ranking{ margin-top:12px; }
+  .ranking summary{ cursor:pointer; font-size:0.85rem; color:var(--clay); }
+  .ranking table{ width:100%; border-collapse:collapse; font-size:0.82rem; margin-top:6px; }
+  .ranking td{ padding:4px; border-bottom:1px solid var(--line); }
+  .ranking td.pos{ width:2em; color:var(--soft); }
+  .ranking td.pts{ text-align:right; font-weight:600; }
+  .ranking td.fecha{ text-align:right; color:var(--soft); white-space:nowrap; width:6.5em; }
+  .ranking tr.yo td{ background:#e8eff5; }
+  .ranking .origen{ font-size:0.75rem; color:var(--soft); margin-top:4px; }
+  .bloque{ border-top:1px solid var(--line); padding-top:12px; margin-top:12px; }
+  .bloque .titulo{ font-size:0.85rem; font-weight:600; margin-bottom:6px; }
+  .bloque .explica{ font-size:0.82rem; color:var(--muted); }
+  .estado-guardar{ font-size:0.8rem; color:var(--muted); margin-top:6px; min-height:1.1em; }
+  .enlace-reto{ display:flex; gap:6px; margin-top:8px; }
+  .enlace-reto input{ flex:1; min-width:0; font-size:0.78rem; }
+  .reto-texto{ font-size:0.95rem; line-height:1.45; margin-bottom:12px; }
+  .reto-texto strong{ color:var(--moss-dark); }
+  .botones{ display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  .final td.jug{ text-align:right; white-space:nowrap; }
+  .final th{ font-size:0.75rem; font-weight:600; color:var(--soft); text-align:right; padding:2px 4px; }
+  .final th:first-child, .final th:nth-child(2){ text-align:left; }
+
   .nota{ font-family:var(--sans); font-size:0.75rem; color:var(--soft); margin-top:18px; line-height:1.45; }
 
   @media (max-width:560px){
@@ -206,12 +243,12 @@
     <h1>¿De qué comuna es?</h1>
     <a href="../simple/">← Volver al mapa</a>
   </header>
-  <p class="bajada">Un pedazo de los deslindes de predios del SII, siempre en un sector urbano y siempre a la misma escala. Adivina a qué comuna pertenece. Cada ronda vale 100 puntos; las pistas restan, y tienes 3 comodines 50/50 por partida.</p>
+  <p class="bajada">Un pedazo de los deslindes de predios del SII, siempre en un sector urbano y siempre a la misma escala. Adivina a qué comuna pertenece. Cada ronda vale 100 puntos; las pistas restan, y tienes 3 comodines 50/50 por partida. Juega en solitario y entra al ranking, desafía a alguien con un enlace o juega contra otra persona en el mismo equipo.</p>
 
   <div class="estado" id="estado">
     <span>Ronda <strong id="num-ronda">1</strong> de <span id="total-rondas">10</span></span>
     <div class="marcas" id="marcas" aria-hidden="true"></div>
-    <span><strong id="puntaje">0</strong> puntos</span>
+    <span id="marcador"><strong id="puntaje">0</strong> puntos</span>
   </div>
 
   <div class="marco con-portada" id="marco">
@@ -222,7 +259,18 @@
     </div>
 
     <div class="portada" id="portada">
-      <div class="caja">
+      <div class="caja" id="caja-reto" hidden>
+        <div class="reto-texto" id="reto-texto"></div>
+        <div class="grupo">
+          <div class="etiqueta">Tu nombre</div>
+          <div class="campos"><input class="campo" id="reto-nombre" maxlength="20" placeholder="Tu nombre" autocomplete="nickname"></div>
+        </div>
+        <div class="botones">
+          <button class="btn" id="btn-aceptar-reto" type="button">Aceptar el reto</button>
+          <button class="btn sec" id="btn-ignorar-reto" type="button">Mejor juego normal</button>
+        </div>
+      </div>
+      <div class="caja" id="caja-normal">
         <div class="grupo">
           <div class="etiqueta">Zona</div>
           <div class="seg cuatro" role="radiogroup" aria-label="Zona">
@@ -237,6 +285,19 @@
           <div class="regiones" id="lista-regiones"></div>
         </div>
         <div class="grupo">
+          <div class="etiqueta">Jugadores</div>
+          <div class="seg" role="radiogroup" aria-label="Jugadores">
+            <label><input type="radio" name="jugadores" value="1" checked><span>1 jugador<small>con ranking y retos</small></span></label>
+            <label><input type="radio" name="jugadores" value="2"><span>2 jugadores<small>versus en el mismo equipo</small></span></label>
+          </div>
+        </div>
+        <div class="grupo" id="grupo-nombres" hidden>
+          <div class="campos">
+            <input class="campo j1" id="nombre-j1" maxlength="20" placeholder="Jugador 1" autocomplete="off" aria-label="Nombre del jugador 1">
+            <input class="campo j2" id="nombre-j2" maxlength="20" placeholder="Jugador 2" autocomplete="off" aria-label="Nombre del jugador 2">
+          </div>
+        </div>
+        <div class="grupo">
           <div class="etiqueta">Alternativas</div>
           <div class="seg" role="radiogroup" aria-label="Dificultad">
             <label><input type="radio" name="dificultad" value="facil" checked><span>Fácil<small>comunas al azar</small></span></label>
@@ -246,6 +307,10 @@
         <div class="aviso-portada" id="aviso-portada" role="alert"></div>
         <div class="record" id="record"></div>
         <button class="btn" id="btn-empezar" type="button">Empezar</button>
+        <details class="ranking" id="ranking-portada">
+          <summary id="ranking-portada-titulo">Ranking de esta modalidad</summary>
+          <div id="ranking-portada-lista"></div>
+        </details>
       </div>
     </div>
 
@@ -254,8 +319,28 @@
         <div class="grande" id="final-puntaje">0 <small>de 1000</small></div>
         <div class="comentario" id="final-comentario"></div>
         <table id="final-tabla"></table>
-        <button class="btn" id="btn-otra" type="button">Jugar otra vez</button>
-        <button class="btn sec" id="btn-cambiar" type="button">Cambiar zona</button>
+        <div class="bloque" id="bloque-ranking">
+          <div class="titulo">Guardar en el ranking</div>
+          <div class="campos">
+            <input class="campo" id="final-nombre" maxlength="20" placeholder="Tu nombre" autocomplete="nickname" aria-label="Tu nombre">
+            <button class="btn" id="btn-guardar" type="button">Guardar</button>
+          </div>
+          <div class="estado-guardar" id="estado-guardar" aria-live="polite"></div>
+          <div class="ranking" id="final-ranking"></div>
+        </div>
+        <div class="bloque" id="bloque-reto">
+          <div class="titulo" id="reto-titulo">Desafía a alguien</div>
+          <div class="explica">Comparte un enlace: la otra persona juega estas mismas 10 rondas y al final ve tu puntaje al lado del suyo.</div>
+          <div class="botones" style="margin-top:8px"><button class="btn sec" id="btn-reto" type="button">Crear enlace de reto</button></div>
+          <div class="enlace-reto" id="enlace-reto" hidden>
+            <input class="campo" id="enlace-reto-texto" readonly aria-label="Enlace del reto">
+            <button class="btn sec" id="btn-copiar-reto" type="button">Copiar</button>
+          </div>
+        </div>
+        <div class="botones">
+          <button class="btn" id="btn-otra" type="button">Jugar otra vez</button>
+          <button class="btn sec" id="btn-cambiar" type="button">Cambiar zona</button>
+        </div>
       </div>
     </div>
   </div>
@@ -266,6 +351,7 @@
     <button type="button" id="comodin" class="comodin">Comodín 50/50 <span id="comodin-quedan"></span><span class="costo">−40</span></button>
   </div>
 
+  <div class="turno" id="turno" aria-live="polite"></div>
   <div class="opciones" id="opciones" role="group" aria-label="Alternativas"></div>
 
   <div class="resultado" id="resultado" aria-live="polite">
@@ -278,7 +364,7 @@
     </div>
   </div>
 
-  <p class="nota">Deslindes: Servicio de Impuestos Internos (SII). Imagen satelital: Esri. Zonas urbanas: zonas censales del INE (Censo 2017, vía el paquete chilemapas); las comunas sin zona urbana no se juegan. Todos los planos tienen la misma escala (2 m por píxel; ver la barra abajo a la izquierda). Teclas: 1 a 4 para responder, Enter para seguir.</p>
+  <p class="nota">Deslindes: Servicio de Impuestos Internos (SII). Imagen satelital: Esri. Zonas urbanas: zonas censales del INE (Censo 2017, vía el paquete chilemapas); las comunas sin zona urbana no se juegan. Todos los planos tienen la misma escala (2 m por píxel; ver la barra abajo a la izquierda). Teclas: 1 a 4 para responder, Enter para seguir. Los nombres que guardes en un ranking compartido quedan visibles para quienes jueguen.</p>
 </div>
 
 <script>
@@ -384,15 +470,16 @@ class ErrorConexion extends Error {}
 
 // Sector de la ronda: un punto urbano precalculado de la comuna. Solo se le pide
 // al SII la capa de predios (una consulta por comuna, que queda en memoria).
-async function sectorDe(com) {
+async function sectorDe(com, pIdx) {
   const cfgs = [];
   let fallos = 0;
   for (const c of com.c) {
     try { const cfg = await servicios(c); if (cfg) cfgs.push(cfg); } catch (e) { fallos += 1; }
   }
   if (!cfgs.length) { if (fallos) throw new ErrorConexion('sin conexión con el SII'); return null; }
-  const [lat, lng] = com.p[Math.floor(Math.random() * com.p.length)];
-  return { lat, lng, capas: cfgs.map((x) => ({ codigo: x.codigo, layer: x.layer })), cfgs };
+  if (!(pIdx >= 0 && pIdx < com.p.length)) pIdx = Math.floor(Math.random() * com.p.length);
+  const [lat, lng] = com.p[pIdx];
+  return { lat, lng, pIdx, capas: cfgs.map((x) => ({ codigo: x.codigo, layer: x.layer })), cfgs };
 }
 
 // Dirección y rol del predio del centro, para mostrarlos al revelar la respuesta
@@ -452,6 +539,13 @@ function armarOpciones(idx, zona, dificultad, regiones) {
 
 // ---- Preparación de rondas ----
 async function prepararRonda(juego) {
+  // Reto: las rondas vienen fijas en el enlace (comuna, punto y alternativas)
+  if (juego.plan) {
+    const p = juego.plan[juego.rondas.length];
+    const sector = await sectorDe(COMUNAS[p.idx], p.pIdx);
+    if (!sector) throw new Error('El SII no entregó el plano de esta ronda. Inténtalo de nuevo.');
+    return { idx: p.idx, ...sector, opciones: p.opciones.slice() };
+  }
   const enJuego = (j) => enZona(j, juego.zona, juego.regiones) && !sinUrbano.has(COMUNAS[j].c[0]);
   let pool = COMUNAS.map((_, j) => j).filter((j) => enJuego(j) && !juego.usadas.has(j));
   // Con pocas comunas (ej. una sola región chica) se repiten comunas, en otro punto
@@ -550,33 +644,188 @@ function mostrarPlano(ronda) {
 // ---- Juego ----
 const $ = (id) => document.getElementById(id);
 let juego = null;
+const al = (lista) => lista[Math.floor(Math.random() * lista.length)];
+const COLORES = ['var(--j1)', 'var(--j2)'];
 
-function claveRecord(zona, dif, regiones) {
-  const extra = zona === 'reg' ? '-' + ORDEN_REGIONES.map((r) => (regiones.has(r) ? '1' : '0')).join('') : '';
-  return 'dqelc-juego-record-' + zona + extra + '-' + dif;
+function limpiarNombre(s) {
+  return String(s || '').replace(/[\u0000-\u001f\u007f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 20);
 }
-function leerRecord(zona, dif, reg) { try { return Number(localStorage.getItem(claveRecord(zona, dif, reg))) || 0; } catch (e) { return 0; } }
-function guardarRecord(zona, dif, reg, p) { try { if (p > leerRecord(zona, dif, reg)) localStorage.setItem(claveRecord(zona, dif, reg), String(p)); } catch (e) {} }
+function leerLS(clave, def) { try { const v = localStorage.getItem(clave); return v === null ? def : v; } catch (e) { return def; } }
+function escribirLS(clave, v) { try { localStorage.setItem(clave, v); } catch (e) {} }
+
+// ---- Modalidad (zona + dificultad, y en "Por regiones" cuáles) ----
+function mascara(regiones) { return ORDEN_REGIONES.map((r) => (regiones.has(r) ? '1' : '0')).join(''); }
+function regionesDeMascara(m) { return new Set(ORDEN_REGIONES.filter((_, i) => m[i] === '1')); }
+function modalidadDe(zona, dif, regiones) { return zona + (zona === 'reg' ? '-' + mascara(regiones) : '') + '-' + dif; }
+function nombreModalidad(zona, dif, regiones) {
+  let z = { gs: 'Gran Santiago', rm: 'Región Metropolitana', cl: 'Todo Chile' }[zona];
+  if (!z) z = regiones.size === 1 ? nombreRegion([...regiones][0]) : regiones.size + ' regiones';
+  return z + ' · ' + (dif === 'dificil' ? 'Difícil' : 'Fácil');
+}
+
+// ---- Ranking ----
+// URL de la val de ranking en Val Town (código en ranking.ts). Si se deja vacía, o si
+// la val no responde, el ranking queda guardado solo en el navegador de cada persona.
+const RANKING_URL = 'https://fabianalvaradodavid--b737b1b8c73c11f1b7b91607ee4eb77e.web.val.run';
+const RANKING_TOP = 10;
+
+function normalizarFila(f) {
+  return { id: f.id, nombre: String(f.nombre || ''), puntaje: Number(f.puntaje) || 0, aciertos: Number(f.aciertos) || 0, fecha: String(f.fecha || f.creado || '') };
+}
+function rankingLocal(mod) {
+  try { return JSON.parse(leerLS('dqelc-juego-ranking-' + mod, '[]')).map(normalizarFila); } catch (e) { return []; }
+}
+function guardarLocal(mod, entrada) {
+  const lista = rankingLocal(mod);
+  lista.push(entrada);
+  lista.sort((a, b) => b.puntaje - a.puntaje || a.fecha.localeCompare(b.fecha));
+  const top = lista.slice(0, RANKING_TOP);
+  escribirLS('dqelc-juego-ranking-' + mod, JSON.stringify(top));
+  const pos = top.findIndex((f) => f.id === entrada.id);
+  return { top, id: entrada.id, posicion: pos >= 0 ? pos + 1 : null };
+}
+async function leerRanking(mod) {
+  if (!RANKING_URL) return { lista: rankingLocal(mod), global: false };
+  try {
+    const r = await fetch(RANKING_URL + '?modalidad=' + encodeURIComponent(mod), { headers: { 'X-Proxy-Token': PROXY_TOKEN } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    return { lista: (d.top || []).map(normalizarFila), global: true };
+  } catch (e) {
+    return { lista: rankingLocal(mod), global: false, error: true };
+  }
+}
+async function registrarPuntaje(mod, nombre, puntaje, aciertos) {
+  const entrada = { id: 'l' + Date.now(), nombre, puntaje, aciertos, fecha: new Date().toISOString() };
+  const local = guardarLocal(mod, entrada);
+  if (!RANKING_URL) return { ...local, global: false };
+  try {
+    const r = await fetch(RANKING_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Proxy-Token': PROXY_TOKEN },
+      body: JSON.stringify({ modalidad: mod, nombre, puntaje, aciertos })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    return { top: (d.top || []).map(normalizarFila), id: d.id, posicion: d.posicion, global: true };
+  } catch (e) {
+    return { ...local, global: false, error: String(e.message || e) };
+  }
+}
+function formatoFecha(f) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(f || '');
+  return m ? m[3] + '-' + m[2] + '-' + m[1] : '';
+}
+function pintarRanking(cont, lista, opciones) {
+  const o = opciones || {};
+  cont.innerHTML = '';
+  if (!lista.length) {
+    const p = document.createElement('div');
+    p.className = 'origen';
+    p.textContent = 'Todavía no hay puntajes en esta modalidad. El primero se lleva la gloria.';
+    cont.appendChild(p);
+  } else {
+    const tabla = document.createElement('table');
+    lista.forEach((f, k) => {
+      const tr = document.createElement('tr');
+      if (o.resaltar !== undefined && o.resaltar !== null && String(f.id) === String(o.resaltar)) tr.className = 'yo';
+      const c1 = document.createElement('td'); c1.className = 'pos'; c1.textContent = (k + 1) + '.';
+      const c2 = document.createElement('td'); c2.textContent = f.nombre;
+      const c3 = document.createElement('td'); c3.className = 'pts'; c3.textContent = f.puntaje;
+      const c4 = document.createElement('td'); c4.className = 'fecha'; c4.textContent = formatoFecha(f.fecha);
+      tr.append(c1, c2, c3, c4);
+      tabla.appendChild(tr);
+    });
+    cont.appendChild(tabla);
+  }
+  const origen = document.createElement('div');
+  origen.className = 'origen';
+  origen.textContent = o.global ? 'Ranking compartido entre todos los jugadores.'
+    : (o.error ? 'No se pudo conectar con el ranking compartido; se muestra el de este navegador.' : 'Ranking guardado en este navegador.');
+  cont.appendChild(origen);
+}
+
+// ---- Retos por enlace ----
+// El enlace lleva las 10 rondas exactas (comuna, punto y alternativas), el nombre y
+// el puntaje de quien desafía. Los índices dependen de los datos de esta versión.
+const VERSION_RETO = 1;
+function aBase64Url(texto) {
+  const bytes = new TextEncoder().encode(texto);
+  let bin = '';
+  bytes.forEach((b) => { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function deBase64Url(s) {
+  const b = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
+  return new TextDecoder().decode(Uint8Array.from(b, (c) => c.charCodeAt(0)));
+}
+function codificarReto(j, nombre) {
+  const datos = {
+    v: VERSION_RETO, z: j.zona, d: j.dificultad, n: nombre || 'Alguien',
+    s: j.puntaje, a: j.rondas.filter((r) => r.elegida === r.idx).length,
+    r: j.rondas.map((r) => [r.idx, r.pIdx].concat(r.opciones, [r.puntos]))
+  };
+  if (j.zona === 'reg') datos.g = mascara(j.regiones);
+  return aBase64Url(JSON.stringify(datos));
+}
+function decodificarReto(codigo) {
+  try {
+    const d = JSON.parse(deBase64Url(codigo));
+    if (d.v !== VERSION_RETO || !Array.isArray(d.r) || d.r.length !== N_RONDAS) return null;
+    if (!['gs', 'rm', 'cl', 'reg'].includes(d.z) || !['facil', 'dificil'].includes(d.d)) return null;
+    const ok = d.r.every((x) => Array.isArray(x) && x.length === 7 &&
+      COMUNAS[x[0]] && COMUNAS[x[0]].p && x[1] >= 0 && x[1] < COMUNAS[x[0]].p.length &&
+      x.slice(2, 6).every((o) => COMUNAS[o]) && x.slice(2, 6).includes(x[0]));
+    if (!ok) return null;
+    return {
+      zona: d.z, dificultad: d.d, regiones: d.z === 'reg' ? regionesDeMascara(String(d.g || '')) : new Set(ORDEN_REGIONES),
+      nombre: limpiarNombre(d.n) || 'Alguien', puntaje: Number(d.s) || 0, aciertos: Number(d.a) || 0,
+      plan: d.r.map((x) => ({ idx: x[0], pIdx: x[1], opciones: x.slice(2, 6), puntos: Number(x[6]) || 0 }))
+    };
+  } catch (e) { return null; }
+}
+function urlBase() { return location.href.split('#')[0].split('?')[0]; }
+
+// ---- Portada ----
+let retoPendiente = null;
+let regionesListas = false;
 
 function opcionesPortada() {
   return {
     zona: document.querySelector('input[name="zona"]:checked').value,
     dificultad: document.querySelector('input[name="dificultad"]:checked').value,
-    regiones: new Set(regionesElegidas)
+    regiones: new Set(regionesElegidas),
+    jugadores: Number(document.querySelector('input[name="jugadores"]:checked').value)
   };
 }
+let temporizadorRanking = null;
 function actualizarRecord() {
-  const { zona, dificultad, regiones } = opcionesPortada();
+  const { zona, dificultad, regiones, jugadores } = opcionesPortada();
   $('grupo-regiones').hidden = zona !== 'reg';
+  $('grupo-nombres').hidden = jugadores !== 2;
   const n = COMUNAS.filter((_, j) => enZona(j, zona, regiones)).length;
   const faltan = n < 4;
   $('aviso-portada').textContent = faltan ? (zona === 'reg' && !regiones.size ? 'Elige al menos una región.' : 'Esa selección tiene solo ' + n + ' comuna(s) con zona urbana; suma otra región para tener 4 alternativas.') : '';
   $('btn-empezar').disabled = faltan;
-  const r = faltan ? 0 : leerRecord(zona, dificultad, regiones);
-  $('record').textContent = r ? 'Tu mejor puntaje en esta modalidad: ' + r + ' de ' + (N_RONDAS * 100) + '.' : '';
   const cr = document.querySelector('[data-cuenta="reg"]');
   if (cr) cr.textContent = regiones.size === ORDEN_REGIONES.length ? 'elige cuáles' : regiones.size + ' de 16';
+  $('ranking-portada-titulo').textContent = 'Ranking: ' + nombreModalidad(zona, dificultad, regiones);
+  $('record').textContent = '';
+  if (faltan) { $('ranking-portada').hidden = true; return; }
+  $('ranking-portada').hidden = false;
+  const mod = modalidadDe(zona, dificultad, regiones);
+  const mejor = rankingLocal(mod)[0];
+  if (mejor) $('record').textContent = 'Mejor puntaje en este navegador: ' + mejor.puntaje + ' de ' + (N_RONDAS * 100) + ' (' + mejor.nombre + ').';
+  if ($('ranking-portada').open) {
+    clearTimeout(temporizadorRanking);
+    temporizadorRanking = setTimeout(async () => {
+      const r = await leerRanking(mod);
+      if (modalidadDe(...Object.values(opcionesPortada()).slice(0, 3)) !== mod) return;
+      pintarRanking($('ranking-portada-lista'), r.lista, r);
+    }, 250);
+  }
 }
+$('ranking-portada').addEventListener('toggle', () => { if ($('ranking-portada').open) actualizarRecord(); });
 
 // Lista de regiones (norte a sur) con la cantidad de comunas jugables
 (function armarListaRegiones() {
@@ -610,12 +859,64 @@ function actualizarRecord() {
   $('reg-todas').addEventListener('click', () => marcarTodas(true));
   $('reg-ninguna').addEventListener('click', () => marcarTodas(false));
 })();
-document.querySelectorAll('.portada input').forEach((i) => i.addEventListener('change', actualizarRecord));
+document.querySelectorAll('#caja-normal input[type="radio"]').forEach((i) => i.addEventListener('change', actualizarRecord));
 document.querySelectorAll('[data-cuenta]').forEach((el) => {
   if (el.dataset.cuenta !== 'reg') el.textContent = COMUNAS.filter((_, j) => enZona(j, el.dataset.cuenta)).length + ' comunas';
 });
+$('nombre-j1').value = leerLS('dqelc-juego-j1', '');
+$('nombre-j2').value = leerLS('dqelc-juego-j2', '');
+$('final-nombre').value = leerLS('dqelc-juego-nombre', '');
+$('reto-nombre').value = leerLS('dqelc-juego-nombre', '');
 actualizarRecord();
 
+function mostrarPortada() {
+  if (juego) juego.cancelado = true;
+  $('final').classList.add('oculta');
+  $('estado').style.display = 'none';
+  $('turno').style.display = 'none';
+  interaccion(false);
+  $('marco').classList.add('con-portada');
+  $('caja-reto').hidden = !retoPendiente;
+  $('caja-normal').hidden = !!retoPendiente;
+  $('portada').classList.remove('oculta');
+  actualizarRecord();
+}
+
+// Al abrir un enlace de reto
+(function revisarReto() {
+  const codigo = new URLSearchParams(location.search).get('reto');
+  if (!codigo) return;
+  const reto = decodificarReto(codigo);
+  if (!reto) {
+    $('aviso-portada').textContent = 'Ese enlace de reto no es válido o es de otra versión del juego. Puedes jugar normal.';
+    return;
+  }
+  retoPendiente = reto;
+  const t = $('reto-texto');
+  t.textContent = '';
+  const fuerte = (x) => { const s = document.createElement('strong'); s.textContent = x; return s; };
+  t.append(fuerte(reto.nombre), ' te desafía: hizo ', fuerte(reto.puntaje + ' puntos'), ' (' + reto.aciertos + ' de ' + N_RONDAS + ' aciertos) en ',
+    fuerte(nombreModalidad(reto.zona, reto.dificultad, reto.regiones)), '. Juega las mismas 10 rondas y compara. ¿Le ganas?');
+  $('caja-reto').hidden = false;
+  $('caja-normal').hidden = true;
+})();
+$('btn-aceptar-reto').addEventListener('click', () => {
+  const r = retoPendiente;
+  const nombre = limpiarNombre($('reto-nombre').value);
+  if (nombre) { escribirLS('dqelc-juego-nombre', nombre); $('final-nombre').value = nombre; }
+  retoPendiente = null;
+  history.replaceState(null, '', urlBase());
+  empezar({ zona: r.zona, dificultad: r.dificultad, regiones: r.regiones, jugadores: 1, plan: r.plan, reto: r });
+});
+$('btn-ignorar-reto').addEventListener('click', () => {
+  retoPendiente = null;
+  history.replaceState(null, '', urlBase());
+  $('caja-reto').hidden = true;
+  $('caja-normal').hidden = false;
+  actualizarRecord();
+});
+
+// ---- Carga de rondas ----
 function cargando(visible, texto) {
   $('cargando').classList.toggle('visible', visible);
   $('cargando-texto').textContent = texto || 'Cargando el plano…';
@@ -641,9 +942,42 @@ function errorCarga(err) {
   $('cargando').append(t, b);
 }
 
+// ---- Marcador ----
+function pintarMarcador() {
+  const m = $('marcador');
+  m.textContent = '';
+  if (juego.modo === 'dos') {
+    juego.jug.forEach((p, k) => {
+      if (k) { const s = document.createElement('span'); s.className = 'sep'; s.textContent = '·'; m.appendChild(s); }
+      const f = document.createElement('span');
+      f.style.color = p.color;
+      f.textContent = '● ';
+      const n = document.createElement('span'); n.textContent = p.nombre + ' ';
+      const pt = document.createElement('strong'); pt.textContent = p.puntaje;
+      m.append(f, n, pt);
+    });
+  } else {
+    const pt = document.createElement('strong'); pt.id = 'puntaje'; pt.textContent = juego.puntaje;
+    m.append(pt, ' puntos');
+    if (juego.reto) m.append(' · ' + juego.reto.nombre + ' hizo ' + juego.reto.puntaje);
+  }
+}
+
 function empezar(opts) {
   if (juego) juego.cancelado = true;
-  juego = { ...opts, regiones: new Set(opts.regiones || ORDEN_REGIONES), usadas: new Set(), rondas: [], i: -1, puntaje: 0, cancelado: false, comodines: COMODINES_POR_PARTIDA };
+  const modo = opts.reto ? 'reto' : (opts.jugadores === 2 ? 'dos' : 'solo');
+  juego = {
+    zona: opts.zona, dificultad: opts.dificultad, regiones: new Set(opts.regiones || ORDEN_REGIONES),
+    modo, plan: opts.plan || null, reto: opts.reto || null,
+    usadas: new Set(), rondas: [], i: -1, puntaje: 0, cancelado: false, comodines: COMODINES_POR_PARTIDA
+  };
+  if (modo === 'dos') {
+    const n1 = limpiarNombre($('nombre-j1').value) || 'Jugador 1';
+    const n2 = limpiarNombre($('nombre-j2').value) || 'Jugador 2';
+    escribirLS('dqelc-juego-j1', n1 === 'Jugador 1' ? '' : n1);
+    escribirLS('dqelc-juego-j2', n2 === 'Jugador 2' ? '' : n2);
+    juego.jug = [{ nombre: n1, color: COLORES[0], puntaje: 0 }, { nombre: n2 === n1 ? n2 + ' (2)' : n2, color: COLORES[1], puntaje: 0 }];
+  }
   $('portada').classList.add('oculta');
   $('final').classList.add('oculta');
   $('marco').classList.remove('con-portada');
@@ -651,9 +985,28 @@ function empezar(opts) {
   $('total-rondas').textContent = N_RONDAS;
   $('marcas').innerHTML = '';
   for (let k = 0; k < N_RONDAS; k++) $('marcas').appendChild(document.createElement('span'));
-  $('puntaje').textContent = '0';
+  pintarMarcador();
   juego.siguiente = prepararRonda(juego);
   mostrarSiguiente();
+}
+
+function pintarTurno(ronda) {
+  const el = $('turno');
+  if (juego.modo !== 'dos' || ronda.respondida) { el.style.display = 'none'; return; }
+  const quien = juego.jug[ronda.orden[ronda.turno]];
+  el.textContent = '';
+  const ficha = document.createElement('span'); ficha.className = 'ficha'; ficha.style.background = quien.color;
+  const txt = document.createElement('span');
+  const b = document.createElement('strong'); b.textContent = quien.nombre;
+  txt.append('Turno de ', b);
+  el.append(ficha, txt);
+  if (ronda.turno === 1) {
+    const otro = juego.jug[ronda.orden[0]];
+    const sub = document.createElement('span'); sub.className = 'sub';
+    sub.textContent = otro.nombre + ' ya eligió. ' + al(['Nada de mirar.', 'Sin soplar.', 'Ojos en el plano, no en el vecino.', 'Que no se note la cara de póker.']);
+    el.appendChild(sub);
+  }
+  el.style.display = 'flex';
 }
 
 async function mostrarSiguiente() {
@@ -661,6 +1014,7 @@ async function mostrarSiguiente() {
   $('resultado').style.display = 'none';
   $('opciones').style.display = 'none';
   $('pistas').style.display = 'none';
+  $('turno').style.display = 'none';
   cargando(true);
   let ronda;
   try { ronda = await j.siguiente; } catch (e) { if (j === juego) errorCarga(e); return; }
@@ -668,6 +1022,11 @@ async function mostrarSiguiente() {
   j.i += 1;
   j.rondas.push(ronda);
   ronda.pistas = new Set();
+  if (j.modo === 'dos') {
+    ronda.resp = [null, null];
+    ronda.orden = j.i % 2 === 0 ? [0, 1] : [1, 0]; // parte un jugador distinto cada ronda
+    ronda.turno = 0;
+  }
   // Mientras se juega esta ronda, se prepara la próxima
   j.siguiente = j.i + 1 < N_RONDAS ? prepararRonda(j) : null;
   if (j.siguiente) j.siguiente.catch(() => {});
@@ -675,10 +1034,19 @@ async function mostrarSiguiente() {
   mostrarPlano(ronda);
   $('num-ronda').textContent = j.i + 1;
   [...$('marcas').children].forEach((s, k) => s.classList.toggle('actual', k === j.i));
-  $('pista-alejar').disabled = false;
-  $('pista-satelital').disabled = false;
-  actualizarComodin(ronda);
-  $('pistas').style.display = 'flex';
+  // En 2 jugadores no hay pistas ni comodines: el plano es el mismo para ambos
+  if (j.modo !== 'dos') {
+    $('pista-alejar').disabled = false;
+    $('pista-satelital').disabled = false;
+    actualizarComodin(ronda);
+    $('pistas').style.display = 'flex';
+  }
+  pintarOpciones(ronda);
+  pintarTurno(ronda);
+}
+
+function pintarOpciones(ronda) {
+  const j = juego;
   const cont = $('opciones');
   cont.innerHTML = '';
   ronda.opciones.forEach((idx, k) => {
@@ -709,14 +1077,14 @@ async function mostrarSiguiente() {
 
 function usarPista(tipo) {
   const ronda = juego && juego.rondas[juego.i];
-  if (!ronda || ronda.respondida || ronda.pistas.has(tipo)) return;
+  if (!ronda || ronda.respondida || ronda.pistas.has(tipo) || juego.modo === 'dos') return;
   ronda.pistas.add(tipo);
   if (tipo === 'alejar') { mapa.setZoom(ronda.zoom - 1); $('pista-alejar').disabled = true; }
   if (tipo === 'satelital') { satelital.addTo(mapa); fijarRelleno(0.3); $('pista-satelital').disabled = true; }
 }
 function usarComodin() {
   const ronda = juego && juego.rondas[juego.i];
-  if (!ronda || ronda.respondida || ronda.pistas.has('comodin') || juego.comodines <= 0) return;
+  if (!ronda || ronda.respondida || ronda.pistas.has('comodin') || juego.comodines <= 0 || juego.modo === 'dos') return;
   ronda.pistas.add('comodin');
   juego.comodines -= 1;
   const malas = mezclar(ronda.opciones.filter((i) => i !== ronda.idx)).slice(0, 2);
@@ -734,41 +1102,87 @@ $('comodin').addEventListener('click', usarComodin);
 $('pista-alejar').addEventListener('click', () => usarPista('alejar'));
 $('pista-satelital').addEventListener('click', () => usarPista('satelital'));
 
+const FRASES_ACIERTO = ['¡La clavaste!', '¡Bien ahí!', '¡Exacto!', '¡Ojo de tasador!', '¡Correctísimo!', '¡Eso!', '¡Te la sabías!'];
+const FRASES_ERROR = ['Nop.', 'Frío, frío.', 'Casi, pero no.', 'Uy.', 'Te fuiste a otra comuna.', 'Mmm, no.', 'Te pilló la manzana.'];
+
 function responder(idx) {
   const ronda = juego && juego.rondas[juego.i];
   if (!ronda || ronda.respondida) return;
+  if (ronda.descartadas && ronda.descartadas.has(idx)) return;
+  if (juego.modo === 'dos') {
+    ronda.resp[ronda.orden[ronda.turno]] = idx;
+    ronda.turno += 1;
+    if (ronda.turno < 2) {
+      // Pasa al otro jugador sin mostrar lo que eligió el primero
+      pintarTurno(ronda);
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      return;
+    }
+  }
   ronda.respondida = true;
-  ronda.elegida = idx;
-  const bien = idx === ronda.idx;
-  let pts = 0;
-  if (bien) { pts = 100; ronda.pistas.forEach((p) => { pts -= COSTO[p]; }); }
-  ronda.puntos = pts;
-  juego.puntaje += pts;
-  $('puntaje').textContent = juego.puntaje;
+  ronda.elegida = juego.modo === 'dos' ? null : idx;
+  const c = COMUNAS[ronda.idx];
   const marca = $('marcas').children[juego.i];
   marca.classList.remove('actual');
-  marca.classList.add(bien ? 'bien' : 'mal');
+  let titular, bien;
+
+  if (juego.modo === 'dos') {
+    const aciertos = ronda.resp.map((r) => r === ronda.idx);
+    ronda.puntosJ = aciertos.map((a) => (a ? 100 : 0));
+    juego.jug.forEach((p, k) => { p.puntaje += ronda.puntosJ[k]; });
+    marca.style.background = 'linear-gradient(90deg,' + aciertos.map((a, k) => (a ? 'var(--ok)' : 'var(--bad)') + ' ' + (k * 50) + '% ' + (k * 50 + 50) + '%').join(',') + ')';
+    bien = aciertos.some(Boolean);
+    const n = juego.jug.map((p) => p.nombre);
+    if (aciertos[0] && aciertos[1]) titular = al(['¡Los dos la clavaron!', 'Empate técnico: ambos aciertan.', '¡Doble acierto!']) + ' Era ' + c.n + '.';
+    else if (aciertos[0] || aciertos[1]) {
+      const g = aciertos[0] ? n[0] : n[1];
+      titular = al(['Punto para ' + g + '.', g + ' se la sabía.', 'Bien, ' + g + '.']) + ' Era ' + c.n + '.';
+    } else titular = al(['Ninguno acertó.', 'Las manzanas ganan esta ronda.', 'Cero y cero.']) + ' Era ' + c.n + '.';
+  } else {
+    bien = idx === ronda.idx;
+    let pts = 0;
+    if (bien) { pts = 100; ronda.pistas.forEach((p) => { pts -= COSTO[p]; }); }
+    ronda.puntos = pts;
+    juego.puntaje += pts;
+    marca.classList.add(bien ? 'bien' : 'mal');
+    titular = bien ? al(FRASES_ACIERTO) + ' ' + c.n + ' (+' + pts + ')' : al(FRASES_ERROR) + ' Era ' + c.n + '.';
+    if (juego.reto) {
+      const suyo = juego.plan[juego.i].puntos;
+      titular += ' ' + juego.reto.nombre + ': ' + (suyo ? '+' + suyo : 'falló') + '.';
+    }
+  }
+  pintarMarcador();
 
   [...$('opciones').children].forEach((b) => {
     const i = Number(b.dataset.idx);
     b.disabled = true;
+    const elegidoPor = juego.modo === 'dos' ? [0, 1].filter((k) => ronda.resp[k] === i) : (i === idx ? [-1] : []);
     if (i === ronda.idx) b.classList.add('correcta');
-    else if (i === idx) b.classList.add('equivocada');
+    else if (elegidoPor.length) b.classList.add('equivocada');
     else if (!b.classList.contains('descartada')) b.classList.add('atenuada');
+    if (juego.modo === 'dos') {
+      elegidoPor.forEach((k) => {
+        const ch = document.createElement('span');
+        ch.className = 'chapa';
+        ch.style.background = juego.jug[k].color;
+        ch.textContent = juego.jug[k].nombre;
+        b.appendChild(ch);
+      });
+    }
   });
   $('pista-alejar').disabled = true;
   $('pista-satelital').disabled = true;
   $('comodin').disabled = true;
+  $('turno').style.display = 'none';
 
   // Se revela el lugar: imagen satelital con nombres, y el mapa se puede mover
-  const c = COMUNAS[ronda.idx];
   if (!mapa.hasLayer(satelital)) satelital.addTo(mapa);
   nombres.addTo(mapa);
   fijarRelleno(0.3);
   interaccion(true);
 
   $('res-titular').className = 'titular ' + (bien ? 'bien' : 'mal');
-  $('res-titular').textContent = bien ? al(FRASES_ACIERTO) + ' ' + c.n + ' (+' + pts + ')' : al(FRASES_ERROR) + ' Era ' + c.n + '.';
+  $('res-titular').textContent = titular;
   const region = nombreRegion(c.r);
   $('res-detalle').textContent = region + '. Puedes mover y acercar el mapa.';
   predioDelCentro(ronda).then((d) => {
@@ -780,12 +1194,8 @@ function responder(idx) {
   $('btn-siguiente').focus({ preventScroll: true });
 }
 
-const al = (lista) => lista[Math.floor(Math.random() * lista.length)];
-
-const FRASES_ACIERTO = ['¡La clavaste!', '¡Bien ahí!', '¡Exacto!', '¡Ojo de tasador!', '¡Correctísimo!', '¡Eso!', '¡Te la sabías!'];
-const FRASES_ERROR = ['Nop.', 'Frío, frío.', 'Casi, pero no.', 'Uy.', 'Te fuiste a otra comuna.', 'Mmm, no.', 'Te pilló la manzana.'];
-
-function comentarioFinal(frac, j) {
+// ---- Mensajes finales ----
+function comentarioFinal(frac) {
   if (frac >= 1) return al([
     'Mil de mil. ¿Seguro que no trabajas en el Conservador de Bienes Raíces?',
     'Perfecto. El SII debería contratarte para el próximo reavalúo.',
@@ -823,61 +1233,168 @@ function comentarioFinal(frac, j) {
     'Las manzanas: 10. Tú: casi 0. Revancha, urgente.'
   ]);
 }
+function comentarioDuelo(ganador, perdedor, dif) {
+  if (dif === 0) return al([
+    'Empate. Ni el SII podría desempatar esto.',
+    'Empate perfecto: se reparten la propiedad en copropiedad.',
+    'Tablas. Habrá que ir a la Corte de Apelaciones… o jugar otra.'
+  ]);
+  if (dif >= 400) return al([
+    'Paliza catastral. ' + perdedor + ', el plano regulador te espera.',
+    perdedor + ' pide revancha (y un mapa).',
+    'Goleada. ' + perdedor + ', ¿habías visto un plano antes?'
+  ]);
+  return al([
+    perdedor + ', a estudiar las manzanas.',
+    perdedor + ' exige recuento de votos.',
+    ganador + ' se queda con la escritura; ' + perdedor + ' pide revancha.',
+    perdedor + ' dio pelea, pero no alcanzó.',
+    perdedor + ' dice que el mapa estaba al revés.'
+  ]);
+}
+
+function celda(texto, clase) { const td = document.createElement('td'); td.textContent = texto; if (clase) td.className = clase; return td; }
 
 function terminar() {
   const j = juego;
   const max = N_RONDAS * 100;
-  guardarRecord(j.zona, j.dificultad, j.regiones, j.puntaje);
-  $('final-puntaje').innerHTML = '';
-  $('final-puntaje').append(String(j.puntaje) + ' ');
-  const s = document.createElement('small'); s.textContent = 'de ' + max; $('final-puntaje').appendChild(s);
-  const aciertos = j.rondas.filter((r) => r.elegida === r.idx).length;
-  $('final-comentario').textContent = aciertos + ' de ' + N_RONDAS + ' aciertos. ' + comentarioFinal(j.puntaje / max, j);
   const tabla = $('final-tabla');
   tabla.innerHTML = '';
-  j.rondas.forEach((r, k) => {
-    const tr = document.createElement('tr');
-    const ok = r.elegida === r.idx;
-    const t1 = document.createElement('td'); t1.textContent = (k + 1) + '.';
-    const t2 = document.createElement('td');
-    const nombre = document.createElement('span'); nombre.className = ok ? 'ok' : 'no'; nombre.textContent = COMUNAS[r.idx].n;
-    t2.appendChild(nombre);
-    if (!ok) t2.append(' — elegiste ' + COMUNAS[r.elegida].n);
-    const t3 = document.createElement('td'); t3.className = 'pts'; t3.textContent = r.puntos;
-    tr.append(t1, t2, t3);
-    tabla.appendChild(tr);
-  });
+  $('estado-guardar').textContent = '';
+  $('final-ranking').innerHTML = '';
+  $('btn-guardar').disabled = false;
+  $('enlace-reto').hidden = true;
+  const grande = $('final-puntaje');
+  grande.innerHTML = '';
+
+  if (j.modo === 'dos') {
+    const [a, b] = j.jug;
+    const dif = Math.abs(a.puntaje - b.puntaje);
+    const gan = a.puntaje >= b.puntaje ? a : b;
+    const per = gan === a ? b : a;
+    grande.append(dif === 0 ? 'Empate ' : 'Gana ' + gan.nombre + ' ');
+    const s = document.createElement('small'); s.textContent = a.puntaje + ' a ' + b.puntaje; grande.appendChild(s);
+    $('final-comentario').textContent = comentarioDuelo(gan.nombre, per.nombre, dif);
+    const th = document.createElement('tr');
+    ['', 'Comuna', a.nombre, b.nombre].forEach((x) => { const c = document.createElement('th'); c.textContent = x; th.appendChild(c); });
+    tabla.appendChild(th);
+    j.rondas.forEach((r, k) => {
+      const tr = document.createElement('tr');
+      tr.append(celda((k + 1) + '.'), celda(COMUNAS[r.idx].n),
+        celda(r.puntosJ[0] ? '✓ 100' : '✗ ' + COMUNAS[r.resp[0]].n, 'jug ' + (r.puntosJ[0] ? 'ok' : 'no')),
+        celda(r.puntosJ[1] ? '✓ 100' : '✗ ' + COMUNAS[r.resp[1]].n, 'jug ' + (r.puntosJ[1] ? 'ok' : 'no')));
+      tabla.appendChild(tr);
+    });
+    $('bloque-ranking').hidden = true;
+    $('bloque-reto').hidden = true;
+    $('btn-otra').textContent = 'Revancha';
+  } else {
+    grande.append(String(j.puntaje) + ' ');
+    const s = document.createElement('small'); s.textContent = 'de ' + max; grande.appendChild(s);
+    const aciertos = j.rondas.filter((r) => r.elegida === r.idx).length;
+    j.aciertos = aciertos;
+    let comentario = aciertos + ' de ' + N_RONDAS + ' aciertos. ';
+    if (j.reto) {
+      const otro = j.reto.nombre, dif = Math.abs(j.puntaje - j.reto.puntaje);
+      if (dif === 0) comentario += 'Empate con ' + otro + '. ' + al(['Ni el SII podría desempatar esto.', 'Se reparten la propiedad en copropiedad.']);
+      else if (j.puntaje > j.reto.puntaje) comentario += 'Le ganaste a ' + otro + ' por ' + dif + '. ' + al(['Devuélvele el reto para que sufra.', 'Mándale el resultado, con cariño.', otro + ' va a pedir recuento.']);
+      else comentario += otro + ' te ganó por ' + dif + '. ' + al(['Pide la revancha… o un mapa.', 'Devuélvele el reto y cobra venganza.', 'Las manzanas estaban de su lado.']);
+      const th = document.createElement('tr');
+      ['', 'Comuna', 'Tú', otro].forEach((x) => { const c = document.createElement('th'); c.textContent = x; th.appendChild(c); });
+      tabla.appendChild(th);
+    } else {
+      comentario += comentarioFinal(j.puntaje / max);
+    }
+    $('final-comentario').textContent = comentario;
+    j.rondas.forEach((r, k) => {
+      const tr = document.createElement('tr');
+      const ok = r.elegida === r.idx;
+      const t2 = document.createElement('td');
+      const nombre = document.createElement('span'); nombre.className = ok ? 'ok' : 'no'; nombre.textContent = COMUNAS[r.idx].n;
+      t2.appendChild(nombre);
+      if (!ok) t2.append(' — elegiste ' + COMUNAS[r.elegida].n);
+      tr.append(celda((k + 1) + '.'), t2, celda(r.puntos, 'pts'));
+      if (j.reto) tr.appendChild(celda(j.plan[k].puntos, 'pts'));
+      tabla.appendChild(tr);
+    });
+    $('bloque-ranking').hidden = false;
+    $('bloque-reto').hidden = false;
+    $('reto-titulo').textContent = j.reto ? 'Devuélvele el reto a ' + j.reto.nombre : 'Desafía a alguien';
+    $('btn-otra').textContent = 'Jugar otra vez';
+    // Ranking actual de la modalidad (para ver dónde quedarías)
+    const mod = modalidadDe(j.zona, j.dificultad, j.regiones);
+    leerRanking(mod).then((r) => { if (juego === j && !j.guardado) pintarRanking($('final-ranking'), r.lista, r); });
+  }
   $('pistas').style.display = 'none';
   $('opciones').style.display = 'none';
   $('resultado').style.display = 'none';
+  $('turno').style.display = 'none';
   interaccion(false);
   $('marco').classList.add('con-portada');
   $('final').classList.remove('oculta');
   $('btn-otra').focus({ preventScroll: true });
 }
 
+$('btn-guardar').addEventListener('click', async () => {
+  const j = juego;
+  if (!j || j.guardado) return;
+  const nombre = limpiarNombre($('final-nombre').value);
+  if (!nombre) { $('estado-guardar').textContent = 'Escribe tu nombre para el ranking.'; $('final-nombre').focus(); return; }
+  escribirLS('dqelc-juego-nombre', nombre);
+  $('btn-guardar').disabled = true;
+  $('estado-guardar').textContent = 'Guardando…';
+  const mod = modalidadDe(j.zona, j.dificultad, j.regiones);
+  const r = await registrarPuntaje(mod, nombre, j.puntaje, j.aciertos);
+  j.guardado = true;
+  pintarRanking($('final-ranking'), r.top, { resaltar: r.id, global: r.global, error: r.error });
+  const modo = nombreModalidad(j.zona, j.dificultad, j.regiones);
+  if (r.posicion && r.posicion <= RANKING_TOP) {
+    $('estado-guardar').textContent = 'Quedaste en el lugar ' + r.posicion + ' de ' + modo + '.' + (r.posicion === 1 ? ' ' + al(['¡Primer lugar!', 'Nadie te gana… por ahora.', 'Récord absoluto.']) : '');
+  } else if (r.posicion) {
+    $('estado-guardar').textContent = 'Guardado: quedaste en el lugar ' + r.posicion + ' de ' + modo + '. El top ' + RANKING_TOP + ' te espera.';
+  } else {
+    $('estado-guardar').textContent = 'Guardado. Te faltó para entrar al top ' + RANKING_TOP + ' de este navegador.';
+  }
+});
+$('final-nombre').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('btn-guardar').click(); } });
+
+$('btn-reto').addEventListener('click', async () => {
+  const j = juego;
+  if (!j || j.modo === 'dos') return;
+  const nombre = limpiarNombre($('final-nombre').value) || leerLS('dqelc-juego-nombre', '') || 'Alguien';
+  const url = urlBase() + '?reto=' + codificarReto(j, nombre);
+  $('enlace-reto-texto').value = url;
+  $('enlace-reto').hidden = false;
+  const texto = nombre + ' hizo ' + j.puntaje + ' puntos en ¿De qué comuna es? (' + nombreModalidad(j.zona, j.dificultad, j.regiones) + '). ¿Le ganas?';
+  if (navigator.share && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)) {
+    try { await navigator.share({ title: '¿De qué comuna es?', text: texto, url }); return; } catch (e) { /* se muestra el enlace */ }
+  }
+  $('enlace-reto-texto').select();
+});
+$('btn-copiar-reto').addEventListener('click', async () => {
+  const campo = $('enlace-reto-texto');
+  try { await navigator.clipboard.writeText(campo.value); $('btn-copiar-reto').textContent = 'Copiado'; }
+  catch (e) { campo.select(); document.execCommand && document.execCommand('copy'); $('btn-copiar-reto').textContent = 'Copiado'; }
+  setTimeout(() => { $('btn-copiar-reto').textContent = 'Copiar'; }, 1800);
+});
+
 $('btn-siguiente').addEventListener('click', () => {
   if (!juego) return;
   if (juego.i + 1 < N_RONDAS) mostrarSiguiente(); else terminar();
 });
 $('btn-empezar').addEventListener('click', () => empezar(opcionesPortada()));
-$('btn-otra').addEventListener('click', () => empezar({ zona: juego.zona, dificultad: juego.dificultad, regiones: juego.regiones }));
-$('btn-cambiar').addEventListener('click', () => {
-  if (juego) juego.cancelado = true;
-  $('final').classList.add('oculta');
-  $('estado').style.display = 'none';
-  interaccion(false);
-  $('marco').classList.add('con-portada');
-  $('portada').classList.remove('oculta');
-  actualizarRecord();
+$('btn-otra').addEventListener('click', () => {
+  const j = juego;
+  empezar({ zona: j.zona, dificultad: j.dificultad, regiones: j.regiones, jugadores: j.modo === 'dos' ? 2 : 1 });
 });
+$('btn-cambiar').addEventListener('click', mostrarPortada);
 
 document.addEventListener('keydown', (e) => {
   if (!juego || e.altKey || e.ctrlKey || e.metaKey) return;
+  if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
   const ronda = juego.rondas[juego.i];
   if (/^[1-4]$/.test(e.key) && ronda && !ronda.respondida && $('opciones').style.display !== 'none') {
-    const elegida = ronda.opciones[Number(e.key) - 1];
-    if (!(ronda.descartadas && ronda.descartadas.has(elegida))) responder(elegida);
+    responder(ronda.opciones[Number(e.key) - 1]);
   } else if (e.key === 'Enter' && ronda && ronda.respondida && $('resultado').style.display !== 'none' && document.activeElement !== $('btn-siguiente')) {
     $('btn-siguiente').click();
   }
