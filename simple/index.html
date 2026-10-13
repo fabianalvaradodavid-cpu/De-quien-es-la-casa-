@@ -644,26 +644,29 @@
   .modal.arrastrando{ opacity:0.92; }
   /* Mapa base "Solo límites comunales": sin imagen de fondo, papel claro */
   #map.fondo-limites{ background:#f4f3ee; }
-  /* Acceso directo al juego, a la derecha del encabezado */
+  /* Acceso directo al juego, a la derecha del encabezado: naranjo para destacar sobre el azul */
   .acceso-juego{
     margin-left:auto;
     display:flex;
-    flex-direction:column;
-    gap:0.1rem;
-    padding:0.5rem 0.85rem;
-    border:1px solid var(--clay);
-    border-radius:6px;
-    background:var(--panel);
-    color:var(--moss-dark);
+    align-items:center;
+    gap:0.65rem;
+    padding:0.55rem 0.95rem 0.55rem 0.7rem;
+    border:none;
+    border-radius:8px;
+    background:#e8772e;
+    color:#fff;
     text-decoration:none;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     line-height:1.2;
+    box-shadow:0 2px 0 #b9541a;
   }
-  .acceso-juego:hover{ background:var(--clay); color:#fff; }
-  .acceso-juego:hover .acceso-juego-bajada{ color:#dbe6ef; }
-  .acceso-juego:focus-visible{ outline:2px solid var(--clay); outline-offset:2px; }
-  .acceso-juego-titulo{ font-weight:600; font-size:0.9rem; }
-  .acceso-juego-bajada{ font-size:0.75rem; color:#5a6873; }
+  .acceso-juego:hover{ background:#d4651f; }
+  .acceso-juego:active{ transform:translateY(1px); box-shadow:0 1px 0 #b9541a; }
+  .acceso-juego:focus-visible{ outline:3px solid #1c3347; outline-offset:2px; }
+  .acceso-juego svg{ flex-shrink:0; }
+  .acceso-juego-textos{ display:flex; flex-direction:column; gap:0.1rem; }
+  .acceso-juego-titulo{ font-weight:700; font-size:0.92rem; }
+  .acceso-juego-bajada{ font-size:0.75rem; color:#fff2e6; }
   @media (max-width:720px){ .acceso-juego{ margin-left:0; } }
 </style>
 </head>
@@ -675,8 +678,18 @@
     <p>Clic en un punto del mapa para consultar el rol de esa propiedad ante el SII. Luego usa esos datos para abrir página de TGR para conocer al propietario.</p>
   </div>
   <a class="acceso-juego" href="../juego/">
-    <span class="acceso-juego-titulo">Juego: ¿De qué comuna es?</span>
-    <span class="acceso-juego-bajada">Adivina la comuna por sus deslindes</span>
+    <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true">
+      <rect x="1" y="1" width="28" height="28" rx="6" fill="#fff" fill-opacity="0.18"/>
+      <g fill="none" stroke="#fff" stroke-width="1.6">
+        <rect x="5" y="5" width="8" height="9" rx="1"/><rect x="16" y="5" width="9" height="5" rx="1"/>
+        <rect x="16" y="13" width="9" height="12" rx="1"/><rect x="5" y="17" width="8" height="8" rx="1"/>
+      </g>
+      <text x="20.5" y="23" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="9" fill="#fff">?</text>
+    </svg>
+    <span class="acceso-juego-textos">
+      <span class="acceso-juego-titulo">Juego: ¿De qué comuna es?</span>
+      <span class="acceso-juego-bajada">Adivina la comuna por sus deslindes</span>
+    </span>
   </a>
 </header>
 
