@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>¿De qué comuna es?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root{
+    --ink:#1f2a33;
+    --muted:#5a6873;
+    --soft:#7b8791;
+    --paper:#f4f6f8;
+    --plano:#f7f6f1;
+    --line:#d3dae1;
+    --moss-dark:#1c3347;
+    --clay:#2f5f82;
+    --clay-dark:#234a66;
+    --ok:#2f7d55;
+    --ok-bg:#e4f1e9;
+    --bad:#a3402b;
+    --bad-bg:#f7e5e0;
+    --panel:#ffffff;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; }
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+    min-height:100vh;
+  }
+  .wrap{ max-width:780px; margin:0 auto; padding:20px 16px 40px; }
+  header{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+  h1{
+    font-family:'Source Serif 4','Iowan Old Style',Georgia,serif;
+    font-weight:600; font-size:1.9rem; line-height:1.1; margin:0; color:var(--moss-dark);
+  }
+  header a{ font-family:var(--sans); font-size:0.85rem; color:var(--clay); text-decoration:none; }
+  header a:hover{ text-decoration:underline; }
+  .bajada{ font-family:var(--sans); font-size:0.9rem; color:var(--muted); margin:0 0 16px; max-width:62ch; line-height:1.45; }
+
+  /* Barra de estado: ronda, puntaje y una marca por ronda */
+  .estado{ display:none; align-items:center; justify-content:space-between; gap:12px; font-family:var(--sans); font-size:0.88rem; color:var(--muted); margin-bottom:8px; }
+  .estado strong{ color:var(--ink); }
+  .marcas{ display:flex; gap:4px; flex:1; max-width:260px; }
+  .marcas span{ flex:1; height:6px; border-radius:3px; background:var(--line); }
+  .marcas span.actual{ background:var(--soft); }
+  .marcas span.bien{ background:var(--ok); }
+  .marcas span.mal{ background:var(--bad); }
+
+  /* El plano */
+  .marco{
+    position:relative;
+    border:1px solid var(--line);
+    border-radius:8px;
+    overflow:hidden;
+    background:var(--plano);
+    aspect-ratio:3 / 2;
+    max-height:60vh;
+    width:100%;
+  }
+  #mapa{ position:absolute; inset:0; background:var(--plano); }
+  .leaflet-container{ font-family:var(--sans); background:var(--plano); }
+  .cargando{
+    position:absolute; inset:0; z-index:500;
+    display:none; align-items:center; justify-content:center; flex-direction:column; gap:10px;
+    background:rgba(247,246,241,0.86);
+    font-family:var(--sans); font-size:0.92rem; color:var(--muted); text-align:center; padding:16px;
+  }
+  .cargando.visible{ display:flex; }
+  .cargando .punto{ width:10px; height:10px; border-radius:50%; background:var(--clay); animation:latido 1.1s ease-in-out infinite; }
+  @keyframes latido{ 0%,100%{ transform:scale(0.6); opacity:0.4; } 50%{ transform:scale(1); opacity:1; } }
+  @media (prefers-reduced-motion: reduce){ .cargando .punto{ animation:none; } }
+  .cargando button{ margin-top:4px; }
+
+  /* Pistas */
+  .pistas{ display:none; gap:8px; flex-wrap:wrap; margin:10px 0 2px; font-family:var(--sans); }
+  .pistas button{
+    font:inherit; font-size:0.82rem; padding:6px 10px; border-radius:6px;
+    border:1px solid var(--line); background:var(--panel); color:var(--ink); cursor:pointer;
+  }
+  .pistas button .costo{ color:var(--bad); margin-left:4px; }
+  .pistas button:hover:not(:disabled){ border-color:var(--clay); }
+  .pistas button:disabled{ opacity:0.45; cursor:default; }
+
+  /* Alternativas */
+  .opciones{ display:none; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+  .opciones button{
+    display:flex; align-items:center; gap:10px; text-align:left;
+    font-family:var(--sans); font-size:1rem; color:var(--ink);
+    padding:12px 14px; border-radius:8px; border:1px solid var(--line); background:var(--panel); cursor:pointer;
+    min-height:54px;
+  }
+  .opciones button:hover:not(:disabled){ border-color:var(--clay); }
+  .opciones button:focus-visible, .pistas button:focus-visible, .btn:focus-visible, .seg label:focus-within{ outline:2px solid var(--clay); outline-offset:2px; }
+  .opciones .tecla{ font-size:0.75rem; color:var(--soft); border:1px solid var(--line); border-radius:4px; padding:1px 6px; }
+  .opciones .nombre{ display:block; }
+  .opciones .region{ display:block; font-size:0.78rem; color:var(--soft); margin-top:1px; }
+  .opciones button.correcta{ background:var(--ok-bg); border-color:var(--ok); }
+  .opciones button.equivocada{ background:var(--bad-bg); border-color:var(--bad); }
+  .opciones button:disabled{ cursor:default; }
+  .opciones button.atenuada{ opacity:0.55; }
+
+  .resultado{ display:none; margin-top:12px; padding:12px 14px; border-radius:8px; background:var(--panel); border:1px solid var(--line); font-family:var(--sans); }
+  .resultado .titular{ font-weight:600; font-size:1rem; }
+  .resultado .titular.bien{ color:var(--ok); }
+  .resultado .titular.mal{ color:var(--bad); }
+  .resultado .detalle{ font-size:0.86rem; color:var(--muted); margin-top:4px; line-height:1.45; }
+  .resultado .fila{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+
+  .btn{
+    font-family:var(--sans); font-size:0.95rem; font-weight:600;
+    padding:10px 18px; border-radius:7px; border:1px solid var(--clay-dark);
+    background:var(--clay); color:#fff; cursor:pointer;
+  }
+  .btn:hover{ background:var(--clay-dark); }
+  .btn.sec{ background:var(--panel); color:var(--clay); border-color:var(--line); }
+  .btn.sec:hover{ border-color:var(--clay); }
+
+  /* Pantalla de inicio y final (sobre el plano) */
+  .portada{
+    position:absolute; inset:0; z-index:600; overflow:auto;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(247,246,241,0.94); padding:18px;
+  }
+  .portada.oculta{ display:none; }
+  .portada .caja{ width:100%; max-width:470px; font-family:var(--sans); }
+  .grupo{ margin-bottom:14px; }
+  .grupo .etiqueta{ font-size:0.82rem; color:var(--muted); margin-bottom:6px; }
+  .seg{ display:flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--panel); }
+  .seg label{ flex:1; position:relative; cursor:pointer; }
+  .seg input{ position:absolute; opacity:0; pointer-events:none; }
+  .seg span{ display:block; text-align:center; padding:9px 6px; font-size:0.88rem; line-height:1.25; color:var(--ink); }
+  .seg span small{ display:block; font-size:0.72rem; color:var(--soft); }
+  .seg label + label span{ border-left:1px solid var(--line); }
+  .seg input:checked + span{ background:var(--moss-dark); color:#fff; }
+  .seg input:checked + span small{ color:#c9d6e2; }
+  .record{ font-size:0.82rem; color:var(--muted); margin:2px 0 14px; min-height:1.2em; }
+  .final .grande{ font-family:'Source Serif 4',Georgia,serif; font-weight:600; font-size:2.6rem; color:var(--moss-dark); line-height:1; }
+  .final .grande small{ font-size:1rem; color:var(--soft); font-weight:400; }
+  .final .comentario{ font-size:0.92rem; color:var(--muted); margin:6px 0 12px; }
+  .final table{ width:100%; border-collapse:collapse; font-size:0.84rem; margin-bottom:14px; }
+  .final td{ padding:5px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .final td.pts{ text-align:right; white-space:nowrap; color:var(--muted); }
+  .final .ok{ color:var(--ok); }
+  .final .no{ color:var(--bad); }
+
+  .nota{ font-family:var(--sans); font-size:0.75rem; color:var(--soft); margin-top:18px; line-height:1.45; }
+
+  @media (max-width:560px){
+    h1{ font-size:1.55rem; }
+    .marco{ aspect-ratio:4 / 5; max-height:58vh; }
+    .opciones{ grid-template-columns:1fr; }
+    .seg span{ padding:8px 4px; font-size:0.82rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Deslindes del SII: relleno azul atenuado y líneas negras reforzadas (mismo filtro del mapa) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <filter id="filtro-deslindes" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
+    <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -1 0 1 0 0" result="azul"/>
+    <feComponentTransfer in="azul" result="noAzul"><feFuncA type="table" tableValues="1 1 0 0 0 0 0 0 0 0"/></feComponentTransfer>
+    <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0.299 0.587 0.114 0 0" result="lum"/>
+    <feComponentTransfer in="lum" result="oscuro"><feFuncA type="table" tableValues="1 1 1 1 1 1 0.5 0 0 0"/></feComponentTransfer>
+    <feComposite in="oscuro" in2="noAzul" operator="arithmetic" k1="1" result="esLinea"/>
+    <feComposite in="SourceAlpha" in2="esLinea" operator="in" result="lineas"/>
+    <feGaussianBlur in="lineas" stdDeviation="0.6" result="lineasDifusas"/>
+    <feComponentTransfer in="lineasDifusas" result="lineasGruesas"><feFuncA type="linear" slope="3"/></feComponentTransfer>
+    <feComponentTransfer in="SourceGraphic" result="relleno"><feFuncA id="filtro-relleno" type="linear" slope="0.55"/></feComponentTransfer>
+    <feMerge><feMergeNode in="relleno"/><feMergeNode in="lineasGruesas"/></feMerge>
+  </filter>
+</svg>
+
+<div class="wrap">
+  <header>
+    <h1>¿De qué comuna es?</h1>
+    <a href="../simple/">← Volver al mapa</a>
+  </header>
+  <p class="bajada">Un pedazo de los deslindes de predios del SII, siempre en un sector urbano. Adivina a qué comuna pertenece. Cada ronda vale 100 puntos; las pistas restan.</p>
+
+  <div class="estado" id="estado">
+    <span>Ronda <strong id="num-ronda">1</strong> de <span id="total-rondas">10</span></span>
+    <div class="marcas" id="marcas" aria-hidden="true"></div>
+    <span><strong id="puntaje">0</strong> puntos</span>
+  </div>
+
+  <div class="marco">
+    <div id="mapa" aria-label="Deslindes de predios de la comuna a adivinar"></div>
+    <div class="cargando" id="cargando" role="status" aria-live="polite">
+      <div class="punto"></div>
+      <div id="cargando-texto">Buscando un sector urbano…</div>
+    </div>
+
+    <div class="portada" id="portada">
+      <div class="caja">
+        <div class="grupo">
+          <div class="etiqueta">Zona</div>
+          <div class="seg" role="radiogroup" aria-label="Zona">
+            <label><input type="radio" name="zona" value="gs" checked><span>Gran Santiago<small>34 comunas</small></span></label>
+            <label><input type="radio" name="zona" value="rm"><span>Región Metropolitana<small>52 comunas</small></span></label>
+            <label><input type="radio" name="zona" value="cl"><span>Todo Chile<small>345 comunas</small></span></label>
+          </div>
+        </div>
+        <div class="grupo">
+          <div class="etiqueta">Alternativas</div>
+          <div class="seg" role="radiogroup" aria-label="Dificultad">
+            <label><input type="radio" name="dificultad" value="facil" checked><span>Fácil<small>comunas al azar</small></span></label>
+            <label><input type="radio" name="dificultad" value="dificil"><span>Difícil<small>comunas vecinas</small></span></label>
+          </div>
+        </div>
+        <div class="record" id="record"></div>
+        <button class="btn" id="btn-empezar" type="button">Empezar</button>
+      </div>
+    </div>
+
+    <div class="portada oculta final" id="final">
+      <div class="caja">
+        <div class="grande" id="final-puntaje">0 <small>de 1000</small></div>
+        <div class="comentario" id="final-comentario"></div>
+        <table id="final-tabla"></table>
+        <button class="btn" id="btn-otra" type="button">Jugar otra vez</button>
+        <button class="btn sec" id="btn-cambiar" type="button">Cambiar zona</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="pistas" id="pistas">
+    <button type="button" id="pista-alejar">Alejar la vista<span class="costo">−20</span></button>
+    <button type="button" id="pista-satelital">Ver imagen satelital<span class="costo">−30</span></button>
+  </div>
+
+  <div class="opciones" id="opciones" role="group" aria-label="Alternativas"></div>
+
+  <div class="resultado" id="resultado" aria-live="polite">
+    <div class="fila">
+      <div>
+        <div class="titular" id="res-titular"></div>
+        <div class="detalle" id="res-detalle"></div>
+      </div>
+      <button class="btn" id="btn-siguiente" type="button">Siguiente</button>
+    </div>
+  </div>
+
+  <p class="nota">Deslindes: Servicio de Impuestos Internos (SII). Imagen satelital: Esri. Cada ronda elige al azar un punto cerca del centro de la comuna y solo lo usa si el SII informa que ese predio es de ubicación urbana. Teclas: 1 a 4 para responder, Enter para seguir.</p>
+</div>
+
+<script>
+// ---- Datos: comunas jugables ----
+// c: códigos SII (Santiago se juega con sus tres zonas SII), n: nombre, r: región,
+// gs: Gran Santiago, rm: Región Metropolitana, lat/lng: punto interior de respaldo,
+// v: índices de comunas vecinas (las que la tocan y, para completar, las más cercanas).
+const COMUNAS = [{"c":["5406"],"n":"Algarrobo","r":"Valparaíso","gs":0,"rm":0,"lat":-33.3269,"lng":-71.5895,"v":[28,84,85,329,27,250,338,335]},{"c":["14605"],"n":"Alhué","r":"Metropolitana","gs":0,"rm":1,"lat":-34.0364,"lng":-71.0836,"v":[58,80,99,133,171,194,256,284,294]},{"c":["8414"],"n":"Alto Biobío","r":"Biobío","gs":0,"rm":0,"lat":-37.8358,"lng":-71.4117,"v":[9,149,245,301,174,247,71,326]},{"c":["3304"],"n":"Alto del Carmen","r":"Atacama","gs":0,"rm":0,"lat":-29.0557,"lng":-70.1631,"v":[121,315,328,332,91,107,125,192]},{"c":["1211"],"n":"Alto Hospicio","r":"Tarapacá","gs":0,"rm":0,"lat":-20.1953,"lng":-70.0088,"v":[106,111,223,214,24,23,55,11]},{"c":["10406"],"n":"Ancud","r":"Los Lagos","gs":0,"rm":0,"lat":-42.0098,"lng":-73.8178,"v":[78,244,168,29,73,19,236,154]},{"c":["4104"],"n":"Andacollo","r":"Coquimbo","gs":0,"rm":0,"lat":-30.2561,"lng":-71.1052,"v":[66,125,189,269,332,192,234,173]},{"c":["9101"],"n":"Angol","r":"La Araucanía","gs":0,"rm":0,"lat":-37.8032,"lng":-72.7934,"v":[32,57,74,87,150,155,176,238,259]},{"c":["2201"],"n":"Antofagasta","r":"Antofagasta","gs":0,"rm":0,"lat":-24.2287,"lng":-69.3353,"v":[79,169,295,307,311,165,18,319]},{"c":["8413"],"n":"Antuco","r":"Biobío","gs":0,"rm":0,"lat":-37.3321,"lng":-71.5271,"v":[2,217,247,301,326,341,82,52]},{"c":["8301"],"n":"Arauco","r":"Biobío","gs":0,"rm":0,"lat":-37.2971,"lng":-73.3787,"v":[74,136,157,303,67,150,296,176]},{"c":["1101"],"n":"Arica","r":"Arica y Parinacota","gs":0,"rm":0,"lat":-18.4992,"lng":-70.0011,"v":[23,97,240,24,106,55,4,214]},{"c":["11101"],"n":"Aysén","r":"Aysén","gs":0,"rm":0,"lat":-45.2885,"lng":-73.9573,"v":[39,46,49,69,270,323,100,128]},{"c":["16403"],"n":"Buin","r":"Metropolitana","gs":0,"rm":1,"lat":-33.7388,"lng":-70.718,"v":[112,194,218,229,277,21,308,123]},{"c":["8113"],"n":"Bulnes","r":"Ñuble","gs":0,"rm":0,"lat":-36.7948,"lng":-72.2887,"v":[40,41,82,205,249,286,17,266]},{"c":["5203"],"n":"Cabildo","r":"Valparaíso","gs":0,"rm":0,"lat":-32.4232,"lng":-70.8616,"v":[30,122,182,210,239,275,282,304]},{"c":["12401"],"n":"Cabo de Hornos","r":"Magallanes","gs":0,"rm":0,"lat":-55.1123,"lng":-67.6068,"v":[317,222,224,235,285,129,272,178]},{"c":["8410"],"n":"Cabrero","r":"Biobío","gs":0,"rm":0,"lat":-37.0585,"lng":-72.3573,"v":[152,205,249,340,341,14,130,299]},{"c":["2301"],"n":"Calama","r":"Antofagasta","gs":0,"rm":0,"lat":-22.112,"lng":-68.5218,"v":[165,186,214,223,295,307,319,169]},{"c":["10309"],"n":"Calbuco","r":"Los Lagos","gs":0,"rm":0,"lat":-41.6919,"lng":-73.1956,"v":[168,230,154,141,244,5,93,92]},{"c":["3202"],"n":"Caldera","r":"Atacama","gs":0,"rm":0,"lat":-27.2385,"lng":-70.8072,"v":[37,65,107,315,328,91,79,3]},{"c":["16402"],"n":"Calera de Tango","r":"Metropolitana","gs":0,"rm":1,"lat":-33.6183,"lng":-70.7899,"v":[161,190,212,277,308,81,123,144]},{"c":["5702"],"n":"Calle Larga","r":"Valparaíso","gs":0,"rm":0,"lat":-32.9574,"lng":-70.5285,"v":[56,151,264,282,304,198,142,316]},{"c":["1106"],"n":"Camarones","r":"Arica y Parinacota","gs":0,"rm":0,"lat":-18.9438,"lng":-69.7298,"v":[11,24,55,106,240,97,4,214]},{"c":["1208"],"n":"Camiña","r":"Tarapacá","gs":0,"rm":0,"lat":-19.3828,"lng":-69.4944,"v":[23,55,106,240,4,11,214,223]},{"c":["4304"],"n":"Canela","r":"Coquimbo","gs":0,"rm":0,"lat":-31.4648,"lng":-71.4373,"v":[59,109,156,189,234,275,173,210]},{"c":["9209"],"n":"Carahue","r":"La Araucanía","gs":0,"rm":0,"lat":-38.6477,"lng":-73.2896,"v":[43,158,183,273,314,318,96,312]},{"c":["5403"],"n":"Cartagena","r":"Valparaíso","gs":0,"rm":0,"lat":-33.531,"lng":-71.4604,"v":[28,85,166,171,276,84,0,306]},{"c":["5305"],"n":"Casablanca","r":"Valparaíso","gs":0,"rm":0,"lat":-33.3216,"lng":-71.3653,"v":[0,27,72,84,85,166,250,329]},{"c":["10401"],"n":"Castro","r":"Los Lagos","gs":0,"rm":0,"lat":-42.4607,"lng":-73.9115,"v":[44,78,73,236,244,242,5,251]},{"c":["5603"],"n":"Catemu","r":"Valparaíso","gs":0,"rm":0,"lat":-32.7144,"lng":-70.9521,"v":[15,101,142,182,198,239,282,115]},{"c":["7401"],"n":"Cauquenes","r":"Maule","gs":0,"rm":0,"lat":-35.9689,"lng":-72.3479,"v":[36,47,86,181,201,204,255,263,278,287,343]},{"c":["8305"],"n":"Cañete","r":"Biobío","gs":0,"rm":0,"lat":-37.9121,"lng":-73.4215,"v":[7,64,150,238,318,136,74,158]},{"c":["14166"],"n":"Cerrillos","r":"Metropolitana","gs":1,"rm":1,"lat":-33.4999,"lng":-70.7147,"v":[88,144,161,202,277,116,291,145]},{"c":["14156"],"n":"Cerro Navia","r":"Metropolitana","gs":1,"rm":1,"lat":-33.4252,"lng":-70.7459,"v":[145,228,253,260,88,246,110,61]},{"c":["10501"],"n":"Chaitén","r":"Los Lagos","gs":0,"rm":0,"lat":-42.9937,"lng":-72.5097,"v":[46,94,102,195,251,242,236,73]},{"c":["7403"],"n":"Chanco","r":"Maule","gs":0,"rm":0,"lat":-35.7131,"lng":-72.4572,"v":[31,63,86,204,287,47,255,334]},{"c":["3101"],"n":"Chañaral","r":"Atacama","gs":0,"rm":0,"lat":-26.4157,"lng":-70.4521,"v":[20,65,79,311,315,107,328,8]},{"c":["8211"],"n":"Chiguayante","r":"Biobío","gs":0,"rm":0,"lat":-36.9074,"lng":-72.9955,"v":[60,67,105,296,207,104,310,157]},{"c":["11201"],"n":"Chile Chico","r":"Aysén","gs":0,"rm":0,"lat":-46.7633,"lng":-72.5749,"v":[12,49,270,69,184,323,46,128]},{"c":["8101"],"n":"Chillán","r":"Ñuble","gs":0,"rm":0,"lat":-36.6284,"lng":-72.0495,"v":[14,41,52,217,221,249,266,278,286,292]},{"c":["8121"],"n":"Chillán Viejo","r":"Ñuble","gs":0,"rm":0,"lat":-36.6821,"lng":-72.2156,"v":[14,40,286,292,221,249,205,266]},{"c":["6202"],"n":"Chimbarongo","r":"O'Higgins","gs":0,"rm":0,"lat":-34.7393,"lng":-71.0103,"v":[45,177,220,283,313,162,300,302]},{"c":["9221"],"n":"Cholchol","r":"La Araucanía","gs":0,"rm":0,"lat":-38.5639,"lng":-72.917,"v":[26,96,158,183,312,191,324,209]},{"c":["10402"],"n":"Chonchi","r":"Los Lagos","gs":0,"rm":0,"lat":-42.685,"lng":-73.8987,"v":[29,242,243,236,73,78,251,244]},{"c":["6209"],"n":"Chépica","r":"O'Higgins","gs":0,"rm":0,"lat":-34.785,"lng":-71.3172,"v":[42,103,146,177,257,302,313,220]},{"c":["11102"],"n":"Cisnes","r":"Aysén","gs":0,"rm":0,"lat":-44.651,"lng":-73.1646,"v":[12,35,69,128,195,100,243,94]},{"c":["8107"],"n":"Cobquecura","r":"Ñuble","gs":0,"rm":0,"lat":-36.1832,"lng":-72.7383,"v":[31,204,255,325,51,181,221,321]},{"c":["10302"],"n":"Cochamó","r":"Los Lagos","gs":0,"rm":0,"lat":-41.7532,"lng":-72.1941,"v":[102,230,232,19,231,141,93,168]},{"c":["11301"],"n":"Cochrane","r":"Aysén","gs":0,"rm":0,"lat":-47.3973,"lng":-72.8141,"v":[12,39,184,323,270,69,46,128]},{"c":["6107"],"n":"Codegua","r":"O'Higgins","gs":0,"rm":0,"lat":-34.0367,"lng":-70.6666,"v":[99,159,256,284,289,194,185,80]},{"c":["8120"],"n":"Coelemu","r":"Ñuble","gs":0,"rm":0,"lat":-36.5038,"lng":-72.7364,"v":[221,266,321,325,207,255,89,181]},{"c":["8103"],"n":"Coihueco","r":"Ñuble","gs":0,"rm":0,"lat":-36.73,"lng":-71.548,"v":[40,217,278,281,82,286,341,326]},{"c":["6116"],"n":"Coinco","r":"O'Higgins","gs":0,"rm":0,"lat":-34.2756,"lng":-70.9586,"v":[58,80,185,252,261,262,300,256]},{"c":["7303"],"n":"Colbún","r":"Maule","gs":0,"rm":0,"lat":-36.057,"lng":-70.8185,"v":[139,148,201,279,281,339,172,263]},{"c":["1210"],"n":"Colchane","r":"Tarapacá","gs":0,"rm":0,"lat":-19.343,"lng":-68.7555,"v":[23,24,106,214,240,11,4,223]},{"c":["14201"],"n":"Colina","r":"Metropolitana","gs":0,"rm":1,"lat":-33.1429,"lng":-70.5935,"v":[22,108,131,143,151,246,264,316]},{"c":["9105"],"n":"Collipulli","r":"La Araucanía","gs":0,"rm":0,"lat":-37.9876,"lng":-72.2662,"v":[7,71,87,174,245,259,331,155]},{"c":["6106"],"n":"Coltauco","r":"O'Higgins","gs":0,"rm":0,"lat":-34.2882,"lng":-71.1027,"v":[1,53,80,133,211,300,252,215]},{"c":["4205"],"n":"Combarbalá","r":"Coquimbo","gs":0,"rm":0,"lat":-31.1365,"lng":-70.9838,"v":[25,109,173,234,189,269,275,156]},{"c":["8201"],"n":"Concepción","r":"Biobío","gs":0,"rm":0,"lat":-36.8457,"lng":-72.9595,"v":[38,89,104,105,207,296,310,67]},{"c":["14127"],"n":"Conchalí","r":"Metropolitana","gs":1,"rm":1,"lat":-33.387,"lng":-70.674,"v":[108,110,246,258,260,253,225,34]},{"c":["5309"],"n":"Concón","r":"Valparaíso","gs":0,"rm":0,"lat":-32.9591,"lng":-71.456,"v":[138,250,254,338,335,248,329,117]},{"c":["7208"],"n":"Constitución","r":"Maule","gs":0,"rm":0,"lat":-35.3486,"lng":-72.2271,"v":[36,76,86,206,287,137,167,309]},{"c":["8306"],"n":"Contulmo","r":"Biobío","gs":0,"rm":0,"lat":-38.0683,"lng":-73.2154,"v":[32,158,238,318,155,150,7,324]},{"c":["3201"],"n":"Copiapó","r":"Atacama","gs":0,"rm":0,"lat":-27.4245,"lng":-69.855,"v":[20,37,79,107,315,328,3,91]},{"c":["4103"],"n":"Coquimbo","r":"Coquimbo","gs":0,"rm":0,"lat":-30.2216,"lng":-71.3297,"v":[6,125,189,269,234,192,332,173]},{"c":["8207"],"n":"Coronel","r":"Biobío","gs":0,"rm":0,"lat":-37.0053,"lng":-73.0807,"v":[38,105,157,296,303,60,104,207]},{"c":["10106"],"n":"Corral","r":"Los Ríos","gs":0,"rm":0,"lat":-39.9839,"lng":-73.3895,"v":[126,193,327,293,175,290,164,153]},{"c":["11401"],"n":"Coyhaique","r":"Aysén","gs":0,"rm":0,"lat":-45.4851,"lng":-71.8042,"v":[12,46,128,270,39,195,49,100]},{"c":["9204"],"n":"Cunco","r":"La Araucanía","gs":0,"rm":0,"lat":-38.9564,"lng":-72.0301,"v":[75,90,170,227,333,336,135,191]},{"c":["9110"],"n":"Curacautín","r":"La Araucanía","gs":0,"rm":0,"lat":-38.4321,"lng":-71.7852,"v":[57,135,149,170,245,331,333,209]},{"c":["14603"],"n":"Curacaví","r":"Metropolitana","gs":0,"rm":1,"lat":-33.3777,"lng":-71.1023,"v":[28,131,161,166,171,190,228,250]},{"c":["10410"],"n":"Curaco de Vélez","r":"Los Lagos","gs":0,"rm":0,"lat":-42.4284,"lng":-73.5675,"v":[251,78,236,29,244,44,242,5]},{"c":["8302"],"n":"Curanilahue","r":"Biobío","gs":0,"rm":0,"lat":-37.508,"lng":-73.2247,"v":[7,10,136,150,176,303,157,32]},{"c":["9218"],"n":"Curarrehue","r":"La Araucanía","gs":0,"rm":0,"lat":-39.3064,"lng":-71.5112,"v":[70,170,197,227,336,333,90,149]},{"c":["7207"],"n":"Curepto","r":"Maule","gs":0,"rm":0,"lat":-35.1591,"lng":-71.9562,"v":[63,103,137,206,274,330,309,297]},{"c":["7101"],"n":"Curicó","r":"Maule","gs":0,"rm":0,"lat":-35.2216,"lng":-70.9072,"v":[172,257,265,274,313,268,203,297]},{"c":["10408"],"n":"Dalcahue","r":"Los Lagos","gs":0,"rm":0,"lat":-42.3127,"lng":-73.7905,"v":[5,29,244,73,236,44,251,242]},{"c":["3102"],"n":"Diego de Almagro","r":"Atacama","gs":0,"rm":0,"lat":-26.1151,"lng":-69.1855,"v":[8,37,65,311,315,20,107,307]},{"c":["6105"],"n":"Doñihue","r":"O'Higgins","gs":0,"rm":0,"lat":-34.1981,"lng":-70.9064,"v":[1,53,58,185,256,252,99,50]},{"c":["16165"],"n":"El Bosque","r":"Metropolitana","gs":1,"rm":1,"lat":-33.5605,"lng":-70.6764,"v":[116,123,144,277,298,120,291,202]},{"c":["8118"],"n":"El Carmen","r":"Ñuble","gs":0,"rm":0,"lat":-36.9194,"lng":-71.8787,"v":[14,205,217,286,341,326,40,52]},{"c":["14503"],"n":"El Monte","r":"Metropolitana","gs":0,"rm":1,"lat":-33.67,"lng":-71.0287,"v":[112,171,212,308,190,21,166,161]},{"c":["5405"],"n":"El Quisco","r":"Valparaíso","gs":0,"rm":0,"lat":-33.4098,"lng":-71.6453,"v":[0,28,85,27,276,329,250,306]},{"c":["5404"],"n":"El Tabo","r":"Valparaíso","gs":0,"rm":0,"lat":-33.4801,"lng":-71.564,"v":[27,28,84,0,276,166,306,329]},{"c":["7209"],"n":"Empedrado","r":"Maule","gs":0,"rm":0,"lat":-35.6072,"lng":-72.3072,"v":[31,36,63,287,204,206,167,334]},{"c":["9106"],"n":"Ercilla","r":"La Araucanía","gs":0,"rm":0,"lat":-38.0618,"lng":-72.4361,"v":[7,57,155,324,331,174,259,209]},{"c":["14157"],"n":"Estación Central","r":"Metropolitana","gs":1,"rm":1,"lat":-33.4633,"lng":-70.705,"v":[33,145,161,202,228,253,305,34]},{"c":["8204"],"n":"Florida","r":"Biobío","gs":0,"rm":0,"lat":-36.8087,"lng":-72.7241,"v":[60,105,207,249,266,321,340,38]},{"c":["9203"],"n":"Freire","r":"La Araucanía","gs":0,"rm":0,"lat":-38.9726,"lng":-72.4861,"v":[70,183,191,219,314,333,336,98]},{"c":["3302"],"n":"Freirina","r":"Atacama","gs":0,"rm":0,"lat":-28.7359,"lng":-71.2125,"v":[107,121,328,3,125,332,66,6]},{"c":["10304"],"n":"Fresia","r":"Los Lagos","gs":0,"rm":0,"lat":-41.1537,"lng":-73.606,"v":[93,141,154,237,271,168,19,188]},{"c":["10305"],"n":"Frutillar","r":"Los Lagos","gs":0,"rm":0,"lat":-41.0905,"lng":-73.0845,"v":[92,141,231,232,237,271,154,188]},{"c":["10503"],"n":"Futaleufú","r":"Los Lagos","gs":0,"rm":0,"lat":-43.1623,"lng":-71.9764,"v":[35,195,102,251,242,128,236,73]},{"c":["10105"],"n":"Futrono","r":"Los Ríos","gs":0,"rm":0,"lat":-40.1253,"lng":-72.1775,"v":[126,127,153,193,197,267,241,175]},{"c":["9207"],"n":"Galvarino","r":"La Araucanía","gs":0,"rm":0,"lat":-38.4575,"lng":-72.8021,"v":[43,135,158,209,312,324,183,191]},{"c":["1302"],"n":"General Lagos","r":"Arica y Parinacota","gs":0,"rm":0,"lat":-17.8316,"lng":-69.5525,"v":[11,240,23,24,55,106,4,214]},{"c":["9212"],"n":"Gorbea","r":"La Araucanía","gs":0,"rm":0,"lat":-39.1581,"lng":-72.6956,"v":[147,164,219,320,90,132,191,336]},{"c":["6103"],"n":"Graneros","r":"O'Higgins","gs":0,"rm":0,"lat":-34.0671,"lng":-70.7395,"v":[1,50,256,284,185,80,194,53]},{"c":["11104"],"n":"Guaitecas","r":"Aysén","gs":0,"rm":0,"lat":-43.8625,"lng":-74.0483,"v":[243,46,242,44,236,251,29,35]},{"c":["5503"],"n":"Hijuelas","r":"Valparaíso","gs":0,"rm":0,"lat":-32.8636,"lng":-71.0898,"v":[30,115,117,142,182,187,248,316]},{"c":["10502"],"n":"Hualaihué","r":"Los Lagos","gs":0,"rm":0,"lat":-42.2055,"lng":-72.3093,"v":[35,48,230,19,251,244,73,94]},{"c":["7107"],"n":"Hualañé","r":"Maule","gs":0,"rm":0,"lat":-34.9612,"lng":-71.666,"v":[45,76,137,146,200,257,274,330]},{"c":["8212"],"n":"Hualpén","r":"Biobío","gs":0,"rm":0,"lat":-36.7839,"lng":-73.1358,"v":[60,296,310,207,38,67,321,89]},{"c":["8203"],"n":"Hualqui","r":"Biobío","gs":0,"rm":0,"lat":-37.0475,"lng":-72.8554,"v":[38,60,67,89,299,303,340,157]},{"c":["1206"],"n":"Huara","r":"Tarapacá","gs":0,"rm":0,"lat":-19.5338,"lng":-69.9845,"v":[4,23,24,55,111,214,223,11]},{"c":["3303"],"n":"Huasco","r":"Atacama","gs":0,"rm":0,"lat":-28.2901,"lng":-71.0831,"v":[65,91,328,20,121,3,315,125]},{"c":["14158"],"n":"Huechuraba","r":"Metropolitana","gs":1,"rm":1,"lat":-33.3667,"lng":-70.6408,"v":[56,61,143,246,258,337,110,225]},{"c":["4301"],"n":"Illapel","r":"Coquimbo","gs":0,"rm":0,"lat":-31.5893,"lng":-70.9477,"v":[25,59,156,173,275,210,234,122]},{"c":["13167"],"n":"Independencia","r":"Metropolitana","gs":1,"rm":1,"lat":-33.4121,"lng":-70.6662,"v":[61,253,258,260,305,225,108,145]},{"c":["1201"],"n":"Iquique","r":"Tarapacá","gs":0,"rm":0,"lat":-20.7506,"lng":-70.1134,"v":[4,106,223,319,214,165,24,186]},{"c":["14502"],"n":"Isla de Maipo","r":"Metropolitana","gs":0,"rm":1,"lat":-33.7501,"lng":-70.9572,"v":[13,83,171,194,277,308,212,21]},{"c":["5101"],"n":"Isla de Pascua","r":"Valparaíso","gs":0,"rm":0,"lat":-27.1422,"lng":-109.3705,"v":[114,136,10,310,104,296,32,67]},{"c":["5308"],"n":"Juan Fernández","r":"Valparaíso","gs":0,"rm":0,"lat":-33.6427,"lng":-78.8493,"v":[310,47,104,204,36,63,321,296]},{"c":["5504"],"n":"La Calera","r":"Valparaíso","gs":0,"rm":0,"lat":-32.8058,"lng":-71.1891,"v":[101,117,182,248,226,30,138,254]},{"c":["16110"],"n":"La Cisterna","r":"Metropolitana","gs":1,"rm":1,"lat":-33.5282,"lng":-70.6639,"v":[81,144,202,277,291,298,120,288]},{"c":["5505"],"n":"La Cruz","r":"Valparaíso","gs":0,"rm":0,"lat":-32.8242,"lng":-71.2571,"v":[101,115,182,226,248,254,62,138]},{"c":["6304"],"n":"La Estrella","r":"O'Higgins","gs":0,"rm":0,"lat":-34.2057,"lng":-71.591,"v":[133,140,163,215,179,208,216,294]},{"c":["15128"],"n":"La Florida","r":"Metropolitana","gs":1,"rm":1,"lat":-33.5298,"lng":-70.5433,"v":[120,123,160,213,229,288,289,124]},{"c":["16131"],"n":"La Granja","r":"Metropolitana","gs":1,"rm":1,"lat":-33.5345,"lng":-70.6225,"v":[119,123,288,291,298,116,160,81]},{"c":["4102"],"n":"La Higuera","r":"Coquimbo","gs":0,"rm":0,"lat":-29.3776,"lng":-70.9308,"v":[3,91,125,328,332,6,66,192]},{"c":["5201"],"n":"La Ligua","r":"Valparaíso","gs":0,"rm":0,"lat":-32.375,"lng":-71.2642,"v":[15,156,182,199,210,342,226,30]},{"c":["16154"],"n":"La Pintana","r":"Metropolitana","gs":1,"rm":1,"lat":-33.5944,"lng":-70.6368,"v":[81,119,120,229,277,298,116,144]},{"c":["15132"],"n":"La Reina","r":"Metropolitana","gs":1,"rm":1,"lat":-33.4488,"lng":-70.5339,"v":[134,213,225,344,160,337,119,288]},{"c":["4101"],"n":"La Serena","r":"Coquimbo","gs":0,"rm":0,"lat":-29.8352,"lng":-71.0933,"v":[6,66,121,332,269,192,189,91]},{"c":["10109"],"n":"La Unión","r":"Los Ríos","gs":0,"rm":0,"lat":-40.1709,"lng":-73.3042,"v":[68,95,127,193,267,290,293,327]},{"c":["10112"],"n":"Lago Ranco","r":"Los Ríos","gs":0,"rm":0,"lat":-40.3854,"lng":-72.092,"v":[95,126,267,241,197,231,153,193]},{"c":["11402"],"n":"Lago Verde","r":"Aysén","gs":0,"rm":0,"lat":-44.4027,"lng":-72.0671,"v":[46,69,195,94,35,100,12,243]},{"c":["12206"],"n":"Laguna Blanca","r":"Magallanes","gs":0,"rm":0,"lat":-52.4005,"lng":-71.2769,"v":[178,235,272,285,224,322,222,317]},{"c":["8403"],"n":"Laja","r":"Biobío","gs":0,"rm":0,"lat":-37.319,"lng":-72.578,"v":[152,176,299,303,340,180,17,105]},{"c":["14202"],"n":"Lampa","r":"Metropolitana","gs":0,"rm":1,"lat":-33.2762,"lng":-70.8584,"v":[56,72,228,246,250,316,260,34]},{"c":["10103"],"n":"Lanco","r":"Los Ríos","gs":0,"rm":0,"lat":-39.5254,"lng":-72.5708,"v":[147,164,175,197,153,336,98,320]},{"c":["6109"],"n":"Las Cabras","r":"O'Higgins","gs":0,"rm":0,"lat":-34.1688,"lng":-71.2934,"v":[1,58,118,140,211,215,294,53]},{"c":["15108"],"n":"Las Condes","r":"Metropolitana","gs":1,"rm":1,"lat":-33.4256,"lng":-70.5162,"v":[124,143,213,225,289,337,344,160]},{"c":["9205"],"n":"Lautaro","r":"La Araucanía","gs":0,"rm":0,"lat":-38.5448,"lng":-72.2644,"v":[71,96,209,312,331,333,191,324]},{"c":["8303"],"n":"Lebu","r":"Biobío","gs":0,"rm":0,"lat":-37.6185,"lng":-73.5966,"v":[10,74,150,32,64,238,157,176]},{"c":["7105"],"n":"Licantén","r":"Maule","gs":0,"rm":0,"lat":-34.9688,"lng":-71.9356,"v":[76,103,330,200,146,274,206,257]},{"c":["5506"],"n":"Limache","r":"Valparaíso","gs":0,"rm":0,"lat":-33.0396,"lng":-71.2367,"v":[62,187,248,250,254,335,101,117]},{"c":["7301"],"n":"Linares","r":"Maule","gs":0,"rm":0,"lat":-35.9629,"lng":-71.2952,"v":[54,148,287,334,339,263,201,279]},{"c":["6303"],"n":"Litueche","r":"O'Higgins","gs":0,"rm":0,"lat":-34.1067,"lng":-71.7013,"v":[118,133,163,179,216,294,306,215]},{"c":["10306"],"n":"Llanquihue","r":"Los Lagos","gs":0,"rm":0,"lat":-41.2207,"lng":-73.1176,"v":[92,93,154,232,237,19,230,168]},{"c":["5606"],"n":"Llay-Llay","r":"Valparaíso","gs":0,"rm":0,"lat":-32.8892,"lng":-70.8861,"v":[30,101,198,264,316,282,187,115]},{"c":["15161"],"n":"Lo Barnechea","r":"Metropolitana","gs":1,"rm":1,"lat":-33.2942,"lng":-70.3905,"v":[56,108,134,151,289,337,124,213]},{"c":["16164"],"n":"Lo Espejo","r":"Metropolitana","gs":1,"rm":1,"lat":-33.5181,"lng":-70.6889,"v":[33,81,116,202,277,291,298,288]},{"c":["14155"],"n":"Lo Prado","r":"Metropolitana","gs":1,"rm":1,"lat":-33.4477,"lng":-70.7232,"v":[34,88,228,253,260,33,202,110]},{"c":["6206"],"n":"Lolol","r":"O'Higgins","gs":0,"rm":0,"lat":-34.7828,"lng":-71.6459,"v":[45,103,200,233,302,257,137,330]},{"c":["9214"],"n":"Loncoche","r":"La Araucanía","gs":0,"rm":0,"lat":-39.3622,"lng":-72.6518,"v":[98,132,164,197,219,336,320,175]},{"c":["7304"],"n":"Longaví","r":"Maule","gs":0,"rm":0,"lat":-36.0843,"lng":-71.5387,"v":[54,139,201,263,287,343,339,334]},{"c":["9111"],"n":"Lonquimay","r":"La Araucanía","gs":0,"rm":0,"lat":-38.4966,"lng":-71.186,"v":[2,71,170,245,333,70,331,135]},{"c":["8304"],"n":"Los Álamos","r":"Biobío","gs":0,"rm":0,"lat":-37.707,"lng":-73.2287,"v":[7,32,74,136,238,64,176,10]},{"c":["5701"],"n":"Los Andes","r":"Valparaíso","gs":0,"rm":0,"lat":-32.9564,"lng":-70.2326,"v":[22,56,143,264,280,282,289,304]},{"c":["8401"],"n":"Los Ángeles","r":"Biobío","gs":0,"rm":0,"lat":-37.4232,"lng":-72.3722,"v":[17,130,174,176,180,247,301,326,340,341]},{"c":["10104"],"n":"Los Lagos","r":"Los Ríos","gs":0,"rm":0,"lat":-39.8529,"lng":-72.6167,"v":[95,175,193,197,327,132,164,147]},{"c":["10308"],"n":"Los Muermos","r":"Los Lagos","gs":0,"rm":0,"lat":-41.3858,"lng":-73.5741,"v":[92,141,168,230,232,19,237,93]},{"c":["9103"],"n":"Los Sauces","r":"La Araucanía","gs":0,"rm":0,"lat":-37.9861,"lng":-72.7889,"v":[7,87,158,238,324,259,64,57]},{"c":["4303"],"n":"Los Vilos","r":"Coquimbo","gs":0,"rm":0,"lat":-31.9391,"lng":-71.2508,"v":[25,109,122,210,275,199,15,342]},{"c":["8208"],"n":"Lota","r":"Biobío","gs":0,"rm":0,"lat":-37.1249,"lng":-73.1088,"v":[10,67,303,105,296,38,60,299]},{"c":["9108"],"n":"Lumaco","r":"La Araucanía","gs":0,"rm":0,"lat":-38.2759,"lng":-73.0506,"v":[26,43,64,96,155,238,318,324]},{"c":["6102"],"n":"Machalí","r":"O'Higgins","gs":0,"rm":0,"lat":-34.3561,"lng":-70.2369,"v":[50,256,261,262,283,289,185,99]},{"c":["15151"],"n":"Macul","r":"Metropolitana","gs":1,"rm":1,"lat":-33.4952,"lng":-70.6004,"v":[119,213,288,344,120,291,298,305]},{"c":["14109"],"n":"Maipú","r":"Metropolitana","gs":1,"rm":1,"lat":-33.5162,"lng":-70.8097,"v":[21,33,72,88,190,228,277,145]},{"c":["6115"],"n":"Malloa","r":"O'Higgins","gs":0,"rm":0,"lat":-34.4825,"lng":-70.8473,"v":[252,261,283,300,53,262,220,185]},{"c":["6305"],"n":"Marchigüe","r":"O'Higgins","gs":0,"rm":0,"lat":-34.3668,"lng":-71.6422,"v":[118,140,208,215,216,233,196,302]},{"c":["10102"],"n":"Mariquina","r":"Los Ríos","gs":0,"rm":0,"lat":-39.4954,"lng":-73.0429,"v":[98,132,147,175,320,327,219,314]},{"c":["2103"],"n":"María Elena","r":"Antofagasta","gs":0,"rm":0,"lat":-22.0853,"lng":-69.4245,"v":[18,169,214,223,307,319,186,111]},{"c":["14602"],"n":"María Pinto","r":"Metropolitana","gs":0,"rm":1,"lat":-33.4969,"lng":-71.2046,"v":[27,28,72,171,276,83,190,212]},{"c":["7206"],"n":"Maule","r":"Maule","gs":0,"rm":0,"lat":-35.5157,"lng":-71.6986,"v":[206,279,287,309,339,334,203,297]},{"c":["10307"],"n":"Maullín","r":"Los Lagos","gs":0,"rm":0,"lat":-41.6386,"lng":-73.4819,"v":[19,154,230,5,92,244,141,93]},{"c":["2203"],"n":"Mejillones","r":"Antofagasta","gs":0,"rm":0,"lat":-22.8946,"lng":-70.1384,"v":[8,165,307,319,18,295,111,186]},{"c":["9217"],"n":"Melipeuco","r":"La Araucanía","gs":0,"rm":0,"lat":-38.8029,"lng":-71.603,"v":[70,71,75,149,333,227,135,336]},{"c":["14601"],"n":"Melipilla","r":"Metropolitana","gs":0,"rm":1,"lat":-33.7506,"lng":-71.2232,"v":[1,27,72,83,112,166,190,194,212,276,294]},{"c":["7108"],"n":"Molina","r":"Maule","gs":0,"rm":0,"lat":-35.3285,"lng":-70.7922,"v":[77,268,274,279,297,265,313,203]},{"c":["4203"],"n":"Monte Patria","r":"Coquimbo","gs":0,"rm":0,"lat":-30.9002,"lng":-70.6975,"v":[59,109,189,234,269,192,6,25]},{"c":["8407"],"n":"Mulchén","r":"Biobío","gs":0,"rm":0,"lat":-37.8732,"lng":-72.0821,"v":[57,152,180,245,259,301,87,331]},{"c":["10107"],"n":"Máfil","r":"Los Ríos","gs":0,"rm":0,"lat":-39.7052,"lng":-72.8542,"v":[132,153,164,197,327,193,147,68]},{"c":["8405"],"n":"Nacimiento","r":"Biobío","gs":0,"rm":0,"lat":-37.4543,"lng":-72.8322,"v":[7,74,130,152,180,259,303,299]},{"c":["6203"],"n":"Nancagua","r":"O'Higgins","gs":0,"rm":0,"lat":-34.6701,"lng":-71.2083,"v":[42,45,220,300,302,196,313,208]},{"c":["12101"],"n":"Natales","r":"Magallanes","gs":0,"rm":0,"lat":-52.3606,"lng":-73.1776,"v":[129,184,272,322,323,235,285,224]},{"c":["6302"],"n":"Navidad","r":"O'Higgins","gs":0,"rm":0,"lat":-34.007,"lng":-71.8072,"v":[140,294,306,118,216,163,276,133]},{"c":["8406"],"n":"Negrete","r":"Biobío","gs":0,"rm":0,"lat":-37.5953,"lng":-72.5583,"v":[152,174,176,259,130,7,299,155]},{"c":["8105"],"n":"Ninhue","r":"Ñuble","gs":0,"rm":0,"lat":-36.3535,"lng":-72.3901,"v":[31,221,255,278,292,325,51,47]},{"c":["5502"],"n":"Nogales","r":"Valparaíso","gs":0,"rm":0,"lat":-32.7023,"lng":-71.1602,"v":[15,30,101,115,117,122,226,342]},{"c":["9208"],"n":"Nueva Imperial","r":"La Araucanía","gs":0,"rm":0,"lat":-38.7156,"lng":-72.9469,"v":[26,43,90,191,312,314,96,273]},{"c":["11302"],"n":"O'Higgins","r":"Aysén","gs":0,"rm":0,"lat":-48.5023,"lng":-72.952,"v":[49,178,323,39,270,322,69,12]},{"c":["6114"],"n":"Olivar","r":"O'Higgins","gs":0,"rm":0,"lat":-34.215,"lng":-70.8202,"v":[53,80,256,262,99,252,50,261]},{"c":["2302"],"n":"Ollagüe","r":"Antofagasta","gs":0,"rm":0,"lat":-21.4801,"lng":-68.348,"v":[18,214,165,223,319,111,295,307]},{"c":["5507"],"n":"Olmué","r":"Valparaíso","gs":0,"rm":0,"lat":-33.0373,"lng":-71.1019,"v":[101,138,248,250,316,335,142,115]},{"c":["10201"],"n":"Osorno","r":"Los Lagos","gs":0,"rm":0,"lat":-40.6056,"lng":-73.1238,"v":[231,241,271,290,293,237,267,126]},{"c":["4201"],"n":"Ovalle","r":"Coquimbo","gs":0,"rm":0,"lat":-30.7634,"lng":-71.5487,"v":[6,25,66,173,234,269,59,109]},{"c":["14505"],"n":"Padre Hurtado","r":"Metropolitana","gs":0,"rm":1,"lat":-33.5532,"lng":-70.8694,"v":[21,72,161,171,212,308,228,33]},{"c":["9220"],"n":"Padre Las Casas","r":"La Araucanía","gs":0,"rm":0,"lat":-38.7805,"lng":-72.6035,"v":[90,183,312,333,43,135,96,209]},{"c":["4106"],"n":"Paihuano","r":"Coquimbo","gs":0,"rm":0,"lat":-30.2335,"lng":-70.3816,"v":[269,332,6,173,125,66,121,59]},{"c":["10110"],"n":"Paillaco","r":"Los Ríos","gs":0,"rm":0,"lat":-40.0632,"lng":-72.8738,"v":[68,95,126,153,327,175,293,267]},{"c":["16404"],"n":"Paine","r":"Metropolitana","gs":0,"rm":1,"lat":-33.8627,"lng":-70.7401,"v":[1,13,112,171,218,284,50,99]},{"c":["10504"],"n":"Palena","r":"Los Lagos","gs":0,"rm":0,"lat":-43.6531,"lng":-71.9151,"v":[35,46,94,128,251,242,102,100]},{"c":["6207"],"n":"Palmilla","r":"O'Higgins","gs":0,"rm":0,"lat":-34.5241,"lng":-71.3626,"v":[208,215,300,302,177,211,220,45]},{"c":["10108"],"n":"Panguipulli","r":"Los Ríos","gs":0,"rm":0,"lat":-39.7692,"lng":-72.0733,"v":[75,95,132,147,153,175,227,336]},{"c":["5602"],"n":"Panquehue","r":"Valparaíso","gs":0,"rm":0,"lat":-32.7824,"lng":-70.8148,"v":[30,142,264,282,304,101,22,316]},{"c":["5205"],"n":"Papudo","r":"Valparaíso","gs":0,"rm":0,"lat":-32.4773,"lng":-71.3681,"v":[122,342,226,182,117,115,254,30]},{"c":["6306"],"n":"Paredones","r":"O'Higgins","gs":0,"rm":0,"lat":-34.6756,"lng":-71.9395,"v":[103,146,216,233,330,137,163,208]},{"c":["7305"],"n":"Parral","r":"Maule","gs":0,"rm":0,"lat":-36.2295,"lng":-71.7676,"v":[31,54,148,263,281,343,278,292]},{"c":["16162"],"n":"Pedro Aguirre Cerda","r":"Metropolitana","gs":1,"rm":1,"lat":-33.4922,"lng":-70.6766,"v":[33,88,116,144,291,305,288,298]},{"c":["7203"],"n":"Pelarco","r":"Maule","gs":0,"rm":0,"lat":-35.3867,"lng":-71.3985,"v":[268,279,297,309,167,274,339,206]},{"c":["7402"],"n":"Pelluhue","r":"Maule","gs":0,"rm":0,"lat":-35.9021,"lng":-72.5613,"v":[31,36,47,255,86,181,325,287]},{"c":["8117"],"n":"Pemuco","r":"Ñuble","gs":0,"rm":0,"lat":-36.9654,"lng":-72.1884,"v":[14,17,82,217,249,341,286,41]},{"c":["7205"],"n":"Pencahue","r":"Maule","gs":0,"rm":0,"lat":-35.3104,"lng":-71.8193,"v":[63,76,167,274,287,297,309,203]},{"c":["8202"],"n":"Penco","r":"Biobío","gs":0,"rm":0,"lat":-36.7452,"lng":-72.9503,"v":[60,89,310,321,104,38,296,67]},{"c":["6208"],"n":"Peralillo","r":"O'Higgins","gs":0,"rm":0,"lat":-34.4641,"lng":-71.4817,"v":[163,196,215,233,302,211,118,177]},{"c":["9206"],"n":"Perquenco","r":"La Araucanía","gs":0,"rm":0,"lat":-38.4327,"lng":-72.445,"v":[96,135,324,331,312,191,87,333]},{"c":["5202"],"n":"Petorca","r":"Valparaíso","gs":0,"rm":0,"lat":-32.2048,"lng":-70.8142,"v":[15,122,156,275,239,304,30,282]},{"c":["6108"],"n":"Peumo","r":"O'Higgins","gs":0,"rm":0,"lat":-34.3342,"lng":-71.2331,"v":[58,133,215,300,252,196,53,208]},{"c":["14504"],"n":"Peñaflor","r":"Metropolitana","gs":0,"rm":1,"lat":-33.6105,"lng":-70.8899,"v":[21,83,171,190,308,161,112,277]},{"c":["15152"],"n":"Peñalolén","r":"Metropolitana","gs":1,"rm":1,"lat":-33.4858,"lng":-70.5115,"v":[119,124,134,160,289,344,288,225]},{"c":["1203"],"n":"Pica","r":"Tarapacá","gs":0,"rm":0,"lat":-20.4083,"lng":-69.1088,"v":[18,55,106,165,186,223,4,111]},{"c":["6111"],"n":"Pichidegua","r":"O'Higgins","gs":0,"rm":0,"lat":-34.3615,"lng":-71.3382,"v":[118,133,163,196,208,211,300,58]},{"c":["6301"],"n":"Pichilemu","r":"O'Higgins","gs":0,"rm":0,"lat":-34.3687,"lng":-71.898,"v":[140,163,200,233,118,208,179,215]},{"c":["8102"],"n":"Pinto","r":"Ñuble","gs":0,"rm":0,"lat":-36.8907,"lng":-71.4905,"v":[9,40,52,82,205,286,341,281]},{"c":["16302"],"n":"Pirque","r":"Metropolitana","gs":0,"rm":1,"lat":-33.7195,"lng":-70.512,"v":[13,194,229,277,284,289,123,119]},{"c":["9211"],"n":"Pitrufquén","r":"La Araucanía","gs":0,"rm":0,"lat":-39.1056,"lng":-72.9021,"v":[90,98,147,314,320,336,183,191]},{"c":["6204"],"n":"Placilla","r":"O'Higgins","gs":0,"rm":0,"lat":-34.6175,"lng":-71.0838,"v":[42,177,283,300,162,196,45,302]},{"c":["8106"],"n":"Portezuelo","r":"Ñuble","gs":0,"rm":0,"lat":-36.5391,"lng":-72.4893,"v":[40,51,181,266,292,325,41,249]},{"c":["12301"],"n":"Porvenir","r":"Magallanes","gs":0,"rm":0,"lat":-53.3877,"lng":-68.9726,"v":[224,317,285,235,129,16,272,178]},{"c":["1204"],"n":"Pozo Almonte","r":"Tarapacá","gs":0,"rm":0,"lat":-20.7722,"lng":-69.489,"v":[4,18,106,111,165,214,319,186]},{"c":["12302"],"n":"Primavera","r":"Magallanes","gs":0,"rm":0,"lat":-52.7652,"lng":-69.1658,"v":[222,285,129,317,235,272,178,16]},{"c":["15103"],"n":"Providencia","r":"Metropolitana","gs":1,"rm":1,"lat":-33.4256,"lng":-70.6131,"v":[124,134,258,305,337,344,110,108]},{"c":["5307"],"n":"Puchuncaví","r":"Valparaíso","gs":0,"rm":0,"lat":-32.7446,"lng":-71.4009,"v":[117,182,248,254,342,115,62,199]},{"c":["9216"],"n":"Pucón","r":"La Araucanía","gs":0,"rm":0,"lat":-39.2861,"lng":-71.8466,"v":[70,75,197,336,170,90,333,132]},{"c":["14111"],"n":"Pudahuel","r":"Metropolitana","gs":1,"rm":1,"lat":-33.421,"lng":-70.8628,"v":[34,72,88,131,145,161,246,260]},{"c":["16301"],"n":"Puente Alto","r":"Metropolitana","gs":1,"rm":1,"lat":-33.596,"lng":-70.5513,"v":[13,119,123,218,277,289,120,298]},{"c":["10301"],"n":"Puerto Montt","r":"Los Lagos","gs":0,"rm":0,"lat":-41.5135,"lng":-72.5824,"v":[19,48,154,168,232,141,93,231]},{"c":["10203"],"n":"Puerto Octay","r":"Los Lagos","gs":0,"rm":0,"lat":-40.9218,"lng":-72.5089,"v":[93,188,232,237,241,271,267,141]},{"c":["10303"],"n":"Puerto Varas","r":"Los Lagos","gs":0,"rm":0,"lat":-41.1253,"lng":-72.3445,"v":[48,93,141,154,230,231,241,267]},{"c":["6214"],"n":"Pumanque","r":"O'Higgins","gs":0,"rm":0,"lat":-34.5914,"lng":-71.6821,"v":[146,163,200,208,216,302,196,45]},{"c":["4204"],"n":"Punitaqui","r":"Coquimbo","gs":0,"rm":0,"lat":-30.9442,"lng":-71.3762,"v":[25,59,173,189,66,6,109,269]},{"c":["12205"],"n":"Punta Arenas","r":"Magallanes","gs":0,"rm":0,"lat":-53.2965,"lng":-71.3503,"v":[129,285,272,224,222,178,317,322]},{"c":["10405"],"n":"Puqueldón","r":"Los Lagos","gs":0,"rm":0,"lat":-42.639,"lng":-73.6498,"v":[44,242,73,29,251,78,244,243]},{"c":["10206"],"n":"Purranque","r":"Los Lagos","gs":0,"rm":0,"lat":-40.9322,"lng":-73.419,"v":[92,93,231,271,141,188,290,154]},{"c":["9102"],"n":"Purén","r":"La Araucanía","gs":0,"rm":0,"lat":-37.998,"lng":-73.0684,"v":[7,32,64,155,158,150,318,324]},{"c":["5604"],"n":"Putaendo","r":"Valparaíso","gs":0,"rm":0,"lat":-32.4822,"lng":-70.5688,"v":[15,30,275,280,282,304,210,198]},{"c":["1301"],"n":"Putre","r":"Arica y Parinacota","gs":0,"rm":0,"lat":-18.4888,"lng":-69.3382,"v":[11,23,55,97,24,106,4,214]},{"c":["10204"],"n":"Puyehue","r":"Los Lagos","gs":0,"rm":0,"lat":-40.7109,"lng":-72.3879,"v":[188,231,232,267,293,127,95,93]},{"c":["10403"],"n":"Queilén","r":"Los Lagos","gs":0,"rm":0,"lat":-42.8254,"lng":-73.5427,"v":[44,236,251,73,29,243,78,244]},{"c":["10404"],"n":"Quellón","r":"Los Lagos","gs":0,"rm":0,"lat":-43.1257,"lng":-74.0229,"v":[44,242,236,29,251,100,73,78]},{"c":["10407"],"n":"Quemchi","r":"Los Lagos","gs":0,"rm":0,"lat":-42.135,"lng":-73.5176,"v":[5,78,73,29,168,19,236,251]},{"c":["8408"],"n":"Quilaco","r":"Biobío","gs":0,"rm":0,"lat":-37.9796,"lng":-71.5968,"v":[2,57,71,149,174,301,331,247]},{"c":["14114"],"n":"Quilicura","r":"Metropolitana","gs":1,"rm":1,"lat":-33.3577,"lng":-70.7427,"v":[56,61,108,131,228,260,34,253]},{"c":["8404"],"n":"Quilleco","r":"Biobío","gs":0,"rm":0,"lat":-37.3977,"lng":-71.8659,"v":[9,152,301,326,341,82,205,174]},{"c":["5501"],"n":"Quillota","r":"Valparaíso","gs":0,"rm":0,"lat":-32.901,"lng":-71.2959,"v":[101,115,117,138,187,226,254,62]},{"c":["8115"],"n":"Quillón","r":"Ñuble","gs":0,"rm":0,"lat":-36.8064,"lng":-72.5059,"v":[14,17,40,89,205,266,340,41]},{"c":["5304"],"n":"Quilpué","r":"Valparaíso","gs":0,"rm":0,"lat":-33.1246,"lng":-71.372,"v":[28,62,72,131,138,187,316,329,335,338]},{"c":["10415"],"n":"Quinchao","r":"Los Lagos","gs":0,"rm":0,"lat":-42.6437,"lng":-73.2784,"v":[73,242,236,44,29,78,244,35]},{"c":["6117"],"n":"Quinta de Tilcoco","r":"O'Higgins","gs":0,"rm":0,"lat":-34.3585,"lng":-70.9985,"v":[53,162,261,300,58,80,211,185]},{"c":["14107"],"n":"Quinta Normal","r":"Metropolitana","gs":1,"rm":1,"lat":-33.4322,"lng":-70.7002,"v":[34,88,110,145,260,305,61,258]},{"c":["5306"],"n":"Quintero","r":"Valparaíso","gs":0,"rm":0,"lat":-32.8439,"lng":-71.4693,"v":[62,138,226,248,117,338,115,335]},{"c":["8104"],"n":"Quirihue","r":"Ñuble","gs":0,"rm":0,"lat":-36.2456,"lng":-72.5441,"v":[31,47,181,325,221,51,204,292]},{"c":["6101"],"n":"Rancagua","r":"O'Higgins","gs":0,"rm":0,"lat":-34.1218,"lng":-70.8209,"v":[1,50,80,99,159,185,262,53]},{"c":["7104"],"n":"Rauco","r":"Maule","gs":0,"rm":0,"lat":-34.9444,"lng":-71.4127,"v":[45,77,103,274,313,146,302,177]},{"c":["13159"],"n":"Recoleta","r":"Metropolitana","gs":1,"rm":1,"lat":-33.4062,"lng":-70.6333,"v":[61,108,110,225,305,337,344,253]},{"c":["9104"],"n":"Renaico","r":"La Araucanía","gs":0,"rm":0,"lat":-37.7275,"lng":-72.5746,"v":[7,57,174,176,180,155,152,87]},{"c":["14113"],"n":"Renca","r":"Metropolitana","gs":1,"rm":1,"lat":-33.4042,"lng":-70.7312,"v":[34,61,110,228,246,253,305,145]},{"c":["6112"],"n":"Rengo","r":"O'Higgins","gs":0,"rm":0,"lat":-34.4433,"lng":-70.7624,"v":[53,159,162,252,262,283,185,80]},{"c":["6113"],"n":"Requínoa","r":"O'Higgins","gs":0,"rm":0,"lat":-34.3552,"lng":-70.6145,"v":[53,159,185,256,261,162,80,99]},{"c":["7306"],"n":"Retiro","r":"Maule","gs":0,"rm":0,"lat":-36.018,"lng":-71.7962,"v":[31,148,201,287,343,334,339,278]},{"c":["5704"],"n":"Rinconada","r":"Valparaíso","gs":0,"rm":0,"lat":-32.8734,"lng":-70.712,"v":[22,56,142,151,198,282,316,304]},{"c":["7103"],"n":"Romeral","r":"Maule","gs":0,"rm":0,"lat":-35.0814,"lng":-70.6806,"v":[77,283,313,172,42,268,220,177]},{"c":["8119"],"n":"Ránquil","r":"Ñuble","gs":0,"rm":0,"lat":-36.6387,"lng":-72.6039,"v":[40,51,89,221,249,321,325,14]},{"c":["10111"],"n":"Río Bueno","r":"Los Ríos","gs":0,"rm":0,"lat":-40.469,"lng":-72.6058,"v":[126,127,241,293,188,193,231,95]},{"c":["7204"],"n":"Río Claro","r":"Maule","gs":0,"rm":0,"lat":-35.296,"lng":-71.2569,"v":[172,203,279,297,77,274,309,257]},{"c":["4206"],"n":"Río Hurtado","r":"Coquimbo","gs":0,"rm":0,"lat":-30.4517,"lng":-70.68,"v":[6,173,189,192,332,66,125,59]},{"c":["11203"],"n":"Río Ibáñez","r":"Aysén","gs":0,"rm":0,"lat":-46.3003,"lng":-72.3832,"v":[12,39,69,49,46,128,184,323]},{"c":["10205"],"n":"Río Negro","r":"Los Lagos","gs":0,"rm":0,"lat":-40.7683,"lng":-73.4256,"v":[188,231,237,290,92,93,293,141]},{"c":["12202"],"n":"Río Verde","r":"Magallanes","gs":0,"rm":0,"lat":-53.0928,"lng":-72.6863,"v":[129,178,235,285,322,224,222,317]},{"c":["9210"],"n":"Saavedra","r":"La Araucanía","gs":0,"rm":0,"lat":-38.8299,"lng":-73.2853,"v":[26,314,183,43,219,320,96,191]},{"c":["7109"],"n":"Sagrada Familia","r":"Maule","gs":0,"rm":0,"lat":-35.1119,"lng":-71.5492,"v":[76,77,103,172,206,257,297,203]},{"c":["4302"],"n":"Salamanca","r":"Coquimbo","gs":0,"rm":0,"lat":-31.9089,"lng":-70.6499,"v":[15,109,156,210,239,122,304,280]},{"c":["5401"],"n":"San Antonio","r":"Valparaíso","gs":0,"rm":0,"lat":-33.6709,"lng":-71.5073,"v":[27,166,171,294,306,85,84,0]},{"c":["16401"],"n":"San Bernardo","r":"Metropolitana","gs":1,"rm":1,"lat":-33.6386,"lng":-70.686,"v":[13,21,33,81,112,116,123,144,161,218,229,308]},{"c":["8109"],"n":"San Carlos","r":"Ñuble","gs":0,"rm":0,"lat":-36.3779,"lng":-72.0187,"v":[31,40,52,181,281,292,343,201]},{"c":["7202"],"n":"San Clemente","r":"Maule","gs":0,"rm":0,"lat":-35.7758,"lng":-70.7054,"v":[54,167,172,203,268,309,339,139]},{"c":["5703"],"n":"San Esteban","r":"Valparaíso","gs":0,"rm":0,"lat":-32.6701,"lng":-70.3588,"v":[151,239,304,282,22,264,198,15]},{"c":["8111"],"n":"San Fabián","r":"Ñuble","gs":0,"rm":0,"lat":-36.6547,"lng":-71.1877,"v":[52,54,201,278,343,217,82,148]},{"c":["5601"],"n":"San Felipe","r":"Valparaíso","gs":0,"rm":0,"lat":-32.7351,"lng":-70.7192,"v":[22,30,151,198,239,264,304,142]},{"c":["6201"],"n":"San Fernando","r":"O'Higgins","gs":0,"rm":0,"lat":-34.7407,"lng":-70.5867,"v":[42,159,162,220,261,265,300,313]},{"c":["6104"],"n":"San Francisco de Mostazal","r":"O'Higgins","gs":0,"rm":0,"lat":-33.9471,"lng":-70.598,"v":[1,50,99,194,218,289,13,256]},{"c":["12204"],"n":"San Gregorio","r":"Magallanes","gs":0,"rm":0,"lat":-52.3777,"lng":-70.2008,"v":[129,235,224,222,272,178,317,322]},{"c":["8114"],"n":"San Ignacio","r":"Ñuble","gs":0,"rm":0,"lat":-36.8162,"lng":-72.0118,"v":[14,40,41,82,217,205,341,292]},{"c":["7310"],"n":"San Javier","r":"Maule","gs":0,"rm":0,"lat":-35.6388,"lng":-71.9506,"v":[31,63,86,139,148,167,206,263,334,339]},{"c":["16163"],"n":"San Joaquín","r":"Metropolitana","gs":1,"rm":1,"lat":-33.4924,"lng":-70.6288,"v":[119,120,160,291,298,305,344,202]},{"c":["16303"],"n":"San José de Maipo","r":"Metropolitana","gs":0,"rm":1,"lat":-33.6703,"lng":-70.1564,"v":[50,119,134,143,151,159,213,218,229,284]},{"c":["10207"],"n":"San Juan de la Costa","r":"Los Lagos","gs":0,"rm":0,"lat":-40.4928,"lng":-73.5403,"v":[126,188,271,293,237,68,92,193]},{"c":["16106"],"n":"San Miguel","r":"Metropolitana","gs":1,"rm":1,"lat":-33.5023,"lng":-70.6532,"v":[116,120,144,202,288,298,305,160]},{"c":["8112"],"n":"San Nicolás","r":"Ñuble","gs":0,"rm":0,"lat":-36.4877,"lng":-72.2096,"v":[40,181,221,278,41,343,14,325]},{"c":["10202"],"n":"San Pablo","r":"Los Lagos","gs":0,"rm":0,"lat":-40.4246,"lng":-73.1171,"v":[126,188,241,267,290,193,271,68]},{"c":["14604"],"n":"San Pedro","r":"Metropolitana","gs":0,"rm":1,"lat":-33.9198,"lng":-71.4661,"v":[1,133,140,171,179,276,306,118]},{"c":["2303"],"n":"San Pedro de Atacama","r":"Antofagasta","gs":0,"rm":0,"lat":-23.3559,"lng":-67.8963,"v":[8,18,307,165,186,169,319,311]},{"c":["8210"],"n":"San Pedro de la Paz","r":"Biobío","gs":0,"rm":0,"lat":-36.8945,"lng":-73.1005,"v":[38,60,67,104,207,310,157,105]},{"c":["7210"],"n":"San Rafael","r":"Maule","gs":0,"rm":0,"lat":-35.2919,"lng":-71.4799,"v":[172,203,206,268,274,309,167,257]},{"c":["16153"],"n":"San Ramón","r":"Metropolitana","gs":1,"rm":1,"lat":-33.5307,"lng":-70.6418,"v":[81,116,120,123,288,291,144,202]},{"c":["8411"],"n":"San Rosendo","r":"Biobío","gs":0,"rm":0,"lat":-37.2204,"lng":-72.6989,"v":[105,130,303,340,176,17,152,157]},{"c":["6110"],"n":"San Vicente","r":"O'Higgins","gs":0,"rm":0,"lat":-34.4543,"lng":-71.1038,"v":[53,58,162,177,196,211,215,220,252,283,302]},{"c":["8402"],"n":"Santa Bárbara","r":"Biobío","gs":0,"rm":0,"lat":-37.6432,"lng":-71.8356,"v":[2,9,152,174,245,247,326,57]},{"c":["6205"],"n":"Santa Cruz","r":"O'Higgins","gs":0,"rm":0,"lat":-34.641,"lng":-71.4012,"v":[45,146,177,196,208,233,300,220]},{"c":["8209"],"n":"Santa Juana","r":"Biobío","gs":0,"rm":0,"lat":-37.2588,"lng":-72.9114,"v":[10,67,74,105,130,157,176,299]},{"c":["5605"],"n":"Santa María","r":"Valparaíso","gs":0,"rm":0,"lat":-32.692,"lng":-70.6167,"v":[151,239,280,282,198,264,22,30]},{"c":["13101","13134","13135"],"n":"Santiago","r":"Metropolitana","gs":1,"rm":1,"lat":-33.4601,"lng":-70.6533,"v":[88,110,202,225,253,258,260,288,291,344]},{"c":["5402"],"n":"Santo Domingo","r":"Valparaíso","gs":0,"rm":0,"lat":-33.7857,"lng":-71.6758,"v":[179,276,294,27,85,140,84,171]},{"c":["2206"],"n":"Sierra Gorda","r":"Antofagasta","gs":0,"rm":0,"lat":-23.2399,"lng":-69.3135,"v":[8,18,165,169,295,319,186,311]},{"c":["14501"],"n":"Talagante","r":"Metropolitana","gs":0,"rm":1,"lat":-33.6779,"lng":-70.885,"v":[21,83,112,212,277,190,13,161]},{"c":["7201"],"n":"Talca","r":"Maule","gs":0,"rm":0,"lat":-35.4215,"lng":-71.6031,"v":[167,203,206,279,297,339,334,268]},{"c":["8206"],"n":"Talcahuano","r":"Biobío","gs":0,"rm":0,"lat":-36.704,"lng":-73.1327,"v":[60,104,207,296,321,38,67,89]},{"c":["2202"],"n":"Taltal","r":"Antofagasta","gs":0,"rm":0,"lat":-25.3026,"lng":-69.8052,"v":[8,37,79,307,65,20,169,315]},{"c":["9201"],"n":"Temuco","r":"La Araucanía","gs":0,"rm":0,"lat":-38.6667,"lng":-72.6314,"v":[43,96,135,183,191,333,209,90]},{"c":["7102"],"n":"Teno","r":"Maule","gs":0,"rm":0,"lat":-34.8949,"lng":-70.9683,"v":[42,45,77,257,265,283,220,177]},{"c":["9219"],"n":"Teodoro Schmidt","r":"La Araucanía","gs":0,"rm":0,"lat":-39.0763,"lng":-73.2133,"v":[26,90,183,219,273,320,98,164]},{"c":["3203"],"n":"Tierra Amarilla","r":"Atacama","gs":0,"rm":0,"lat":-27.8981,"lng":-69.6649,"v":[3,65,328,20,107,91,37,79]},{"c":["14203"],"n":"Tiltil","r":"Metropolitana","gs":0,"rm":1,"lat":-33.0744,"lng":-70.8839,"v":[56,101,131,142,187,250,264,138]},{"c":["12304"],"n":"Timaukel","r":"Magallanes","gs":0,"rm":0,"lat":-54.181,"lng":-69.2103,"v":[16,222,224,235,285,129,272,178]},{"c":["8307"],"n":"Tirúa","r":"Biobío","gs":0,"rm":0,"lat":-38.3025,"lng":-73.394,"v":[26,32,64,158,238,43,96,273]},{"c":["2101"],"n":"Tocopilla","r":"Antofagasta","gs":0,"rm":0,"lat":-22.0269,"lng":-69.9552,"v":[111,165,169,223,18,307,186,214]},{"c":["9213"],"n":"Toltén","r":"La Araucanía","gs":0,"rm":0,"lat":-39.2131,"lng":-73.0532,"v":[98,164,219,314,147,273,132,90]},{"c":["8205"],"n":"Tomé","r":"Biobío","gs":0,"rm":0,"lat":-36.5998,"lng":-72.8883,"v":[51,89,207,266,310,60,104,325]},{"c":["12103"],"n":"Torres del Paine","r":"Magallanes","gs":0,"rm":0,"lat":-51.0763,"lng":-72.9045,"v":[178,129,272,285,235,184,323,224]},{"c":["11303"],"n":"Tortel","r":"Aysén","gs":0,"rm":0,"lat":-48.4546,"lng":-73.6374,"v":[12,49,178,184,39,270,322,69]},{"c":["9107"],"n":"Traiguén","r":"La Araucanía","gs":0,"rm":0,"lat":-38.249,"lng":-72.6753,"v":[87,96,155,158,209,331,43,238]},{"c":["8108"],"n":"Trehuaco","r":"Ñuble","gs":0,"rm":0,"lat":-36.4316,"lng":-72.6177,"v":[47,51,181,221,255,266,321,292]},{"c":["8412"],"n":"Tucapel","r":"Biobío","gs":0,"rm":0,"lat":-37.2077,"lng":-71.7736,"v":[9,152,247,341,82,217,205,286]},{"c":["10101"],"n":"Valdivia","r":"Los Ríos","gs":0,"rm":0,"lat":-39.8608,"lng":-73.0722,"v":[68,153,164,175,193,126,132,293]},{"c":["3301"],"n":"Vallenar","r":"Atacama","gs":0,"rm":0,"lat":-28.6805,"lng":-70.838,"v":[3,65,91,107,121,315,125,332]},{"c":["5301"],"n":"Valparaíso","r":"Valparaíso","gs":0,"rm":0,"lat":-33.1158,"lng":-71.6079,"v":[28,250,338,62,0,335,254,84]},{"c":["7106"],"n":"Vichuquén","r":"Maule","gs":0,"rm":0,"lat":-34.8317,"lng":-72.0103,"v":[103,137,200,146,76,233,274,216]},{"c":["9109"],"n":"Victoria","r":"La Araucanía","gs":0,"rm":0,"lat":-38.3007,"lng":-72.2333,"v":[57,71,87,135,209,324,333,174]},{"c":["4105"],"n":"Vicuña","r":"Coquimbo","gs":0,"rm":0,"lat":-29.8776,"lng":-70.4371,"v":[3,6,121,125,192,269,66,173]},{"c":["9202"],"n":"Vilcún","r":"La Araucanía","gs":0,"rm":0,"lat":-38.7073,"lng":-72.0922,"v":[70,71,90,135,170,191,312,209]},{"c":["7309"],"n":"Villa Alegre","r":"Maule","gs":0,"rm":0,"lat":-35.6962,"lng":-71.6974,"v":[139,287,339,167,309,263,203,206]},{"c":["5303"],"n":"Villa Alemana","r":"Valparaíso","gs":0,"rm":0,"lat":-33.0662,"lng":-71.3451,"v":[138,250,62,338,248,187,329,254]},{"c":["9215"],"n":"Villarrica","r":"La Araucanía","gs":0,"rm":0,"lat":-39.2867,"lng":-72.2225,"v":[70,90,147,197,219,227,132,98]},{"c":["15160"],"n":"Vitacura","r":"Metropolitana","gs":1,"rm":1,"lat":-33.3809,"lng":-70.5665,"v":[108,134,143,225,258,124,344,110]},{"c":["5302"],"n":"Viña del Mar","r":"Valparaíso","gs":0,"rm":0,"lat":-33.0251,"lng":-71.5241,"v":[62,250,329,335,254,248,138,226]},{"c":["7302"],"n":"Yerbas Buenas","r":"Maule","gs":0,"rm":0,"lat":-35.6866,"lng":-71.5256,"v":[54,139,167,279,287,334,309,203]},{"c":["8409"],"n":"Yumbel","r":"Biobío","gs":0,"rm":0,"lat":-37.0842,"lng":-72.6436,"v":[17,89,105,130,152,249,299,303]},{"c":["8116"],"n":"Yungay","r":"Ñuble","gs":0,"rm":0,"lat":-37.0983,"lng":-71.9069,"v":[9,17,152,205,217,326,82,286]},{"c":["5204"],"n":"Zapallar","r":"Valparaíso","gs":0,"rm":0,"lat":-32.59,"lng":-71.326,"v":[122,182,199,226,117,115,254,248]},{"c":["8110"],"n":"Ñiquén","r":"Ñuble","gs":0,"rm":0,"lat":-36.2822,"lng":-71.9529,"v":[31,201,278,281,292,263,40,181]},{"c":["15105"],"n":"Ñuñoa","r":"Metropolitana","gs":1,"rm":1,"lat":-33.4562,"lng":-70.6005,"v":[124,134,160,213,225,288,305,258]}];
+
+// ---- Configuración (la misma del mapa) ----
+const PROXY_BASE = "https://fabianalvaradodavid--eb6f8c9eb5fd11f1af9b1607ee4eb77e.web.val.run";
+const PROXY_TOKEN = "cB0FAOKyxlyfmRc-bsHmTLJvgqkwbM-y";
+const SII_NAMESPACE = 'cl.sii.sdi.lob.bbrr.mapas.data.api.interfaces.MapasFacadeService';
+const SII_WMS_BASE = 'https://www4.sii.cl/mapasui/services/ui/wmsProxyService/call';
+
+const N_RONDAS = 10;
+const ZOOM_JUEGO = 16;           // ≈1,4 km de ancho en pantalla
+const COSTO = { alejar: 20, satelital: 30 };
+const RADIOS = [1500, 1100, 800, 550, 350, 150, 0]; // metros desde el centro SII de la comuna
+
+// ---- Llamadas al SII a través del proxy ----
+let conversationId = null;
+function uuidv4() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+async function callProxy(path, data) {
+  if (!conversationId) conversationId = uuidv4();
+  const metaData = { namespace: SII_NAMESPACE + path, conversationId, transactionId: uuidv4() };
+  const resp = await fetch(PROXY_BASE + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Proxy-Token': PROXY_TOKEN },
+    body: JSON.stringify({ metaData, data })
+  });
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  return resp.json();
+}
+function pick(obj, keys) {
+  for (const k of keys) {
+    const v = obj && obj[k];
+    if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+  }
+  return undefined;
+}
+function splitRol(rol) {
+  const s = String(rol || '');
+  const i = s.indexOf('-');
+  return i === -1 ? { manzana: s.trim(), predio: '' } : { manzana: s.slice(0, i).trim(), predio: s.slice(i + 1).trim() };
+}
+
+// Servicios (capa de predios y centro) de cada código SII, una vez por sesión
+const cacheServicios = {};
+async function servicios(codigo) {
+  if (!cacheServicios[codigo]) {
+    cacheServicios[codigo] = callProxy('/getServicioPredio', { comuna: Number(codigo) }).then((info) => {
+      const lista = (info && info.data) || [];
+      const p = lista.find((s) => s.aliasServicio === 'P') || lista[0];
+      if (!p || !p.layer) return null;
+      return {
+        codigo,
+        layer: p.layer,
+        lat: Number(p.latitud) || null,
+        lng: Number(p.longitud) || null,
+        servicios: lista.filter((s) => s.aliasServicio !== 'HS')
+          .map((s) => ({ comuna: s.comuna, layer: s.layer, style: s.style, eac: s.eac, eacano: s.eacano }))
+      };
+    }).catch((e) => { delete cacheServicios[codigo]; throw e; });
+  }
+  return cacheServicios[codigo];
+}
+
+// Predio en un punto: se arma una "pantalla" de 256 px y ±40 m alrededor del punto
+async function predioEn(lat, lng, cfg) {
+  const dLat = 40 / 111320;
+  const dLng = dLat / Math.cos(lat * Math.PI / 180);
+  const clickInfo = {
+    x: 128, y: 128,
+    southwestx: lat - dLat, southwesty: lng - dLng,
+    northeastx: lat + dLat, northeasty: lng + dLng,
+    layer: cfg.layer, width: 256, height: 256,
+    servicios: [{ layer: cfg.layer }]
+  };
+  const res = await callProxy('/getFeatureInfo', { clickInfo });
+  const data = res && res.data;
+  return data && data.existePredio ? data : null;
+}
+
+// ¿El SII clasifica ese predio como urbano? Si getFeatureInfo no trae el dato,
+// se consulta el predio por rol (getPredioNacional), que sí lo trae.
+async function datosUrbanos(data, cfg) {
+  const rol = pick(data, ['rol', 'ROL', 'rolPredio', 'numeroRol', 'rolCompleto', 'nomRol']);
+  let ubicacion = pick(data, ['ubicacion', 'UBICACION', 'ubicacionPredio']);
+  let direccion = pick(data, ['direccion', 'DIRECCION', 'direccionPredio']);
+  if (!ubicacion && rol) {
+    const { manzana, predio } = splitRol(rol);
+    if (/^\d+$/.test(manzana) && /^\d+$/.test(predio)) {
+      try {
+        const res = await callProxy('/getPredioNacional', {
+          predio: { comuna: Number(cfg.codigo), manzana: Number(manzana), predio: Number(predio) },
+          servicios: cfg.servicios
+        });
+        const d = res && res.data;
+        if (d) { ubicacion = d.ubicacion; direccion = direccion || d.direccion; }
+      } catch (e) { /* sin dato de ubicación */ }
+    }
+  }
+  return { urbano: /^\s*URBAN/i.test(String(ubicacion || '')), rol, direccion: direccion ? String(direccion).trim() : '' };
+}
+
+function puntoAlAzar(lat, lng, radio) {
+  if (!radio) return { lat, lng };
+  const ang = Math.random() * 2 * Math.PI;
+  const r = radio * Math.sqrt(Math.random());
+  return {
+    lat: lat + (r * Math.sin(ang)) / 111320,
+    lng: lng + (r * Math.cos(ang)) / (111320 * Math.cos(lat * Math.PI / 180))
+  };
+}
+
+class ErrorConexion extends Error {}
+
+// Busca un punto urbano de la comuna. Devuelve null si no encuentra ninguno.
+async function buscarSector(com) {
+  const cfgs = [];
+  let fallos = 0;
+  for (const c of com.c) {
+    try { const cfg = await servicios(c); if (cfg) cfgs.push(cfg); } catch (e) { fallos += 1; }
+  }
+  if (!cfgs.length) { if (fallos) throw new ErrorConexion('sin conexión con el SII'); return null; }
+  const centro = cfgs[0].lat && cfgs[0].lng ? { lat: cfgs[0].lat, lng: cfgs[0].lng } : { lat: com.lat, lng: com.lng };
+  let llamadas = 0, errores = 0;
+  for (const radio of RADIOS) {
+    const p = puntoAlAzar(centro.lat, centro.lng, radio);
+    for (const cfg of cfgs) {
+      llamadas += 1;
+      let data;
+      try { data = await predioEn(p.lat, p.lng, cfg); } catch (e) { errores += 1; continue; }
+      if (!data) continue;
+      const u = await datosUrbanos(data, cfg);
+      if (u.urbano) return { lat: p.lat, lng: p.lng, capas: cfgs.map((x) => ({ codigo: x.codigo, layer: x.layer })), rol: u.rol, direccion: u.direccion };
+      break; // hay predio, pero no urbano: probar otro punto
+    }
+  }
+  if (llamadas && errores === llamadas) throw new ErrorConexion('sin conexión con el SII');
+  return null;
+}
+
+// Comunas donde no se encontró sector urbano: se recuerdan para no volver a intentarlas
+const CLAVE_SIN_URBANO = 'dqelc-juego-sin-urbano';
+let sinUrbano = new Set();
+try { sinUrbano = new Set(JSON.parse(localStorage.getItem(CLAVE_SIN_URBANO) || '[]')); } catch (e) {}
+function marcarSinUrbano(com) {
+  sinUrbano.add(com.c[0]);
+  try { localStorage.setItem(CLAVE_SIN_URBANO, JSON.stringify([...sinUrbano])); } catch (e) {}
+}
+
+// ---- Alternativas ----
+function enZona(i, zona) {
+  const c = COMUNAS[i];
+  return zona === 'cl' || (zona === 'gs' && c.gs) || (zona === 'rm' && c.rm);
+}
+function mezclar(a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+function armarOpciones(idx, zona, dificultad) {
+  const elegidas = new Set([idx]);
+  if (dificultad === 'dificil') {
+    const vecinas = COMUNAS[idx].v.filter((j) => enZona(j, zona)).slice(0, 6);
+    mezclar(vecinas).slice(0, 3).forEach((j) => elegidas.add(j));
+  }
+  const resto = mezclar(COMUNAS.map((_, j) => j).filter((j) => enZona(j, zona) && !elegidas.has(j)));
+  while (elegidas.size < 4 && resto.length) elegidas.add(resto.pop());
+  return mezclar([...elegidas]);
+}
+
+// ---- Preparación de rondas ----
+async function prepararRonda(juego) {
+  const pool = COMUNAS.map((_, j) => j).filter((j) => enZona(j, juego.zona) && !juego.usadas.has(j) && !sinUrbano.has(COMUNAS[j].c[0]));
+  mezclar(pool);
+  for (const idx of pool.slice(0, 15)) {
+    if (juego.cancelado) return null;
+    juego.usadas.add(idx);
+    const sector = await buscarSector(COMUNAS[idx]);
+    if (sector) return { idx, ...sector, opciones: armarOpciones(idx, juego.zona, juego.dificultad) };
+    marcarSinUrbano(COMUNAS[idx]);
+  }
+  throw new Error('No se encontraron sectores urbanos para esta zona.');
+}
+
+// ---- Mapa ----
+const ZOOM_DETALLE_SII = 18, FACTOR_MAX_DETALLE = 8, DPI_GEOSERVER = 90.7;
+// Igual que en el mapa: el SII simplifica el dibujo al alejarse; se pide la misma
+// área con una imagen más grande (y, más lejos, menos dpi) para que dibuje el detalle.
+const WmsSiiDetallado = L.TileLayer.WMS.extend({
+  _variantes(zoom) {
+    const f = Math.pow(2, Math.max(0, ZOOM_DETALLE_SII - zoom));
+    if (f <= 1) return [{ img: 1, dpi: null }];
+    const img = Math.min(FACTOR_MAX_DETALLE, f);
+    const resto = f / img;
+    const lista = [];
+    if (resto > 1) lista.push({ img, dpi: Math.max(1, Math.round(DPI_GEOSERVER / resto)) });
+    for (let k = img; k >= 2; k /= 2) lista.push({ img: k, dpi: null });
+    lista.push({ img: 1, dpi: null });
+    return lista;
+  },
+  getTileUrl(coords, variante) {
+    let url = L.TileLayer.WMS.prototype.getTileUrl.call(this, coords);
+    const v = variante || this._variantes(coords.z)[0];
+    if (v.img > 1) url = url.replace(/([?&](?:width|height)=)(\d+)/gi, (m, pref, n) => pref + Math.round(Number(n) * v.img));
+    if (v.dpi) url += '&format_options=' + encodeURIComponent('dpi:' + v.dpi);
+    return url;
+  },
+  createTile(coords, done) {
+    const tile = document.createElement('img');
+    tile.alt = '';
+    const urls = this._variantes(coords.z).map((v) => this.getTileUrl(coords, v));
+    let i = 0;
+    L.DomEvent.on(tile, 'load', (e) => this._tileOnLoad(done, tile, e));
+    L.DomEvent.on(tile, 'error', (e) => {
+      if (i < urls.length - 1) { i += 1; tile.src = urls[i]; } else { this._tileOnError(done, tile, e); }
+    });
+    tile.src = urls[0];
+    return tile;
+  }
+});
+
+const mapa = L.map('mapa', {
+  zoomControl: false, attributionControl: false,
+  dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false,
+  keyboard: false, touchZoom: false, tap: false,
+  zoomSnap: 1
+}).setView([-33.45, -70.66], 11);
+
+const satelital = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, zIndex: 1 });
+const nombres = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, zIndex: 8 });
+const zoomCtl = L.control.zoom({ position: 'topright' });
+let capasRonda = [];
+
+function fijarRelleno(v) { document.getElementById('filtro-relleno').setAttribute('slope', v); }
+
+function interaccion(activa) {
+  ['dragging', 'scrollWheelZoom', 'doubleClickZoom', 'touchZoom'].forEach((h) => { if (mapa[h]) mapa[h][activa ? 'enable' : 'disable'](); });
+  if (activa) zoomCtl.addTo(mapa); else zoomCtl.remove();
+}
+
+function mostrarPlano(ronda) {
+  capasRonda.forEach((c) => mapa.removeLayer(c));
+  capasRonda = [];
+  [satelital, nombres].forEach((c) => mapa.hasLayer(c) && mapa.removeLayer(c));
+  interaccion(false);
+  fijarRelleno(0.55);
+  mapa.setView([ronda.lat, ronda.lng], ZOOM_JUEGO, { animate: false });
+  ronda.capas.forEach(({ codigo, layer }) => {
+    const capa = new WmsSiiDetallado(SII_WMS_BASE, {
+      layers: layer, styles: 'PREDIOS_WMS_V0', format: 'image/png', transparent: true, version: '1.1.1',
+      comuna: Number(codigo), eac: 0, eacano: 0, maxZoom: 21, zIndex: 5
+    }).addTo(mapa);
+    capa.getContainer().style.filter = 'url(#filtro-deslindes)';
+    capasRonda.push(capa);
+  });
+}
+
+// ---- Juego ----
+const $ = (id) => document.getElementById(id);
+let juego = null;
+
+function claveRecord(zona, dif) { return 'dqelc-juego-record-' + zona + '-' + dif; }
+function leerRecord(zona, dif) { try { return Number(localStorage.getItem(claveRecord(zona, dif))) || 0; } catch (e) { return 0; } }
+function guardarRecord(zona, dif, p) { try { if (p > leerRecord(zona, dif)) localStorage.setItem(claveRecord(zona, dif), String(p)); } catch (e) {} }
+
+function opcionesPortada() {
+  return {
+    zona: document.querySelector('input[name="zona"]:checked').value,
+    dificultad: document.querySelector('input[name="dificultad"]:checked').value
+  };
+}
+function actualizarRecord() {
+  const { zona, dificultad } = opcionesPortada();
+  const r = leerRecord(zona, dificultad);
+  $('record').textContent = r ? 'Tu mejor puntaje en esta modalidad: ' + r + ' de ' + (N_RONDAS * 100) + '.' : '';
+}
+document.querySelectorAll('.portada input').forEach((i) => i.addEventListener('change', actualizarRecord));
+actualizarRecord();
+
+function cargando(visible, texto) {
+  $('cargando').classList.toggle('visible', visible);
+  $('cargando-texto').textContent = texto || 'Buscando un sector urbano…';
+}
+
+function errorCarga(err) {
+  const sinConexion = err instanceof ErrorConexion || /fetch|HTTP/i.test(String(err && err.message));
+  $('cargando').classList.add('visible');
+  $('cargando').innerHTML = '';
+  const t = document.createElement('div');
+  t.textContent = sinConexion
+    ? 'No se pudo conectar con el SII a través del proxy. Revisa tu conexión e inténtalo de nuevo.'
+    : (err && err.message) || 'Algo falló al preparar la ronda.';
+  const b = document.createElement('button');
+  b.className = 'btn';
+  b.type = 'button';
+  b.textContent = 'Reintentar';
+  b.addEventListener('click', () => {
+    $('cargando').innerHTML = '<div class="punto"></div><div id="cargando-texto">Buscando un sector urbano…</div>';
+    juego.siguiente = prepararRonda(juego);
+    mostrarSiguiente();
+  });
+  $('cargando').append(t, b);
+}
+
+function empezar(opts) {
+  if (juego) juego.cancelado = true;
+  juego = { ...opts, usadas: new Set(), rondas: [], i: -1, puntaje: 0, cancelado: false };
+  $('portada').classList.add('oculta');
+  $('final').classList.add('oculta');
+  $('estado').style.display = 'flex';
+  $('total-rondas').textContent = N_RONDAS;
+  $('marcas').innerHTML = '';
+  for (let k = 0; k < N_RONDAS; k++) $('marcas').appendChild(document.createElement('span'));
+  $('puntaje').textContent = '0';
+  juego.siguiente = prepararRonda(juego);
+  mostrarSiguiente();
+}
+
+async function mostrarSiguiente() {
+  const j = juego;
+  $('resultado').style.display = 'none';
+  $('opciones').style.display = 'none';
+  $('pistas').style.display = 'none';
+  cargando(true);
+  let ronda;
+  try { ronda = await j.siguiente; } catch (e) { if (j === juego) errorCarga(e); return; }
+  if (j !== juego || !ronda) return;
+  j.i += 1;
+  j.rondas.push(ronda);
+  ronda.pistas = new Set();
+  // Mientras se juega esta ronda, se prepara la próxima
+  j.siguiente = j.i + 1 < N_RONDAS ? prepararRonda(j) : null;
+  if (j.siguiente) j.siguiente.catch(() => {});
+  cargando(false);
+  mostrarPlano(ronda);
+  $('num-ronda').textContent = j.i + 1;
+  [...$('marcas').children].forEach((s, k) => s.classList.toggle('actual', k === j.i));
+  $('pista-alejar').disabled = false;
+  $('pista-satelital').disabled = false;
+  $('pistas').style.display = 'flex';
+  const cont = $('opciones');
+  cont.innerHTML = '';
+  ronda.opciones.forEach((idx, k) => {
+    const c = COMUNAS[idx];
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.idx = idx;
+    const tecla = document.createElement('span');
+    tecla.className = 'tecla';
+    tecla.textContent = k + 1;
+    const txt = document.createElement('span');
+    const nom = document.createElement('span');
+    nom.className = 'nombre';
+    nom.textContent = c.n;
+    txt.appendChild(nom);
+    if (j.zona === 'cl') {
+      const reg = document.createElement('span');
+      reg.className = 'region';
+      reg.textContent = c.r === 'Metropolitana' ? 'Región Metropolitana' : 'Región de ' + c.r;
+      txt.appendChild(reg);
+    }
+    b.append(tecla, txt);
+    b.addEventListener('click', () => responder(idx));
+    cont.appendChild(b);
+  });
+  cont.style.display = 'grid';
+}
+
+function usarPista(tipo) {
+  const ronda = juego && juego.rondas[juego.i];
+  if (!ronda || ronda.respondida || ronda.pistas.has(tipo)) return;
+  ronda.pistas.add(tipo);
+  if (tipo === 'alejar') { mapa.setZoom(ZOOM_JUEGO - 1); $('pista-alejar').disabled = true; }
+  if (tipo === 'satelital') { satelital.addTo(mapa); fijarRelleno(0.3); $('pista-satelital').disabled = true; }
+}
+$('pista-alejar').addEventListener('click', () => usarPista('alejar'));
+$('pista-satelital').addEventListener('click', () => usarPista('satelital'));
+
+function responder(idx) {
+  const ronda = juego && juego.rondas[juego.i];
+  if (!ronda || ronda.respondida) return;
+  ronda.respondida = true;
+  ronda.elegida = idx;
+  const bien = idx === ronda.idx;
+  let pts = 0;
+  if (bien) { pts = 100; ronda.pistas.forEach((p) => { pts -= COSTO[p]; }); }
+  ronda.puntos = pts;
+  juego.puntaje += pts;
+  $('puntaje').textContent = juego.puntaje;
+  const marca = $('marcas').children[juego.i];
+  marca.classList.remove('actual');
+  marca.classList.add(bien ? 'bien' : 'mal');
+
+  [...$('opciones').children].forEach((b) => {
+    const i = Number(b.dataset.idx);
+    b.disabled = true;
+    if (i === ronda.idx) b.classList.add('correcta');
+    else if (i === idx) b.classList.add('equivocada');
+    else b.classList.add('atenuada');
+  });
+  $('pista-alejar').disabled = true;
+  $('pista-satelital').disabled = true;
+
+  // Se revela el lugar: imagen satelital con nombres, y el mapa se puede mover
+  const c = COMUNAS[ronda.idx];
+  if (!mapa.hasLayer(satelital)) satelital.addTo(mapa);
+  nombres.addTo(mapa);
+  fijarRelleno(0.3);
+  interaccion(true);
+
+  $('res-titular').className = 'titular ' + (bien ? 'bien' : 'mal');
+  $('res-titular').textContent = bien ? 'Correcto: ' + c.n + ' (+' + pts + ')' : 'Era ' + c.n;
+  const region = c.r === 'Metropolitana' ? 'Región Metropolitana' : 'Región de ' + c.r;
+  $('res-detalle').textContent = region + (ronda.direccion ? '. El centro de la imagen es ' + ronda.direccion + (ronda.rol ? ' (rol ' + ronda.rol + ')' : '') + '.' : '.') + ' Puedes mover y acercar el mapa.';
+  $('btn-siguiente').textContent = juego.i + 1 < N_RONDAS ? 'Siguiente' : 'Ver resultado';
+  $('resultado').style.display = 'block';
+  $('btn-siguiente').focus({ preventScroll: true });
+}
+
+function terminar() {
+  const j = juego;
+  const max = N_RONDAS * 100;
+  guardarRecord(j.zona, j.dificultad, j.puntaje);
+  $('final-puntaje').innerHTML = '';
+  $('final-puntaje').append(String(j.puntaje) + ' ');
+  const s = document.createElement('small'); s.textContent = 'de ' + max; $('final-puntaje').appendChild(s);
+  const aciertos = j.rondas.filter((r) => r.elegida === r.idx).length;
+  const frac = j.puntaje / max;
+  const comentario = frac >= 0.9 ? 'Conoces los planos como un tasador del SII.'
+    : frac >= 0.6 ? 'Buen ojo para la trama urbana.'
+    : frac >= 0.3 ? 'Vas bien; la forma de las manzanas dice mucho.'
+    : 'Las manzanas engañan. Prueba otra vez.';
+  $('final-comentario').textContent = aciertos + ' de ' + N_RONDAS + ' aciertos. ' + comentario;
+  const tabla = $('final-tabla');
+  tabla.innerHTML = '';
+  j.rondas.forEach((r, k) => {
+    const tr = document.createElement('tr');
+    const ok = r.elegida === r.idx;
+    const t1 = document.createElement('td'); t1.textContent = (k + 1) + '.';
+    const t2 = document.createElement('td');
+    const nombre = document.createElement('span'); nombre.className = ok ? 'ok' : 'no'; nombre.textContent = COMUNAS[r.idx].n;
+    t2.appendChild(nombre);
+    if (!ok) t2.append(' — elegiste ' + COMUNAS[r.elegida].n);
+    const t3 = document.createElement('td'); t3.className = 'pts'; t3.textContent = r.puntos;
+    tr.append(t1, t2, t3);
+    tabla.appendChild(tr);
+  });
+  $('pistas').style.display = 'none';
+  $('opciones').style.display = 'none';
+  $('resultado').style.display = 'none';
+  interaccion(false);
+  $('final').classList.remove('oculta');
+  $('btn-otra').focus({ preventScroll: true });
+}
+
+$('btn-siguiente').addEventListener('click', () => {
+  if (!juego) return;
+  if (juego.i + 1 < N_RONDAS) mostrarSiguiente(); else terminar();
+});
+$('btn-empezar').addEventListener('click', () => empezar(opcionesPortada()));
+$('btn-otra').addEventListener('click', () => empezar({ zona: juego.zona, dificultad: juego.dificultad }));
+$('btn-cambiar').addEventListener('click', () => {
+  if (juego) juego.cancelado = true;
+  $('final').classList.add('oculta');
+  $('estado').style.display = 'none';
+  $('portada').classList.remove('oculta');
+  actualizarRecord();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (!juego || e.altKey || e.ctrlKey || e.metaKey) return;
+  const ronda = juego.rondas[juego.i];
+  if (/^[1-4]$/.test(e.key) && ronda && !ronda.respondida && $('opciones').style.display !== 'none') {
+    responder(ronda.opciones[Number(e.key) - 1]);
+  } else if (e.key === 'Enter' && ronda && ronda.respondida && $('resultado').style.display !== 'none' && document.activeElement !== $('btn-siguiente')) {
+    $('btn-siguiente').click();
+  }
+});
+</script>
+</body>
+</html>
