@@ -103,7 +103,9 @@
     padding:12px 14px; border-radius:8px; border:1px solid var(--line); background:var(--panel); cursor:pointer;
     min-height:54px;
   }
-  .opciones button:hover:not(:disabled){ border-color:var(--clay); }
+  @media (hover:hover){ .opciones button:hover:not(:disabled){ border-color:var(--clay); } }
+  /* Al pasar el turno, la alternativa bajo el mouse no se resalta hasta que el mouse se mueva */
+  .opciones.sin-hover button:hover:not(:disabled){ border-color:var(--line); }
   .opciones button:focus-visible, .pistas button:focus-visible, .btn:focus-visible, .seg label:focus-within{ outline:2px solid var(--clay); outline-offset:2px; }
   .opciones .tecla{ font-size:0.75rem; color:var(--soft); border:1px solid var(--line); border-radius:4px; padding:1px 6px; }
   .opciones .nombre{ display:block; }
@@ -1084,7 +1086,7 @@ function urlBase() { return location.href.split('#')[0].split('?')[0]; }
 // Lo que hizo cada jugador del juego en curso, en el formato de los enlaces
 function filasJugador(j, k) {
   return j.rondas.map((r) => {
-    if (j.modo === 'dos') return { pts: r.puntosJ[k], mask: 0, pos: r.resp[k] === null ? -1 : r.opciones.indexOf(r.resp[k]), seg: r.seg ? r.seg[k] : null };
+    if (j.modo === 'dos') return { pts: r.puntosJ[k], mask: mascaraPistas(r.pistasJ && r.pistasJ[k]), pos: r.resp[k] === null ? -1 : r.opciones.indexOf(r.resp[k]), seg: r.seg ? r.seg[k] : null };
     return { pts: r.puntos, mask: mascaraPistas(r.pistas), pos: r.elegida === null ? -1 : r.opciones.indexOf(r.elegida), seg: j.crono ? r.segundos : null };
   });
 }
@@ -1468,7 +1470,7 @@ function empezar(opts) {
     const n2 = limpiarNombre($('nombre-j2').value) || 'Jugador 2';
     escribirLS('dqelc-juego-j1', n1 === 'Jugador 1' ? '' : n1);
     escribirLS('dqelc-juego-j2', n2 === 'Jugador 2' ? '' : n2);
-    juego.jug = [{ nombre: n1, color: COLORES[0], puntaje: 0 }, { nombre: n2 === n1 ? n2 + ' (2)' : n2, color: COLORES[1], puntaje: 0 }];
+    juego.jug = [{ nombre: n1, color: COLORES[0], puntaje: 0, comodines: COMODINES_POR_PARTIDA }, { nombre: n2 === n1 ? n2 + ' (2)' : n2, color: COLORES[1], puntaje: 0, comodines: COMODINES_POR_PARTIDA }];
   }
   $('portada').classList.add('oculta');
   $('final').classList.add('oculta');
@@ -1520,21 +1522,19 @@ async function mostrarSiguiente() {
     ronda.seg = [null, null];
     ronda.orden = j.i % 2 === 0 ? [0, 1] : [1, 0]; // parte un jugador distinto cada ronda
     ronda.turno = 0;
+    // Cada jugador usa sus propias pistas y comodines en su turno
+    ronda.pistasJ = [new Set(), new Set()];
+    ronda.pistas = ronda.pistasJ[ronda.orden[0]];
   }
   // Mientras se juega esta ronda, se prepara la próxima
   j.siguiente = j.i + 1 < N_RONDAS ? prepararRonda(j) : null;
   if (j.siguiente) j.siguiente.catch(() => {});
   cargando(false);
   mostrarPlano(ronda);
+  ronda.vista = { centro: mapa.getCenter(), zoom: mapa.getZoom() };
   $('num-ronda').textContent = j.i + 1;
   [...$('marcas').children].forEach((s, k) => s.classList.toggle('actual', k === j.i));
-  // En 2 jugadores no hay pistas ni comodines: el plano es el mismo para ambos
-  if (j.modo !== 'dos') {
-    $('pista-alejar').disabled = false;
-    $('pista-satelital').disabled = false;
-    actualizarComodin(ronda);
-    $('pistas').style.display = 'flex';
-  }
+  activarPistas(ronda);
   pintarOpciones(ronda);
   pintarTurno(ronda);
   if (j.crono) {
@@ -1578,18 +1578,37 @@ function pintarOpciones(ronda) {
   cont.style.display = 'grid';
 }
 
+// Quién está jugando: en 2 jugadores, el del turno; si no, la partida misma (comodines)
+function dueñoComodines(ronda) {
+  return juego.modo === 'dos' && ronda ? juego.jug[ronda.orden[Math.min(ronda.turno, 1)]] : juego;
+}
+function activarPistas(ronda) {
+  $('pista-alejar').disabled = false;
+  $('pista-satelital').disabled = false;
+  actualizarComodin(ronda);
+  $('pistas').style.display = 'flex';
+}
+// En 2 jugadores, al pasar el turno el plano vuelve a como estaba: sin alejar, sin
+// satelital y con las 4 alternativas, para que el segundo no vea las ayudas del primero
+function restablecerPlano(ronda) {
+  if (mapa.hasLayer(satelital)) mapa.removeLayer(satelital);
+  fijarRelleno(0.55);
+  if (ronda.vista) mapa.setView(ronda.vista.centro, ronda.vista.zoom, { animate: false });
+  ronda.descartadas = null;
+}
 function usarPista(tipo) {
   const ronda = juego && juego.rondas[juego.i];
-  if (!ronda || ronda.respondida || ronda.pistas.has(tipo) || juego.modo === 'dos') return;
+  if (!ronda || ronda.respondida || ronda.pistas.has(tipo)) return;
   ronda.pistas.add(tipo);
-  if (tipo === 'alejar') { mapa.setZoom(ronda.zoom - 1); $('pista-alejar').disabled = true; }
+  if (tipo === 'alejar') { mapa.setZoom(ronda.zoom - 1, { animate: false }); $('pista-alejar').disabled = true; }
   if (tipo === 'satelital') { satelital.addTo(mapa); fijarRelleno(0.3); $('pista-satelital').disabled = true; }
 }
 function usarComodin() {
   const ronda = juego && juego.rondas[juego.i];
-  if (!ronda || ronda.respondida || ronda.pistas.has('comodin') || juego.comodines <= 0 || juego.modo === 'dos') return;
+  const dueño = dueñoComodines(ronda);
+  if (!ronda || ronda.respondida || ronda.pistas.has('comodin') || dueño.comodines <= 0) return;
   ronda.pistas.add('comodin');
-  juego.comodines -= 1;
+  dueño.comodines -= 1;
   const malas = mezclar(ronda.opciones.filter((i) => i !== ronda.idx)).slice(0, 2);
   ronda.descartadas = new Set(malas);
   [...$('opciones').children].forEach((b) => {
@@ -1598,8 +1617,9 @@ function usarComodin() {
   actualizarComodin(ronda);
 }
 function actualizarComodin(ronda) {
-  $('comodin-quedan').textContent = '(' + juego.comodines + ')';
-  $('comodin').disabled = juego.comodines <= 0 || !ronda || ronda.respondida || ronda.pistas.has('comodin');
+  const dueño = dueñoComodines(ronda);
+  $('comodin-quedan').textContent = '(' + dueño.comodines + ')';
+  $('comodin').disabled = dueño.comodines <= 0 || !ronda || ronda.respondida || ronda.pistas.has('comodin');
 }
 $('comodin').addEventListener('click', usarComodin);
 $('pista-alejar').addEventListener('click', () => usarPista('alejar'));
@@ -1622,8 +1642,19 @@ function responder(idx, porTiempo) {
     ronda.seg[jugador] = seg;
     ronda.turno += 1;
     if (ronda.turno < 2) {
-      // Pasa al otro jugador sin mostrar lo que eligió el primero
+      // Pasa al otro jugador sin mostrar lo que eligió el primero: las alternativas se
+      // dibujan de nuevo (así no queda marcada la que tocó) y el plano vuelve a como estaba
       if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      restablecerPlano(ronda);
+      $('opciones').classList.add('sin-hover');
+      setTimeout(() => {
+        const quitar = () => $('opciones').classList.remove('sin-hover');
+        document.addEventListener('pointermove', quitar, { once: true });
+      }, 300);
+      ronda.pistas = ronda.pistasJ[ronda.orden[1]];
+      pintarOpciones(ronda);
+      if (juego.crono) [...$('opciones').children].forEach((b) => { b.disabled = true; });
+      activarPistas(ronda);
       pintarTurno(ronda);
       if (juego.crono) largarReloj(ronda);
       return;
@@ -1640,7 +1671,7 @@ function responder(idx, porTiempo) {
 
   if (juego.modo === 'dos') {
     const aciertos = ronda.resp.map((r) => r === ronda.idx);
-    ronda.puntosJ = aciertos.map((a) => (a ? 100 : 0));
+    ronda.puntosJ = aciertos.map((a, k) => (a ? [...ronda.pistasJ[k]].reduce((p, x) => p - COSTO[x], 100) : 0));
     juego.jug.forEach((p, k) => { p.puntaje += ronda.puntosJ[k]; });
     marca.style.background = 'linear-gradient(90deg,' + aciertos.map((a, k) => (a ? 'var(--ok)' : 'var(--bad)') + ' ' + (k * 50) + '% ' + (k * 50 + 50) + '%').join(',') + ')';
     bien = aciertos.some(Boolean);
@@ -1650,6 +1681,8 @@ function responder(idx, porTiempo) {
       const g = aciertos[0] ? n[0] : n[1];
       titular = al(['Punto para ' + g + '.', g + ' se la sabía.', 'Bien, ' + g + '.']) + ' Era ' + c.n + '.';
     } else titular = al(['Ninguno acertó.', 'Las manzanas ganan esta ronda.', 'Cero y cero.']) + ' Era ' + c.n + '.';
+    titular += ' ' + juego.jug.map((p, k) => p.nombre + ' ' + (aciertos[k] ? '+' + ronda.puntosJ[k] : '0') +
+      (ronda.pistasJ[k].size ? ' ' + simbolosPistas(mascaraPistas(ronda.pistasJ[k])) : '')).join(' · ') + '.';
   } else {
     bien = idx === ronda.idx;
     let pts = 0;
@@ -1874,7 +1907,7 @@ function terminar() {
     const g = compararJugadores(a, b, j.crono);
     const gan = g === 1 ? b : a, per = g === 1 ? a : b;
     grande.append(g === -1 ? 'Empate ' : 'Gana ' + gan.nombre + ' ');
-    const s = document.createElement('small'); s.textContent = a.puntaje + ' a ' + b.puntaje; grande.appendChild(s);
+    const s = document.createElement('small'); s.textContent = g === 1 ? b.puntaje + ' a ' + a.puntaje : a.puntaje + ' a ' + b.puntaje; grande.appendChild(s);
     $('final-comentario').textContent = (g !== -1 && a.puntaje === b.puntaje ? 'Empate en puntos; gana por ser más rápido. ' : '') + comentarioDuelo(gan.nombre, per.nombre, g === -1 ? 0 : Math.abs(a.puntaje - b.puntaje), N_RONDAS * 100);
     pintarTablaDuelo(partida.plan, partida.jugadores, j.crono, j.lugares);
     $('bloque-ranking').hidden = true;
