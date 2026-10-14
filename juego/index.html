@@ -203,13 +203,46 @@
   .enlace-reto{ display:flex; gap:6px; margin-top:8px; }
   .enlace-reto textarea{ flex:1; min-width:0; font-size:0.78rem; line-height:1.4; resize:vertical; font-family:var(--sans); }
   .enlace-reto{ align-items:flex-start; }
-  /* Contrarreloj: barra que se vacía arriba del plano y segundos restantes */
-  .reloj{ position:absolute; top:0; left:0; right:0; z-index:700; pointer-events:none; }
-  .reloj-pista{ height:6px; background:rgba(28,51,71,0.15); }
-  #reloj-barra{ height:100%; width:100%; background:var(--clay); }
-  #reloj-texto{ position:absolute; top:12px; left:12px; font-family:var(--sans); font-weight:700; font-size:0.95rem; color:var(--moss-dark); background:rgba(255,255,255,0.92); padding:3px 9px; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,0.25); font-variant-numeric:tabular-nums; }
-  .reloj.apurado #reloj-barra{ background:var(--bad); }
-  .reloj.apurado #reloj-texto{ color:var(--bad); }
+  /* Bomba de tiempo: una bomba arriba a la izquierda y su mecha cruzando el plano; la
+     chispa avanza hacia la bomba y en los últimos 5 segundos la bomba tiembla */
+  .reloj{ position:absolute; top:0; left:0; right:0; height:76px; z-index:700; pointer-events:none; }
+  .mecha{ position:absolute; left:50px; right:16px; top:15px; height:5px; border-radius:3px;
+    background:repeating-linear-gradient(90deg, rgba(40,30,20,0.28) 0 3px, transparent 3px 7px); }
+  #reloj-barra{ position:relative; height:100%; width:100%; border-radius:3px;
+    background:repeating-linear-gradient(-55deg, #d8b27a 0 4px, #8f6a3c 4px 7px); box-shadow:0 1px 2px rgba(0,0,0,0.4); }
+  .chispa{ position:absolute; right:-10px; top:50%; width:20px; height:20px; margin-top:-10px; border-radius:50%;
+    background:radial-gradient(circle, #fff 0 18%, #ffe066 30%, #ff8a1f 55%, rgba(255,90,0,0) 72%);
+    animation:chispa 0.14s infinite alternate; }
+  @keyframes chispa{ from{ transform:scale(0.8) rotate(0deg); } to{ transform:scale(1.25) rotate(40deg); } }
+  .bomba{ position:absolute; left:6px; top:4px; width:62px; height:62px; filter:drop-shadow(0 2px 3px rgba(0,0,0,0.45)); }
+  .bomba svg{ width:100%; height:100%; display:block; }
+  #reloj-texto{ position:absolute; left:3px; top:16px; width:52px; height:44px; display:flex; align-items:center; justify-content:center;
+    font-family:var(--sans); font-weight:800; font-size:1.35rem; color:#fff; font-variant-numeric:tabular-nums; text-shadow:0 1px 2px rgba(0,0,0,0.6); }
+  .reloj.apurado .bomba{ animation:temblor 0.22s infinite; filter:drop-shadow(0 0 9px rgba(229,57,53,0.95)); }
+  .reloj.apurado #reloj-texto{ color:#ffd0c8; }
+  .reloj.apurado .chispa{ width:26px; height:26px; margin-top:-13px; right:-13px; }
+  @keyframes temblor{ 0%{ transform:translate(0,0) rotate(0); } 25%{ transform:translate(-1.5px,1px) rotate(-4deg); }
+    50%{ transform:translate(1.5px,-1px) rotate(3deg); } 75%{ transform:translate(-1px,-1px) rotate(-2deg); } 100%{ transform:translate(0,0) rotate(0); } }
+  .explosion{ position:absolute; inset:0; z-index:750; pointer-events:none; display:none; align-items:center; justify-content:center; overflow:hidden; }
+  .explosion.activa{ display:flex; animation:destello 1.3s ease-out forwards; }
+  .explosion svg{ position:absolute; width:min(80%, 420px); height:min(80%, 420px); }
+  .explosion.activa svg{ animation:onda 1.3s cubic-bezier(.2,.8,.3,1) forwards; }
+  .explosion span{ position:relative; font-family:var(--serif); font-weight:900; font-size:clamp(2.6rem, 9vw, 4.4rem); color:#fff;
+    letter-spacing:0.02em; text-shadow:0 0 2px #7a1c00, 2px 3px 0 #b3260b, 0 0 18px rgba(255,120,0,0.9); transform:rotate(-8deg); }
+  .explosion.activa span{ animation:bum 1.3s ease-out forwards; }
+  @keyframes destello{ 0%{ background:rgba(255,246,214,0.95); } 25%{ background:rgba(255,190,90,0.45); } 100%{ background:rgba(255,190,90,0); } }
+  @keyframes onda{ 0%{ transform:scale(0.15) rotate(-20deg); opacity:1; } 45%{ transform:scale(1.05) rotate(4deg); opacity:1; } 100%{ transform:scale(1.35) rotate(10deg); opacity:0; } }
+  @keyframes bum{ 0%{ transform:rotate(-8deg) scale(0.3); opacity:0; } 18%{ transform:rotate(-8deg) scale(1.2); opacity:1; } 30%{ transform:rotate(-8deg) scale(1); } 75%{ opacity:1; } 100%{ transform:rotate(-8deg) scale(1.05); opacity:0; } }
+  @media (prefers-reduced-motion: reduce){
+    .chispa, .reloj.apurado .bomba{ animation:none; }
+    .explosion.activa svg, .explosion.activa span{ animation:none; }
+  }
+  /* Opciones de la portada que van de a dos */
+  .pares{ display:grid; grid-template-columns:1fr 1fr; column-gap:14px; }
+  @media (max-width:560px){ .pares{ grid-template-columns:1fr; } }
+  /* Que las opciones de un mismo grupo tengan igual alto aunque una ocupe dos líneas */
+  .seg label{ display:flex; }
+  .seg span{ flex:1; display:flex; flex-direction:column; justify-content:center; }
   .final .ayudas{ color:var(--muted); font-size:0.78rem; white-space:nowrap; }
   .final tr.totales td{ font-weight:600; border-bottom:none; }
   .final tr.totales + tr.totales td{ font-weight:400; color:var(--muted); font-size:0.8rem; }
@@ -270,8 +303,24 @@
   <div class="marco con-portada" id="marco">
     <div id="mapa" aria-label="Deslindes de predios de la comuna a adivinar"></div>
     <div class="reloj" id="reloj" hidden aria-hidden="true">
-      <div class="reloj-pista"><div id="reloj-barra"></div></div>
-      <span id="reloj-texto"></span>
+      <div class="mecha"><div id="reloj-barra"><span class="chispa"></span></div></div>
+      <div class="bomba">
+        <svg viewBox="0 0 64 64">
+          <defs><radialGradient id="g-bomba" cx="36%" cy="36%" r="68%"><stop offset="0" stop-color="#626872"/><stop offset="0.5" stop-color="#25282d"/><stop offset="1" stop-color="#0b0c0e"/></radialGradient></defs>
+          <rect x="37" y="8" width="13" height="11" rx="2" fill="#44484f" transform="rotate(40 43.5 13.5)"/>
+          <circle cx="29" cy="37" r="24" fill="url(#g-bomba)"/>
+          <ellipse cx="19" cy="27" rx="6.5" ry="3.6" fill="#fff" opacity="0.22" transform="rotate(-38 19 27)"/>
+        </svg>
+        <span id="reloj-texto"></span>
+      </div>
+    </div>
+    <div class="explosion" id="explosion" aria-hidden="true">
+      <svg viewBox="-100 -100 200 200">
+        <polygon points="0,-75 11,-47 31,-64 30,-38 62,-49 43,-21 71,-16 48,0 68,16 43,21 62,49 30,38 40,84 11,47 0,90 -11,47 -39,80 -30,38 -58,46 -43,21 -81,18 -48,0 -74,-17 -43,-21 -57,-46 -30,-38 -31,-64 -11,-47" fill="#ff7a1a"/>
+        <polygon points="6,-49 13,-29 39,-47 27,-18 57,-18 32,-1 57,15 27,17 40,44 14,29 8,49 -4,32 -20,47 -20,25 -47,31 -30,10 -58,1 -31,-8 -51,-31 -22,-24 -26,-54 -5,-32" fill="#ffd23f"/>
+        <circle r="18" fill="#fff6d6"/>
+      </svg>
+      <span>¡BUM!</span>
     </div>
     <div class="cargando" id="cargando" role="status" aria-live="polite">
       <div class="punto"></div>
@@ -306,12 +355,35 @@
           <div class="etiqueta">Regiones<button class="mini" type="button" id="reg-todas">Todas</button><button class="mini" type="button" id="reg-ninguna">Ninguna</button></div>
           <div class="regiones" id="lista-regiones"></div>
         </div>
+        <div class="pares">
+        <div class="grupo">
+          <div class="etiqueta">Rondas</div>
+          <div class="seg" role="radiogroup" aria-label="Rondas">
+            <label><input type="radio" name="rondas" value="10" checked><span>10 rondas<small>partida completa</small></span></label>
+            <label><input type="radio" name="rondas" value="5"><span>5 rondas<small>partida rápida</small></span></label>
+          </div>
+        </div>
         <div class="grupo">
           <div class="etiqueta">Tiempo</div>
           <div class="seg" role="radiogroup" aria-label="Tiempo">
             <label><input type="radio" name="tiempo" value="libre" checked><span>Sin límite<small>piensa con calma</small></span></label>
-            <label><input type="radio" name="tiempo" value="crono"><span>Contrarreloj<small>20 s por ronda</small></span></label>
+            <label><input type="radio" name="tiempo" value="crono"><span>Bomba de tiempo<small>15 s por ronda</small></span></label>
           </div>
+        </div>
+        <div class="grupo">
+          <div class="etiqueta">Alternativas</div>
+          <div class="seg" role="radiogroup" aria-label="Dificultad">
+            <label><input type="radio" name="dificultad" value="facil" checked><span>Fácil<small>comunas al azar</small></span></label>
+            <label><input type="radio" name="dificultad" value="dificil"><span>Difícil<small>comunas vecinas</small></span></label>
+          </div>
+        </div>
+        <div class="grupo">
+          <div class="etiqueta">Vista</div>
+          <div class="seg" role="radiogroup" aria-label="Vista">
+            <label><input type="radio" name="vista" value="cerca" checked><span>Cerca<small>2 m por píxel</small></span></label>
+            <label><input type="radio" name="vista" value="lejos"><span>De lejos<small>4 m por píxel · más fácil</small></span></label>
+          </div>
+        </div>
         </div>
         <div class="grupo">
           <div class="etiqueta">Jugadores</div>
@@ -324,13 +396,6 @@
           <div class="campos">
             <input class="campo j1" id="nombre-j1" maxlength="20" placeholder="Jugador 1" autocomplete="off" aria-label="Nombre del jugador 1">
             <input class="campo j2" id="nombre-j2" maxlength="20" placeholder="Jugador 2" autocomplete="off" aria-label="Nombre del jugador 2">
-          </div>
-        </div>
-        <div class="grupo">
-          <div class="etiqueta">Alternativas</div>
-          <div class="seg" role="radiogroup" aria-label="Dificultad">
-            <label><input type="radio" name="dificultad" value="facil" checked><span>Fácil<small>comunas al azar</small></span></label>
-            <label><input type="radio" name="dificultad" value="dificil"><span>Difícil<small>comunas vecinas</small></span></label>
           </div>
         </div>
         <div class="aviso-portada" id="aviso-portada" role="alert"></div>
@@ -395,7 +460,7 @@
     </div>
   </div>
 
-  <p class="nota">Deslindes: Servicio de Impuestos Internos (SII). Imagen satelital: Esri. Zonas urbanas: zonas censales del INE (Censo 2017, vía el paquete chilemapas); las comunas sin zona urbana no se juegan. Todos los planos tienen la misma escala (2 m por píxel; ver la barra abajo a la izquierda). Teclas: 1 a 4 para responder, Enter para seguir. Los nombres que guardes en un ranking compartido quedan visibles para quienes jueguen.</p>
+  <p class="nota">Deslindes: Servicio de Impuestos Internos (SII). Imagen satelital: Esri. Zonas urbanas: zonas censales del INE (Censo 2017, vía el paquete chilemapas); las comunas sin zona urbana no se juegan. Todos los planos tienen la misma escala: 2 m por píxel, o 4 m en la vista de lejos (ver la barra abajo a la izquierda). Teclas: 1 a 4 para responder, Enter para seguir. Los nombres que guardes en un ranking compartido quedan visibles para quienes jueguen.</p>
 </div>
 
 <script>
@@ -414,7 +479,7 @@ const PROXY_TOKEN = "cB0FAOKyxlyfmRc-bsHmTLJvgqkwbM-y";
 const SII_NAMESPACE = 'cl.sii.sdi.lob.bbrr.mapas.data.api.interfaces.MapasFacadeService';
 const SII_WMS_BASE = 'https://www4.sii.cl/mapasui/services/ui/wmsProxyService/call';
 
-const N_RONDAS = 10;
+let N_RONDAS = 10; // 10 o 5, según la partida
 // Escala fija en todo el país: 2 m por píxel de pantalla. En los mapas web (Web
 // Mercator) un mismo nivel de zoom cubre más terreno cerca del ecuador, así que el
 // zoom se calcula para cada latitud (Arica ≈16,2; Santiago ≈16,0; Punta Arenas ≈15,5).
@@ -660,7 +725,8 @@ function mostrarPlano(ronda) {
   [satelital, nombres].forEach((c) => mapa.hasLayer(c) && mapa.removeLayer(c));
   interaccion(false);
   fijarRelleno(0.55);
-  ronda.zoom = zoomEscalaFija(ronda.lat);
+  // En la vista de lejos, un nivel menos de zoom: 4 m por píxel en vez de 2
+  ronda.zoom = zoomEscalaFija(ronda.lat) - (juego && juego.lejos ? 1 : 0);
   mapa.setView([ronda.lat, ronda.lng], ronda.zoom, { animate: false });
   ronda.capas.forEach(({ codigo, layer }) => {
     const capa = new WmsSiiDetallado(SII_WMS_BASE, {
@@ -677,7 +743,7 @@ const $ = (id) => document.getElementById(id);
 let juego = null;
 const al = (lista) => lista[Math.floor(Math.random() * lista.length)];
 const COLORES = ['var(--j1)', 'var(--j2)'];
-const SEGUNDOS_RONDA = 20; // contrarreloj
+const SEGUNDOS_RONDA = 15; // bomba de tiempo
 // Estado de la pantalla final (se declaran arriba porque un enlace de duelo la abre al cargar)
 let compartirActual = null; // { texto, url, partida }
 let accionOtra = null;
@@ -721,7 +787,7 @@ function resumenPistasTexto(filas) {
 }
 // Un cuadrado por ronda, para compartir: acierto limpio, acierto con ayuda, error, sin tiempo
 function cuadro(x) {
-  if (x.pos === -1) return '⬛';
+  if (x.pos === -1) return '💥';
   if (x.pts > 0) return x.mask ? '🟨' : '🟩';
   return '🟥';
 }
@@ -729,13 +795,14 @@ function cuadro(x) {
 // ---- Modalidad (zona + dificultad, regiones elegidas y contrarreloj) ----
 function mascara(regiones) { return ORDEN_REGIONES.map((r) => (regiones.has(r) ? '1' : '0')).join(''); }
 function regionesDeMascara(m) { return new Set(ORDEN_REGIONES.filter((_, i) => m[i] === '1')); }
-function modalidadDe(zona, dif, regiones, crono) {
-  return zona + (zona === 'reg' ? '-' + mascara(regiones) : '') + '-' + dif + (crono ? '-crono' : '');
+// Las modalidades de siempre (cerca, 10 rondas) conservan su nombre para no perder el ranking
+function modalidadDe(zona, dif, regiones, crono, lejos, nRondas) {
+  return zona + (zona === 'reg' ? '-' + mascara(regiones) : '') + '-' + dif + (lejos ? '-lejos' : '') + (nRondas === 5 ? '-5' : '') + (crono ? '-crono' : '');
 }
-function nombreModalidad(zona, dif, regiones, crono) {
+function nombreModalidad(zona, dif, regiones, crono, lejos, nRondas) {
   let z = { gs: 'Gran Santiago', rm: 'Región Metropolitana', cl: 'Todo Chile', co: 'Comunas costeras', an: 'Comunas cordilleranas' }[zona];
   if (!z) z = regiones.size === 1 ? nombreRegion([...regiones][0]) : regiones.size + ' regiones';
-  return z + ' · ' + (dif === 'dificil' ? 'Difícil' : 'Fácil') + (crono ? ' · Contrarreloj' : '');
+  return z + ' · ' + (dif === 'dificil' ? 'Difícil' : 'Fácil') + (lejos ? ' · De lejos' : '') + (nRondas === 5 ? ' · 5 rondas' : '') + (crono ? ' · Bomba de tiempo' : '');
 }
 
 // ---- Ranking ----
@@ -826,7 +893,7 @@ function pintarRanking(cont, lista, opciones) {
   origen.className = 'origen';
   origen.textContent = (o.global ? 'Ranking compartido entre todos los jugadores.'
     : (o.error ? 'No se pudo conectar con el ranking compartido; se muestra el de este navegador.' : 'Ranking guardado en este navegador.'))
-    + (conTiempo ? ' En contrarreloj, a igual puntaje gana quien tardó menos.' : '');
+    + (conTiempo ? ' Con bomba de tiempo, a igual puntaje gana quien tardó menos.' : '');
   cont.appendChild(origen);
 }
 
@@ -857,7 +924,8 @@ function resumenJugador(nombre, x) {
 }
 // Formato compacto (v3): la partida va en bits y luego en base64url. Cada ronda ocupa
 // 43 bits (comuna, punto, posición de la correcta y las otras 3 alternativas) y cada
-// jugada de cada jugador 10 bits (+8 en contrarreloj). Una partida cabe en ~110 caracteres.
+// jugada de cada jugador 10 bits (+8 con bomba de tiempo). Una partida cabe en ~110 caracteres.
+// v4 agrega la vista (cerca/de lejos) y la cantidad de rondas (10 o 5); v3 se sigue leyendo.
 const ZONAS_ENLACE = ['gs', 'rm', 'cl', 'co', 'an', 'reg'];
 function bitsABase64Url(bits) {
   while (bits.length % 8) bits.push(0);
@@ -868,11 +936,13 @@ function bitsABase64Url(bits) {
 function codificarPartida(p) {
   const bits = [];
   const poner = (v, n) => { for (let i = n - 1; i >= 0; i--) bits.push((v >> i) & 1); };
-  poner(3, 4);                                   // versión del formato
+  poner(4, 4);                                   // versión del formato
   poner(ZONAS_ENLACE.indexOf(p.zona), 3);
   poner(p.dificultad === 'dificil' ? 1 : 0, 1);
   poner(p.crono ? 1 : 0, 1);
   poner(p.jugadores.length - 1, 1);
+  poner(p.lejos ? 1 : 0, 1);
+  poner(p.plan.length === 5 ? 1 : 0, 1);
   if (p.zona === 'reg') mascara(p.regiones).split('').forEach((b) => poner(Number(b), 1));
   p.plan.forEach((q) => {
     poner(q.idx, 9); poner(q.pIdx, 5);
@@ -898,16 +968,19 @@ function decodificarCompacto(codigo) {
   for (const c of b) { const v = c.charCodeAt(0); for (let i = 7; i >= 0; i--) bits.push((v >> i) & 1); }
   let k = 0;
   const leer = (n) => { if (k + n > bits.length) throw new Error('corto'); let v = 0; for (let i = 0; i < n; i++) v = v * 2 + bits[k++]; return v; };
-  if (leer(4) !== 3) return null;
+  const version = leer(4);
+  if (version !== 3 && version !== 4) return null;
   const zona = ZONAS_ENLACE[leer(3)];
   if (!zona) return null;
   const dificultad = leer(1) ? 'dificil' : 'facil';
   const crono = !!leer(1);
   const nJug = leer(1) + 1;
+  const lejos = version === 4 ? !!leer(1) : false;
+  const nR = version === 4 && leer(1) ? 5 : 10;
   let regiones = new Set(ORDEN_REGIONES);
   if (zona === 'reg') { let m = ''; for (let i = 0; i < 16; i++) m += leer(1); regiones = regionesDeMascara(m); }
   const plan = [];
-  for (let r = 0; r < N_RONDAS; r++) {
+  for (let r = 0; r < nR; r++) {
     const idx = leer(9), pIdx = leer(5), pos = leer(2);
     const otras = [leer(9), leer(9), leer(9)];
     const opciones = otras.slice(); opciones.splice(pos, 0, idx);
@@ -920,7 +993,7 @@ function decodificarCompacto(codigo) {
     for (let i = 0; i < largo; i++) bytes.push(leer(8));
     const nombre = limpiarNombre(new TextDecoder().decode(Uint8Array.from(bytes))) || 'Alguien';
     const x = [];
-    for (let r = 0; r < N_RONDAS; r++) {
+    for (let r = 0; r < nR; r++) {
       const pts = Math.min(10, leer(4)) * 10, mask = leer(3), pos = leer(3) - 1;
       let seg = null;
       if (crono) { const s = leer(8); seg = s === 255 ? null : s / 10; }
@@ -928,14 +1001,14 @@ function decodificarCompacto(codigo) {
     }
     jugadores.push(resumenJugador(nombre, x));
   }
-  return { zona, dificultad, crono, regiones, plan, jugadores };
+  return { zona, dificultad, crono, regiones, plan, jugadores, lejos, nRondas: nR };
 }
 function decodificarPartida(codigo) {
   try {
     // Los enlaces anteriores eran JSON en base64url, que siempre empieza con "ey"
     if (!codigo.startsWith('ey')) return decodificarCompacto(codigo);
     const d = JSON.parse(deBase64Url(codigo));
-    if (!d || !Array.isArray(d.r) || d.r.length !== N_RONDAS) return null;
+    if (!d || !Array.isArray(d.r) || d.r.length !== 10) return null;
     if (!['gs', 'rm', 'cl', 'co', 'an', 'reg'].includes(d.z) || !['facil', 'dificil'].includes(d.d)) return null;
     let plan, jugadores;
     const valida = (idx, pIdx, ops) => COMUNAS[idx] && COMUNAS[idx].p && pIdx >= 0 && pIdx < COMUNAS[idx].p.length &&
@@ -950,7 +1023,7 @@ function decodificarPartida(codigo) {
       if (!Array.isArray(d.j) || !d.j.length || d.j.length > 2) return null;
       plan = d.r.map((x) => ({ idx: x[0], pIdx: x[1], opciones: x.slice(2, 6) }));
       jugadores = d.j.map((jg) => {
-        if (!Array.isArray(jg.x) || jg.x.length !== N_RONDAS) throw new Error('jugador');
+        if (!Array.isArray(jg.x) || jg.x.length !== 10) throw new Error('jugador');
         return resumenJugador(limpiarNombre(jg.n) || 'Alguien', jg.x.map((f) => ({
           pts: Math.max(0, Math.min(100, Number(f[0]) || 0)), mask: (Number(f[1]) || 0) & 7,
           pos: f[2] === null || f[2] === undefined ? null : Number(f[2]), seg: f[3] === null || f[3] === undefined ? null : Number(f[3])
@@ -960,7 +1033,7 @@ function decodificarPartida(codigo) {
     return {
       zona: d.z, dificultad: d.d, crono: !!d.c,
       regiones: d.z === 'reg' ? regionesDeMascara(String(d.g || '')) : new Set(ORDEN_REGIONES),
-      plan, jugadores
+      plan, jugadores, lejos: false, nRondas: 10
     };
   } catch (e) { return null; }
 }
@@ -981,7 +1054,7 @@ function partidaDeJuego(j, nombreYo) {
     const yo = resumenJugador(nombreYo || 'Alguien', filasJugador(j, 0));
     jugadores = j.reto ? [j.reto, yo] : [yo];
   }
-  return { zona: j.zona, dificultad: j.dificultad, regiones: j.regiones, crono: j.crono, plan, jugadores };
+  return { zona: j.zona, dificultad: j.dificultad, regiones: j.regiones, crono: j.crono, lejos: j.lejos, nRondas: j.nRondas, plan, jugadores };
 }
 
 // ---- Portada ----
@@ -993,12 +1066,14 @@ function opcionesPortada() {
     dificultad: document.querySelector('input[name="dificultad"]:checked').value,
     regiones: new Set(regionesElegidas),
     crono: document.querySelector('input[name="tiempo"]:checked').value === 'crono',
-    jugadores: Number(document.querySelector('input[name="jugadores"]:checked').value)
+    jugadores: Number(document.querySelector('input[name="jugadores"]:checked').value),
+    lejos: document.querySelector('input[name="vista"]:checked').value === 'lejos',
+    nRondas: Number(document.querySelector('input[name="rondas"]:checked').value) === 5 ? 5 : 10
   };
 }
 let temporizadorRanking = null;
 function actualizarRecord() {
-  const { zona, dificultad, regiones, crono, jugadores } = opcionesPortada();
+  const { zona, dificultad, regiones, crono, jugadores, lejos, nRondas } = opcionesPortada();
   $('grupo-regiones').hidden = zona !== 'reg';
   $('grupo-nombres').hidden = jugadores !== 2;
   const n = COMUNAS.filter((_, j) => enZona(j, zona, regiones)).length;
@@ -1007,19 +1082,19 @@ function actualizarRecord() {
   $('btn-empezar').disabled = faltan;
   const cr = document.querySelector('[data-cuenta="reg"]');
   if (cr) cr.textContent = regiones.size === ORDEN_REGIONES.length ? 'elige cuáles' : regiones.size + ' de 16';
-  $('ranking-portada-titulo').textContent = 'Ranking: ' + nombreModalidad(zona, dificultad, regiones, crono);
+  $('ranking-portada-titulo').textContent = 'Ranking: ' + nombreModalidad(zona, dificultad, regiones, crono, lejos, nRondas);
   $('record').textContent = '';
   if (faltan) { $('ranking-portada').hidden = true; return; }
   $('ranking-portada').hidden = false;
-  const mod = modalidadDe(zona, dificultad, regiones, crono);
+  const mod = modalidadDe(zona, dificultad, regiones, crono, lejos, nRondas);
   const mejor = rankingLocal(mod)[0];
-  if (mejor) $('record').textContent = 'Mejor puntaje en este navegador: ' + mejor.puntaje + ' de ' + (N_RONDAS * 100) + (mejor.segundos !== null ? ' en ' + formatoSeg(mejor.segundos) : '') + ' (' + mejor.nombre + ').';
+  if (mejor) $('record').textContent = 'Mejor puntaje en este navegador: ' + mejor.puntaje + ' de ' + (nRondas * 100) + (mejor.segundos !== null ? ' en ' + formatoSeg(mejor.segundos) : '') + ' (' + mejor.nombre + ').';
   if ($('ranking-portada').open) {
     clearTimeout(temporizadorRanking);
     temporizadorRanking = setTimeout(async () => {
       const r = await leerRanking(mod);
       const o = opcionesPortada();
-      if (modalidadDe(o.zona, o.dificultad, o.regiones, o.crono) !== mod) return;
+      if (modalidadDe(o.zona, o.dificultad, o.regiones, o.crono, o.lejos, o.nRondas) !== mod) return;
       pintarRanking($('ranking-portada-lista'), r.lista, r);
     }, 250);
   }
@@ -1105,10 +1180,10 @@ function prepararReto(partida) {
   t.textContent = '';
   const fuerte = (x) => { const s = document.createElement('strong'); s.textContent = x; return s; };
   t.append(fuerte(rival.nombre), ' te desafía: hizo ', fuerte(rival.puntaje + ' puntos'),
-    ' (' + rival.aciertos + ' de ' + N_RONDAS + ' aciertos' + (rival.segundos !== null && partida.crono ? ', en ' + formatoSeg(rival.segundos) : '') + ') en ',
-    fuerte(nombreModalidad(partida.zona, partida.dificultad, partida.regiones, partida.crono)),
+    ' (' + rival.aciertos + ' de ' + partida.plan.length + ' aciertos' + (rival.segundos !== null && partida.crono ? ', en ' + formatoSeg(rival.segundos) : '') + ') en ',
+    fuerte(nombreModalidad(partida.zona, partida.dificultad, partida.regiones, partida.crono, partida.lejos, partida.nRondas)),
     '. ' + (rival.x.every((f) => f.pos === null) ? '' : (rival.x.some((f) => f.mask) ? 'Usó ' + resumenPistasTexto(rival.x) + '. ' : 'No usó pistas ni comodines. ')) +
-    'Juega las mismas 10 rondas y compara. ¿Le ganas?');
+    'Juega las mismas ' + partida.plan.length + ' rondas y compara. ¿Le ganas?');
   $('final').classList.add('oculta');
   $('portada').classList.remove('oculta');
   $('marco').classList.add('con-portada');
@@ -1121,7 +1196,7 @@ $('btn-aceptar-reto').addEventListener('click', () => {
   if (nombre) { escribirLS('dqelc-juego-nombre', nombre); $('final-nombre').value = nombre; }
   retoPendiente = null;
   history.replaceState(null, '', urlBase());
-  empezar({ zona: r.zona, dificultad: r.dificultad, regiones: r.regiones, crono: r.crono, jugadores: 1, plan: r.plan, reto: r.rival });
+  empezar({ zona: r.zona, dificultad: r.dificultad, regiones: r.regiones, crono: r.crono, lejos: r.lejos, jugadores: 1, plan: r.plan, reto: r.rival });
 });
 $('btn-ignorar-reto').addEventListener('click', () => {
   retoPendiente = null;
@@ -1168,9 +1243,9 @@ function iniciarReloj(alAgotar) {
     if (reloj !== r) return;
     const quedan = Math.max(0, SEGUNDOS_RONDA - (performance.now() - r.t0) / 1000);
     $('reloj-barra').style.width = (quedan / SEGUNDOS_RONDA * 100) + '%';
-    $('reloj-texto').textContent = Math.ceil(quedan) + ' s';
+    $('reloj-texto').textContent = Math.ceil(quedan);
     $('reloj').classList.toggle('apurado', quedan <= 5);
-    if (quedan <= 0) { reloj = null; alAgotar(SEGUNDOS_RONDA); return; }
+    if (quedan <= 0) { reloj = null; explotar(); alAgotar(SEGUNDOS_RONDA); return; }
     r.id = requestAnimationFrame(tick);
   };
   // Además del cuadro a cuadro, un respaldo por si la pestaña queda en segundo plano
@@ -1184,6 +1259,15 @@ function detenerReloj() {
   const s = Math.min(SEGUNDOS_RONDA, (performance.now() - reloj.t0) / 1000);
   reloj = null;
   return Math.round(s * 10) / 10;
+}
+// Cuando se acaba el tiempo, la bomba explota sobre el plano
+function explotar() {
+  const e = $('explosion');
+  e.classList.remove('activa');
+  void e.offsetWidth; // reinicia la animación
+  e.classList.add('activa');
+  clearTimeout(explotar.t);
+  explotar.t = setTimeout(() => e.classList.remove('activa'), 1300);
 }
 function ocultarReloj() { detenerReloj(); $('reloj').hidden = true; }
 // Espera a que el plano se dibuje (o 3 s como máximo) antes de largar el reloj
@@ -1222,7 +1306,9 @@ function empezar(opts) {
   if (juego) juego.cancelado = true;
   ocultarReloj();
   const modo = opts.reto ? 'reto' : (opts.jugadores === 2 ? 'dos' : 'solo');
+  N_RONDAS = opts.plan ? opts.plan.length : (opts.nRondas === 5 ? 5 : 10);
   juego = {
+    lejos: !!opts.lejos, nRondas: N_RONDAS,
     zona: opts.zona, dificultad: opts.dificultad, regiones: new Set(opts.regiones || ORDEN_REGIONES), crono: !!opts.crono,
     modo, plan: opts.plan || null, reto: opts.reto || null,
     usadas: new Set(), rondas: [], i: -1, puntaje: 0, cancelado: false, comodines: COMODINES_POR_PARTIDA
@@ -1306,7 +1392,7 @@ async function mostrarSiguiente() {
     [...$('opciones').children].forEach((b) => { b.disabled = true; });
     $('reloj').hidden = false;
     $('reloj-barra').style.width = '100%';
-    $('reloj-texto').textContent = SEGUNDOS_RONDA + ' s';
+    $('reloj-texto').textContent = SEGUNDOS_RONDA;
     $('reloj').classList.remove('apurado');
     esperarPlano().then(() => { if (juego === j && j.rondas[j.i] === ronda) largarReloj(ronda); });
   }
@@ -1371,7 +1457,7 @@ $('pista-satelital').addEventListener('click', () => usarPista('satelital'));
 
 const FRASES_ACIERTO = ['¡La clavaste!', '¡Bien ahí!', '¡Exacto!', '¡Ojo de tasador!', '¡Correctísimo!', '¡Eso!', '¡Te la sabías!'];
 const FRASES_ERROR = ['Nop.', 'Frío, frío.', 'Casi, pero no.', 'Uy.', 'Te fuiste a otra comuna.', 'Mmm, no.', 'Te pilló la manzana.'];
-const FRASES_TIEMPO = ['¡Se acabó el tiempo!', 'Tic, tac… ¡tiempo!', 'El reloj no perdona.', 'Más lento que trámite en la DOM.', 'Más lento que permiso del CMN.'];
+const FRASES_TIEMPO = ['¡BUM! Se acabó el tiempo.', 'Tic, tac… ¡bum!', 'La bomba no espera a nadie.', 'Explotó. Las manzanas sobrevivieron.', 'Más lento que trámite en la DOM.', 'Más lento que permiso del CMN.'];
 
 // idx = comuna elegida; null con porTiempo = se acabó el reloj
 function responder(idx, porTiempo) {
@@ -1475,7 +1561,7 @@ function responder(idx, porTiempo) {
 // ---- Mensajes finales ----
 function comentarioFinal(frac) {
   if (frac >= 1) return al([
-    'Mil de mil. ¿Seguro que no trabajas en el Conservador de Bienes Raíces?',
+    (N_RONDAS === 5 ? 'Quinientos de quinientos.' : 'Mil de mil.') + ' ¿Seguro que no trabajas en el Conservador de Bienes Raíces?',
     'Perfecto. El SII debería contratarte para el próximo reavalúo.',
     'Ni el plano regulador se conoce tan bien a sí mismo.',
     'Puntaje perfecto. Tus amistades ya no pueden decirte que te perdiste.'
@@ -1508,16 +1594,16 @@ function comentarioFinal(frac) {
     'Cero en catastro. Tranquilidad: algunas comunas tampoco saben dónde terminan.',
     'Con este puntaje igual te cobran contribuciones.',
     '¿Seguro que no estabas eligiendo con los ojos cerrados?',
-    'Las manzanas: 10. Tú: casi 0. Revancha, urgente.'
+    'Las manzanas: ' + N_RONDAS + '. Tú: casi 0. Revancha, urgente.'
   ]);
 }
-function comentarioDuelo(ganador, perdedor, dif) {
+function comentarioDuelo(ganador, perdedor, dif, max) {
   if (dif === 0) return al([
     'Empate. Ni el SII podría desempatar esto.',
     'Empate perfecto: se reparten la propiedad en copropiedad.',
     'Tablas. Habrá que ir a la Corte de Apelaciones… o jugar otra.'
   ]);
-  if (dif >= 400) return al([
+  if (dif >= (max || 1000) * 0.4) return al([
     'Paliza catastral. ' + perdedor + ', el plano regulador te espera.',
     perdedor + ' pide revancha (y un mapa).',
     'Goleada. ' + perdedor + ', ¿habías visto un plano antes?'
@@ -1543,7 +1629,7 @@ function celdaJugador(x, plan, crono) {
   const td = document.createElement('td');
   td.className = 'jug ' + (x.pts > 0 ? 'ok' : 'no');
   let t;
-  if (x.pos === -1) t = '⏱ sin tiempo';
+  if (x.pos === -1) t = '💥 sin tiempo';
   else if (x.pts > 0) t = '✓ ' + x.pts;
   else if (x.pos !== null && x.pos !== undefined && plan) t = '✗ ' + COMUNAS[plan.opciones[x.pos]].n;
   else t = '✗';
@@ -1552,7 +1638,7 @@ function celdaJugador(x, plan, crono) {
   if (extra) { const s = document.createElement('span'); s.className = 'ayudas'; s.textContent = ' ' + extra; td.appendChild(s); }
   return td;
 }
-const LEYENDA = '🔍 alejó la vista · 🛰️ vio la imagen satelital · ½ usó el comodín 50/50 · ⏱ se le acabó el tiempo';
+const LEYENDA = '🔍 alejó la vista · 🛰️ vio la imagen satelital · ½ usó el comodín 50/50 · 💥 le explotó la bomba (sin tiempo)';
 
 // Tabla de varios jugadores (duelo, reto o 2 jugadores)
 function pintarTablaDuelo(plan, jugadores, crono) {
@@ -1583,12 +1669,12 @@ function pintarTablaDuelo(plan, jugadores, crono) {
 
 // Texto para compartir: un cuadrado por ronda y el detalle de ayudas
 function textoCompartir(partida) {
-  const lineas = ['¿De qué comuna es? · ' + nombreModalidad(partida.zona, partida.dificultad, partida.regiones, partida.crono)];
+  const lineas = ['¿De qué comuna es? · ' + nombreModalidad(partida.zona, partida.dificultad, partida.regiones, partida.crono, partida.lejos, partida.nRondas)];
   const js = partida.jugadores;
   if (js.length === 2) {
     lineas.push(js[0].nombre + ' ' + js[0].puntaje + ' – ' + js[1].puntaje + ' ' + js[1].nombre);
   } else {
-    lineas.push(js[0].nombre + ': ' + js[0].puntaje + ' de ' + (N_RONDAS * 100) + (partida.crono && js[0].segundos !== null ? ' en ' + formatoSeg(js[0].segundos) : ''));
+    lineas.push(js[0].nombre + ': ' + js[0].puntaje + ' de ' + (partida.plan.length * 100) + (partida.crono && js[0].segundos !== null ? ' en ' + formatoSeg(js[0].segundos) : ''));
   }
   js.forEach((p) => {
     lineas.push((js.length === 2 ? p.nombre + ' ' : '') + p.x.map(cuadro).join('') + (partida.crono && p.segundos !== null && js.length === 2 ? ' ' + formatoSeg(p.segundos) : ''));
@@ -1621,7 +1707,7 @@ function terminar() {
   $('final-leyenda').hidden = true;
   const grande = $('final-puntaje');
   grande.innerHTML = '';
-  accionOtra = () => empezar({ zona: j.zona, dificultad: j.dificultad, regiones: j.regiones, crono: j.crono, jugadores: j.modo === 'dos' ? 2 : 1 });
+  accionOtra = () => empezar({ zona: j.zona, dificultad: j.dificultad, regiones: j.regiones, crono: j.crono, lejos: j.lejos, nRondas: j.nRondas, jugadores: j.modo === 'dos' ? 2 : 1 });
   accionCambiar = mostrarPortada;
   $('btn-cambiar').textContent = 'Cambiar zona';
 
@@ -1632,7 +1718,7 @@ function terminar() {
     const gan = g === 1 ? b : a, per = g === 1 ? a : b;
     grande.append(g === -1 ? 'Empate ' : 'Gana ' + gan.nombre + ' ');
     const s = document.createElement('small'); s.textContent = a.puntaje + ' a ' + b.puntaje; grande.appendChild(s);
-    $('final-comentario').textContent = (g !== -1 && a.puntaje === b.puntaje ? 'Empate en puntos; gana por ser más rápido. ' : '') + comentarioDuelo(gan.nombre, per.nombre, g === -1 ? 0 : Math.abs(a.puntaje - b.puntaje));
+    $('final-comentario').textContent = (g !== -1 && a.puntaje === b.puntaje ? 'Empate en puntos; gana por ser más rápido. ' : '') + comentarioDuelo(gan.nombre, per.nombre, g === -1 ? 0 : Math.abs(a.puntaje - b.puntaje), N_RONDAS * 100);
     pintarTablaDuelo(partida.plan, partida.jugadores, j.crono);
     $('bloque-ranking').hidden = true;
     prepararCompartir(partida, 'Compartir el resultado', 'Manda el marcador con un enlace para ver el duelo ronda por ronda.', 'Compartir resultado');
@@ -1663,20 +1749,20 @@ function terminar() {
         const t2 = document.createElement('td');
         const nombre = document.createElement('span'); nombre.className = ok ? 'ok' : 'no'; nombre.textContent = COMUNAS[r.idx].n;
         t2.appendChild(nombre);
-        if (!ok) t2.append(r.elegida === null ? ' — se acabó el tiempo' : ' — elegiste ' + COMUNAS[r.elegida].n);
+        if (!ok) t2.append(r.elegida === null ? ' — ¡bum! se acabó el tiempo' : ' — elegiste ' + COMUNAS[r.elegida].n);
         const extra = [simbolosPistas(mascaraPistas(r.pistas)), j.crono && r.elegida !== null ? formatoSeg(r.segundos) : ''].filter(Boolean).join(' ');
         if (extra) { const sp = document.createElement('span'); sp.className = 'ayudas'; sp.textContent = ' ' + extra; t2.appendChild(sp); }
         tr.append(celda((k + 1) + '.'), t2, celda(r.puntos, 'pts'));
         tabla.appendChild(tr);
       });
       if (j.rondas.some((r) => r.pistas.size) || j.crono) { $('final-leyenda').textContent = LEYENDA; $('final-leyenda').hidden = false; }
-      prepararCompartir(partida, 'Comparte y desafía', 'Comparte tu resultado con un enlace: quien lo abra juega estas mismas 10 rondas y al final ve tu puntaje y tus ayudas al lado de los suyos.', 'Compartir resultado y desafiar');
+      prepararCompartir(partida, 'Comparte y desafía', 'Comparte tu resultado con un enlace: quien lo abra juega estas mismas ' + N_RONDAS + ' rondas y al final ve tu puntaje y tus ayudas al lado de los suyos.', 'Compartir resultado y desafiar');
     }
     $('final-comentario').textContent = comentario;
     $('bloque-ranking').hidden = false;
     $('btn-otra').textContent = 'Jugar otra vez';
     // Ranking actual de la modalidad (para ver dónde quedarías)
-    const mod = modalidadDe(j.zona, j.dificultad, j.regiones, j.crono);
+    const mod = modalidadDe(j.zona, j.dificultad, j.regiones, j.crono, j.lejos, j.nRondas);
     leerRanking(mod).then((r) => { if (juego === j && !j.guardado) pintarRanking($('final-ranking'), r.lista, r); });
   }
   $('pistas').style.display = 'none';
@@ -1698,8 +1784,8 @@ function verDuelo(partida) {
   grande.innerHTML = '';
   grande.append(g === -1 ? 'Empate ' : 'Gana ' + (g === 0 ? a : b).nombre + ' ');
   const s = document.createElement('small'); s.textContent = a.nombre + ' ' + a.puntaje + ' – ' + b.puntaje + ' ' + b.nombre; grande.appendChild(s);
-  $('final-comentario').textContent = 'Duelo en ' + nombreModalidad(partida.zona, partida.dificultad, partida.regiones, partida.crono) + '. ' +
-    comentarioDuelo((g === 1 ? b : a).nombre, (g === 1 ? a : b).nombre, g === -1 ? 0 : Math.abs(a.puntaje - b.puntaje));
+  $('final-comentario').textContent = 'Duelo en ' + nombreModalidad(partida.zona, partida.dificultad, partida.regiones, partida.crono, partida.lejos, partida.nRondas) + '. ' +
+    comentarioDuelo((g === 1 ? b : a).nombre, (g === 1 ? a : b).nombre, g === -1 ? 0 : Math.abs(a.puntaje - b.puntaje), partida.plan.length * 100);
   pintarTablaDuelo(partida.plan, partida.jugadores, partida.crono);
   $('bloque-ranking').hidden = true;
   prepararCompartir(partida, 'Compartir este duelo', 'Reenvía el resultado a quien quieras.', 'Compartir resultado');
@@ -1726,11 +1812,11 @@ $('btn-guardar').addEventListener('click', async () => {
   escribirLS('dqelc-juego-nombre', nombre);
   $('btn-guardar').disabled = true;
   $('estado-guardar').textContent = 'Guardando…';
-  const mod = modalidadDe(j.zona, j.dificultad, j.regiones, j.crono);
+  const mod = modalidadDe(j.zona, j.dificultad, j.regiones, j.crono, j.lejos, j.nRondas);
   const r = await registrarPuntaje(mod, nombre, j.puntaje, j.aciertos, j.crono ? j.segundosTotal : null);
   j.guardado = true;
   pintarRanking($('final-ranking'), r.top, { resaltar: r.id, global: r.global, error: r.error });
-  const modo = nombreModalidad(j.zona, j.dificultad, j.regiones, j.crono);
+  const modo = nombreModalidad(j.zona, j.dificultad, j.regiones, j.crono, j.lejos, j.nRondas);
   if (r.posicion && r.posicion <= RANKING_TOP) {
     $('estado-guardar').textContent = 'Quedaste en el lugar ' + r.posicion + ' de ' + modo + '.' + (r.posicion === 1 ? ' ' + al(['¡Primer lugar!', 'Nadie te gana… por ahora.', 'Récord absoluto.']) : '');
   } else if (r.posicion) {
