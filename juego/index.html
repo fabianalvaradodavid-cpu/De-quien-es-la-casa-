@@ -89,7 +89,9 @@
     font:inherit; font-size:0.82rem; padding:6px 10px; border-radius:6px;
     border:1px solid var(--line); background:var(--panel); color:var(--ink); cursor:pointer;
   }
-  .pistas button .costo{ color:var(--bad); margin-left:4px; }
+  .pistas button .costo{ color:var(--bad); margin-left:6px; font-weight:600; }
+  .pistas{ align-items:center; }
+  .pistas-titulo{ font-size:0.75rem; font-weight:700; letter-spacing:0.08em; color:var(--moss-dark); margin-right:2px; }
   .pistas button:hover:not(:disabled){ border-color:var(--clay); }
   .pistas button:disabled{ opacity:0.45; cursor:default; }
 
@@ -198,7 +200,19 @@
   .bloque .explica{ font-size:0.82rem; color:var(--muted); }
   .estado-guardar{ font-size:0.8rem; color:var(--muted); margin-top:6px; min-height:1.1em; }
   .enlace-reto{ display:flex; gap:6px; margin-top:8px; }
-  .enlace-reto input{ flex:1; min-width:0; font-size:0.78rem; }
+  .enlace-reto textarea{ flex:1; min-width:0; font-size:0.78rem; line-height:1.4; resize:vertical; font-family:var(--sans); }
+  .enlace-reto{ align-items:flex-start; }
+  /* Contrarreloj: barra que se vacía arriba del plano y segundos restantes */
+  .reloj{ position:absolute; top:0; left:0; right:0; z-index:700; pointer-events:none; }
+  .reloj-pista{ height:6px; background:rgba(28,51,71,0.15); }
+  #reloj-barra{ height:100%; width:100%; background:var(--clay); }
+  #reloj-texto{ position:absolute; top:12px; left:12px; font-family:var(--sans); font-weight:700; font-size:0.95rem; color:var(--moss-dark); background:rgba(255,255,255,0.92); padding:3px 9px; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,0.25); font-variant-numeric:tabular-nums; }
+  .reloj.apurado #reloj-barra{ background:var(--bad); }
+  .reloj.apurado #reloj-texto{ color:var(--bad); }
+  .final .ayudas{ color:var(--muted); font-size:0.78rem; white-space:nowrap; }
+  .final tr.totales td{ font-weight:600; border-bottom:none; }
+  .final tr.totales + tr.totales td{ font-weight:400; color:var(--muted); font-size:0.8rem; }
+  .leyenda{ font-size:0.75rem; color:var(--soft); margin:-8px 0 12px; line-height:1.45; }
   .reto-texto{ font-size:0.95rem; line-height:1.45; margin-bottom:12px; }
   .reto-texto strong{ color:var(--moss-dark); }
   .botones{ display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
@@ -243,7 +257,7 @@
     <h1>¿De qué comuna es?</h1>
     <a href="../simple/">← Volver al mapa</a>
   </header>
-  <p class="bajada">Un pedazo de los deslindes de predios del SII, siempre en un sector urbano y siempre a la misma escala. Adivina a qué comuna pertenece. Cada ronda vale 100 puntos; las pistas restan, y tienes 3 comodines 50/50 por partida. Juega en solitario y entra al ranking, desafía a alguien con un enlace o juega contra otra persona en el mismo equipo.</p>
+  <p class="bajada">Un pedazo de los deslindes de predios del SII, siempre en un sector urbano y siempre a la misma escala. Adivina a qué comuna pertenece. Cada ronda vale 100 puntos; las pistas restan, y tienes 3 comodines 50/50 por partida. Juega con o sin reloj, entra al ranking, desafía a alguien con un enlace o juega contra otra persona en el mismo equipo.</p>
 
   <div class="estado" id="estado">
     <span>Ronda <strong id="num-ronda">1</strong> de <span id="total-rondas">10</span></span>
@@ -253,6 +267,10 @@
 
   <div class="marco con-portada" id="marco">
     <div id="mapa" aria-label="Deslindes de predios de la comuna a adivinar"></div>
+    <div class="reloj" id="reloj" hidden aria-hidden="true">
+      <div class="reloj-pista"><div id="reloj-barra"></div></div>
+      <span id="reloj-texto"></span>
+    </div>
     <div class="cargando" id="cargando" role="status" aria-live="polite">
       <div class="punto"></div>
       <div id="cargando-texto">Cargando el plano…</div>
@@ -283,6 +301,13 @@
         <div class="grupo" id="grupo-regiones" hidden>
           <div class="etiqueta">Regiones<button class="mini" type="button" id="reg-todas">Todas</button><button class="mini" type="button" id="reg-ninguna">Ninguna</button></div>
           <div class="regiones" id="lista-regiones"></div>
+        </div>
+        <div class="grupo">
+          <div class="etiqueta">Tiempo</div>
+          <div class="seg" role="radiogroup" aria-label="Tiempo">
+            <label><input type="radio" name="tiempo" value="libre" checked><span>Sin límite<small>piensa con calma</small></span></label>
+            <label><input type="radio" name="tiempo" value="crono"><span>Contrarreloj<small>20 s por ronda</small></span></label>
+          </div>
         </div>
         <div class="grupo">
           <div class="etiqueta">Jugadores</div>
@@ -319,6 +344,7 @@
         <div class="grande" id="final-puntaje">0 <small>de 1000</small></div>
         <div class="comentario" id="final-comentario"></div>
         <table id="final-tabla"></table>
+        <div class="leyenda" id="final-leyenda" hidden></div>
         <div class="bloque" id="bloque-ranking">
           <div class="titulo">Guardar en el ranking</div>
           <div class="campos">
@@ -330,10 +356,10 @@
         </div>
         <div class="bloque" id="bloque-reto">
           <div class="titulo" id="reto-titulo">Desafía a alguien</div>
-          <div class="explica">Comparte un enlace: la otra persona juega estas mismas 10 rondas y al final ve tu puntaje al lado del suyo.</div>
-          <div class="botones" style="margin-top:8px"><button class="btn sec" id="btn-reto" type="button">Crear enlace de reto</button></div>
+          <div class="explica" id="reto-explica"></div>
+          <div class="botones" style="margin-top:8px"><button class="btn sec" id="btn-reto" type="button">Compartir resultado</button></div>
           <div class="enlace-reto" id="enlace-reto" hidden>
-            <input class="campo" id="enlace-reto-texto" readonly aria-label="Enlace del reto">
+            <textarea class="campo" id="enlace-reto-texto" rows="5" readonly aria-label="Texto para compartir"></textarea>
             <button class="btn sec" id="btn-copiar-reto" type="button">Copiar</button>
           </div>
         </div>
@@ -345,10 +371,11 @@
     </div>
   </div>
 
-  <div class="pistas" id="pistas">
-    <button type="button" id="pista-alejar">Alejar la vista<span class="costo">−20</span></button>
-    <button type="button" id="pista-satelital">Ver imagen satelital<span class="costo">−30</span></button>
-    <button type="button" id="comodin" class="comodin">Comodín 50/50 <span id="comodin-quedan"></span><span class="costo">−40</span></button>
+  <div class="pistas" id="pistas" role="group" aria-labelledby="pistas-titulo">
+    <span class="pistas-titulo" id="pistas-titulo">PISTAS</span>
+    <button type="button" id="pista-alejar">Alejar la vista<span class="costo">−20 puntos</span></button>
+    <button type="button" id="pista-satelital">Ver imagen satelital<span class="costo">−30 puntos</span></button>
+    <button type="button" id="comodin" class="comodin">Comodín 50/50 <span id="comodin-quedan"></span><span class="costo">−40 puntos</span></button>
   </div>
 
   <div class="turno" id="turno" aria-live="polite"></div>
@@ -646,21 +673,65 @@ const $ = (id) => document.getElementById(id);
 let juego = null;
 const al = (lista) => lista[Math.floor(Math.random() * lista.length)];
 const COLORES = ['var(--j1)', 'var(--j2)'];
+const SEGUNDOS_RONDA = 20; // contrarreloj
+// Estado de la pantalla final (se declaran arriba porque un enlace de duelo la abre al cargar)
+let compartirActual = null; // { texto, url, partida }
+let accionOtra = null;
+let accionCambiar = null;
 
 function limpiarNombre(s) {
   return String(s || '').replace(/[\u0000-\u001f\u007f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 20);
 }
 function leerLS(clave, def) { try { const v = localStorage.getItem(clave); return v === null ? def : v; } catch (e) { return def; } }
 function escribirLS(clave, v) { try { localStorage.setItem(clave, v); } catch (e) {} }
+function formatoSeg(s) {
+  if (s === null || s === undefined || isNaN(s)) return '';
+  s = Math.round(Number(s) * 10) / 10;
+  if (s < 60) return s.toFixed(1).replace('.', ',') + ' s';
+  const m = Math.floor(s / 60);
+  return m + ' min ' + Math.round(s - m * 60) + ' s';
+}
 
-// ---- Modalidad (zona + dificultad, y en "Por regiones" cuáles) ----
+// ---- Pistas y comodines usados en cada ronda ----
+// Se guardan como una máscara: 1 = alejar, 2 = satelital, 4 = comodín 50/50.
+const PISTAS = [
+  { bit: 1, clave: 'alejar', simbolo: '🔍', nombre: 'alejar' },
+  { bit: 2, clave: 'satelital', simbolo: '🛰️', nombre: 'satelital' },
+  { bit: 4, clave: 'comodin', simbolo: '½', nombre: 'comodín 50/50' }
+];
+function mascaraPistas(set) { return PISTAS.reduce((m, p) => m | (set && set.has(p.clave) ? p.bit : 0), 0); }
+function simbolosPistas(m) { return PISTAS.filter((p) => m & p.bit).map((p) => p.simbolo).join(' '); }
+function resumenPistas(filas) {
+  const partes = PISTAS.map((p) => {
+    const n = filas.filter((x) => x.mask & p.bit).length;
+    return n ? p.simbolo + '×' + n : '';
+  }).filter(Boolean);
+  return partes.length ? partes.join(' ') : 'sin ayudas';
+}
+function resumenPistasTexto(filas) {
+  const partes = PISTAS.map((p) => {
+    const n = filas.filter((x) => x.mask & p.bit).length;
+    return n ? n + ' ' + p.nombre : '';
+  }).filter(Boolean);
+  return partes.length ? partes.join(', ') : 'sin pistas ni comodines';
+}
+// Un cuadrado por ronda, para compartir: acierto limpio, acierto con ayuda, error, sin tiempo
+function cuadro(x) {
+  if (x.pos === -1) return '⬛';
+  if (x.pts > 0) return x.mask ? '🟨' : '🟩';
+  return '🟥';
+}
+
+// ---- Modalidad (zona + dificultad, regiones elegidas y contrarreloj) ----
 function mascara(regiones) { return ORDEN_REGIONES.map((r) => (regiones.has(r) ? '1' : '0')).join(''); }
 function regionesDeMascara(m) { return new Set(ORDEN_REGIONES.filter((_, i) => m[i] === '1')); }
-function modalidadDe(zona, dif, regiones) { return zona + (zona === 'reg' ? '-' + mascara(regiones) : '') + '-' + dif; }
-function nombreModalidad(zona, dif, regiones) {
+function modalidadDe(zona, dif, regiones, crono) {
+  return zona + (zona === 'reg' ? '-' + mascara(regiones) : '') + '-' + dif + (crono ? '-crono' : '');
+}
+function nombreModalidad(zona, dif, regiones, crono) {
   let z = { gs: 'Gran Santiago', rm: 'Región Metropolitana', cl: 'Todo Chile' }[zona];
   if (!z) z = regiones.size === 1 ? nombreRegion([...regiones][0]) : regiones.size + ' regiones';
-  return z + ' · ' + (dif === 'dificil' ? 'Difícil' : 'Fácil');
+  return z + ' · ' + (dif === 'dificil' ? 'Difícil' : 'Fácil') + (crono ? ' · Contrarreloj' : '');
 }
 
 // ---- Ranking ----
@@ -670,7 +741,13 @@ const RANKING_URL = 'https://fabianalvaradodavid--b737b1b8c73c11f1b7b91607ee4eb7
 const RANKING_TOP = 10;
 
 function normalizarFila(f) {
-  return { id: f.id, nombre: String(f.nombre || ''), puntaje: Number(f.puntaje) || 0, aciertos: Number(f.aciertos) || 0, fecha: String(f.fecha || f.creado || '') };
+  const seg = f.segundos === null || f.segundos === undefined || f.segundos === '' ? null : Number(f.segundos);
+  return { id: f.id, nombre: String(f.nombre || ''), puntaje: Number(f.puntaje) || 0, aciertos: Number(f.aciertos) || 0, segundos: seg, fecha: String(f.fecha || f.creado || '') };
+}
+function ordenRanking(a, b) {
+  const sa = a.segundos === null ? Infinity : a.segundos;
+  const sb = b.segundos === null ? Infinity : b.segundos;
+  return b.puntaje - a.puntaje || sa - sb || a.fecha.localeCompare(b.fecha);
 }
 function rankingLocal(mod) {
   try { return JSON.parse(leerLS('dqelc-juego-ranking-' + mod, '[]')).map(normalizarFila); } catch (e) { return []; }
@@ -678,7 +755,7 @@ function rankingLocal(mod) {
 function guardarLocal(mod, entrada) {
   const lista = rankingLocal(mod);
   lista.push(entrada);
-  lista.sort((a, b) => b.puntaje - a.puntaje || a.fecha.localeCompare(b.fecha));
+  lista.sort(ordenRanking);
   const top = lista.slice(0, RANKING_TOP);
   escribirLS('dqelc-juego-ranking-' + mod, JSON.stringify(top));
   const pos = top.findIndex((f) => f.id === entrada.id);
@@ -695,15 +772,15 @@ async function leerRanking(mod) {
     return { lista: rankingLocal(mod), global: false, error: true };
   }
 }
-async function registrarPuntaje(mod, nombre, puntaje, aciertos) {
-  const entrada = { id: 'l' + Date.now(), nombre, puntaje, aciertos, fecha: new Date().toISOString() };
+async function registrarPuntaje(mod, nombre, puntaje, aciertos, segundos) {
+  const entrada = { id: 'l' + Date.now(), nombre, puntaje, aciertos, segundos, fecha: new Date().toISOString() };
   const local = guardarLocal(mod, entrada);
   if (!RANKING_URL) return { ...local, global: false };
   try {
     const r = await fetch(RANKING_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Proxy-Token': PROXY_TOKEN },
-      body: JSON.stringify({ modalidad: mod, nombre, puntaje, aciertos })
+      body: JSON.stringify({ modalidad: mod, nombre, puntaje, aciertos, segundos })
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
@@ -719,6 +796,7 @@ function formatoFecha(f) {
 function pintarRanking(cont, lista, opciones) {
   const o = opciones || {};
   cont.innerHTML = '';
+  const conTiempo = lista.some((f) => f.segundos !== null);
   if (!lista.length) {
     const p = document.createElement('div');
     p.className = 'origen';
@@ -732,23 +810,28 @@ function pintarRanking(cont, lista, opciones) {
       const c1 = document.createElement('td'); c1.className = 'pos'; c1.textContent = (k + 1) + '.';
       const c2 = document.createElement('td'); c2.textContent = f.nombre;
       const c3 = document.createElement('td'); c3.className = 'pts'; c3.textContent = f.puntaje;
+      tr.append(c1, c2, c3);
+      if (conTiempo) { const ct = document.createElement('td'); ct.className = 'fecha'; ct.textContent = formatoSeg(f.segundos); tr.appendChild(ct); }
       const c4 = document.createElement('td'); c4.className = 'fecha'; c4.textContent = formatoFecha(f.fecha);
-      tr.append(c1, c2, c3, c4);
+      tr.appendChild(c4);
       tabla.appendChild(tr);
     });
     cont.appendChild(tabla);
   }
   const origen = document.createElement('div');
   origen.className = 'origen';
-  origen.textContent = o.global ? 'Ranking compartido entre todos los jugadores.'
-    : (o.error ? 'No se pudo conectar con el ranking compartido; se muestra el de este navegador.' : 'Ranking guardado en este navegador.');
+  origen.textContent = (o.global ? 'Ranking compartido entre todos los jugadores.'
+    : (o.error ? 'No se pudo conectar con el ranking compartido; se muestra el de este navegador.' : 'Ranking guardado en este navegador.'))
+    + (conTiempo ? ' En contrarreloj, a igual puntaje gana quien tardó menos.' : '');
   cont.appendChild(origen);
 }
 
-// ---- Retos por enlace ----
-// El enlace lleva las 10 rondas exactas (comuna, punto y alternativas), el nombre y
-// el puntaje de quien desafía. Los índices dependen de los datos de esta versión.
-const VERSION_RETO = 1;
+// ---- Partidas en enlaces (retos y duelos) ----
+// El enlace lleva las 10 rondas exactas (comuna, punto y alternativas) y, por cada
+// jugador, lo que hizo en cada ronda: puntos, pistas usadas, alternativa elegida y
+// segundos. "reto" = un jugador (para jugarle encima); "duelo" = dos (para mirar).
+// Los índices dependen de los datos de esta versión del juego.
+const VERSION_PARTIDA = 2;
 function aBase64Url(texto) {
   const bytes = new TextEncoder().encode(texto);
   let bin = '';
@@ -759,48 +842,91 @@ function deBase64Url(s) {
   const b = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
   return new TextDecoder().decode(Uint8Array.from(b, (c) => c.charCodeAt(0)));
 }
-function codificarReto(j, nombre) {
-  const datos = {
-    v: VERSION_RETO, z: j.zona, d: j.dificultad, n: nombre || 'Alguien',
-    s: j.puntaje, a: j.rondas.filter((r) => r.elegida === r.idx).length,
-    r: j.rondas.map((r) => [r.idx, r.pIdx].concat(r.opciones, [r.puntos]))
+function resumenJugador(nombre, x) {
+  const seg = x.every((f) => f.seg === null || f.seg === undefined) ? null : x.reduce((a, f) => a + (Number(f.seg) || 0), 0);
+  return {
+    nombre, x,
+    puntaje: x.reduce((a, f) => a + (Number(f.pts) || 0), 0),
+    aciertos: x.filter((f) => f.pts > 0).length,
+    segundos: seg === null ? null : Math.round(seg * 10) / 10
   };
-  if (j.zona === 'reg') datos.g = mascara(j.regiones);
-  return aBase64Url(JSON.stringify(datos));
 }
-function decodificarReto(codigo) {
+function codificarPartida(p) {
+  const d = {
+    v: VERSION_PARTIDA, z: p.zona, d: p.dificultad, c: p.crono ? 1 : 0,
+    r: p.plan.map((q) => [q.idx, q.pIdx].concat(q.opciones)),
+    j: p.jugadores.map((jg) => ({ n: jg.nombre, x: jg.x.map((f) => [f.pts, f.mask, f.pos, f.seg === null || f.seg === undefined ? null : Math.round(f.seg * 10) / 10]) }))
+  };
+  if (p.zona === 'reg') d.g = mascara(p.regiones);
+  return aBase64Url(JSON.stringify(d));
+}
+function decodificarPartida(codigo) {
   try {
     const d = JSON.parse(deBase64Url(codigo));
-    if (d.v !== VERSION_RETO || !Array.isArray(d.r) || d.r.length !== N_RONDAS) return null;
+    if (!d || !Array.isArray(d.r) || d.r.length !== N_RONDAS) return null;
     if (!['gs', 'rm', 'cl', 'reg'].includes(d.z) || !['facil', 'dificil'].includes(d.d)) return null;
-    const ok = d.r.every((x) => Array.isArray(x) && x.length === 7 &&
-      COMUNAS[x[0]] && COMUNAS[x[0]].p && x[1] >= 0 && x[1] < COMUNAS[x[0]].p.length &&
-      x.slice(2, 6).every((o) => COMUNAS[o]) && x.slice(2, 6).includes(x[0]));
-    if (!ok) return null;
+    let plan, jugadores;
+    const valida = (idx, pIdx, ops) => COMUNAS[idx] && COMUNAS[idx].p && pIdx >= 0 && pIdx < COMUNAS[idx].p.length &&
+      ops.length === 4 && ops.every((o) => COMUNAS[o]) && ops.includes(idx);
+    if (d.v === 1) {
+      // Retos de la versión anterior: sin pistas, sin elección ni tiempo
+      if (!d.r.every((x) => Array.isArray(x) && x.length === 7 && valida(x[0], x[1], x.slice(2, 6)))) return null;
+      plan = d.r.map((x) => ({ idx: x[0], pIdx: x[1], opciones: x.slice(2, 6) }));
+      jugadores = [resumenJugador(limpiarNombre(d.n) || 'Alguien', d.r.map((x) => ({ pts: Number(x[6]) || 0, mask: 0, pos: null, seg: null })))];
+    } else if (d.v === VERSION_PARTIDA) {
+      if (!d.r.every((x) => Array.isArray(x) && x.length === 6 && valida(x[0], x[1], x.slice(2, 6)))) return null;
+      if (!Array.isArray(d.j) || !d.j.length || d.j.length > 2) return null;
+      plan = d.r.map((x) => ({ idx: x[0], pIdx: x[1], opciones: x.slice(2, 6) }));
+      jugadores = d.j.map((jg) => {
+        if (!Array.isArray(jg.x) || jg.x.length !== N_RONDAS) throw new Error('jugador');
+        return resumenJugador(limpiarNombre(jg.n) || 'Alguien', jg.x.map((f) => ({
+          pts: Math.max(0, Math.min(100, Number(f[0]) || 0)), mask: (Number(f[1]) || 0) & 7,
+          pos: f[2] === null || f[2] === undefined ? null : Number(f[2]), seg: f[3] === null || f[3] === undefined ? null : Number(f[3])
+        })));
+      });
+    } else return null;
     return {
-      zona: d.z, dificultad: d.d, regiones: d.z === 'reg' ? regionesDeMascara(String(d.g || '')) : new Set(ORDEN_REGIONES),
-      nombre: limpiarNombre(d.n) || 'Alguien', puntaje: Number(d.s) || 0, aciertos: Number(d.a) || 0,
-      plan: d.r.map((x) => ({ idx: x[0], pIdx: x[1], opciones: x.slice(2, 6), puntos: Number(x[6]) || 0 }))
+      zona: d.z, dificultad: d.d, crono: !!d.c,
+      regiones: d.z === 'reg' ? regionesDeMascara(String(d.g || '')) : new Set(ORDEN_REGIONES),
+      plan, jugadores
     };
   } catch (e) { return null; }
 }
 function urlBase() { return location.href.split('#')[0].split('?')[0]; }
 
+// Lo que hizo cada jugador del juego en curso, en el formato de los enlaces
+function filasJugador(j, k) {
+  return j.rondas.map((r) => {
+    if (j.modo === 'dos') return { pts: r.puntosJ[k], mask: 0, pos: r.resp[k] === null ? -1 : r.opciones.indexOf(r.resp[k]), seg: r.seg ? r.seg[k] : null };
+    return { pts: r.puntos, mask: mascaraPistas(r.pistas), pos: r.elegida === null ? -1 : r.opciones.indexOf(r.elegida), seg: j.crono ? r.segundos : null };
+  });
+}
+function partidaDeJuego(j, nombreYo) {
+  const plan = j.rondas.map((r) => ({ idx: r.idx, pIdx: r.pIdx, opciones: r.opciones }));
+  let jugadores;
+  if (j.modo === 'dos') jugadores = j.jug.map((p, k) => resumenJugador(p.nombre, filasJugador(j, k)));
+  else {
+    const yo = resumenJugador(nombreYo || 'Alguien', filasJugador(j, 0));
+    jugadores = j.reto ? [j.reto, yo] : [yo];
+  }
+  return { zona: j.zona, dificultad: j.dificultad, regiones: j.regiones, crono: j.crono, plan, jugadores };
+}
+
 // ---- Portada ----
 let retoPendiente = null;
-let regionesListas = false;
 
 function opcionesPortada() {
   return {
     zona: document.querySelector('input[name="zona"]:checked').value,
     dificultad: document.querySelector('input[name="dificultad"]:checked').value,
     regiones: new Set(regionesElegidas),
+    crono: document.querySelector('input[name="tiempo"]:checked').value === 'crono',
     jugadores: Number(document.querySelector('input[name="jugadores"]:checked').value)
   };
 }
 let temporizadorRanking = null;
 function actualizarRecord() {
-  const { zona, dificultad, regiones, jugadores } = opcionesPortada();
+  const { zona, dificultad, regiones, crono, jugadores } = opcionesPortada();
   $('grupo-regiones').hidden = zona !== 'reg';
   $('grupo-nombres').hidden = jugadores !== 2;
   const n = COMUNAS.filter((_, j) => enZona(j, zona, regiones)).length;
@@ -809,18 +935,19 @@ function actualizarRecord() {
   $('btn-empezar').disabled = faltan;
   const cr = document.querySelector('[data-cuenta="reg"]');
   if (cr) cr.textContent = regiones.size === ORDEN_REGIONES.length ? 'elige cuáles' : regiones.size + ' de 16';
-  $('ranking-portada-titulo').textContent = 'Ranking: ' + nombreModalidad(zona, dificultad, regiones);
+  $('ranking-portada-titulo').textContent = 'Ranking: ' + nombreModalidad(zona, dificultad, regiones, crono);
   $('record').textContent = '';
   if (faltan) { $('ranking-portada').hidden = true; return; }
   $('ranking-portada').hidden = false;
-  const mod = modalidadDe(zona, dificultad, regiones);
+  const mod = modalidadDe(zona, dificultad, regiones, crono);
   const mejor = rankingLocal(mod)[0];
-  if (mejor) $('record').textContent = 'Mejor puntaje en este navegador: ' + mejor.puntaje + ' de ' + (N_RONDAS * 100) + ' (' + mejor.nombre + ').';
+  if (mejor) $('record').textContent = 'Mejor puntaje en este navegador: ' + mejor.puntaje + ' de ' + (N_RONDAS * 100) + (mejor.segundos !== null ? ' en ' + formatoSeg(mejor.segundos) : '') + ' (' + mejor.nombre + ').';
   if ($('ranking-portada').open) {
     clearTimeout(temporizadorRanking);
     temporizadorRanking = setTimeout(async () => {
       const r = await leerRanking(mod);
-      if (modalidadDe(...Object.values(opcionesPortada()).slice(0, 3)) !== mod) return;
+      const o = opcionesPortada();
+      if (modalidadDe(o.zona, o.dificultad, o.regiones, o.crono) !== mod) return;
       pintarRanking($('ranking-portada-lista'), r.lista, r);
     }, 250);
   }
@@ -871,6 +998,7 @@ actualizarRecord();
 
 function mostrarPortada() {
   if (juego) juego.cancelado = true;
+  detenerReloj();
   $('final').classList.add('oculta');
   $('estado').style.display = 'none';
   $('turno').style.display = 'none';
@@ -882,31 +1010,46 @@ function mostrarPortada() {
   actualizarRecord();
 }
 
-// Al abrir un enlace de reto
-(function revisarReto() {
-  const codigo = new URLSearchParams(location.search).get('reto');
-  if (!codigo) return;
-  const reto = decodificarReto(codigo);
-  if (!reto) {
-    $('aviso-portada').textContent = 'Ese enlace de reto no es válido o es de otra versión del juego. Puedes jugar normal.';
+// Al abrir un enlace de reto o de duelo (se ejecuta al final del script, cuando todo está definido)
+function revisarEnlace() {
+  const params = new URLSearchParams(location.search);
+  const codigoDuelo = params.get('duelo');
+  const codigoReto = params.get('reto');
+  if (!codigoDuelo && !codigoReto) return;
+  const partida = decodificarPartida(codigoDuelo || codigoReto);
+  if (!partida) {
+    $('aviso-portada').textContent = 'Ese enlace no es válido o es de otra versión del juego. Puedes jugar normal.';
+    history.replaceState(null, '', urlBase());
     return;
   }
-  retoPendiente = reto;
+  if (codigoDuelo && partida.jugadores.length === 2) { verDuelo(partida); return; }
+  prepararReto(partida);
+}
+
+function prepararReto(partida) {
+  const rival = partida.jugadores[0];
+  retoPendiente = { ...partida, rival };
   const t = $('reto-texto');
   t.textContent = '';
   const fuerte = (x) => { const s = document.createElement('strong'); s.textContent = x; return s; };
-  t.append(fuerte(reto.nombre), ' te desafía: hizo ', fuerte(reto.puntaje + ' puntos'), ' (' + reto.aciertos + ' de ' + N_RONDAS + ' aciertos) en ',
-    fuerte(nombreModalidad(reto.zona, reto.dificultad, reto.regiones)), '. Juega las mismas 10 rondas y compara. ¿Le ganas?');
+  t.append(fuerte(rival.nombre), ' te desafía: hizo ', fuerte(rival.puntaje + ' puntos'),
+    ' (' + rival.aciertos + ' de ' + N_RONDAS + ' aciertos' + (rival.segundos !== null && partida.crono ? ', en ' + formatoSeg(rival.segundos) : '') + ') en ',
+    fuerte(nombreModalidad(partida.zona, partida.dificultad, partida.regiones, partida.crono)),
+    '. ' + (rival.x.every((f) => f.pos === null) ? '' : (rival.x.some((f) => f.mask) ? 'Usó ' + resumenPistasTexto(rival.x) + '. ' : 'No usó pistas ni comodines. ')) +
+    'Juega las mismas 10 rondas y compara. ¿Le ganas?');
+  $('final').classList.add('oculta');
+  $('portada').classList.remove('oculta');
+  $('marco').classList.add('con-portada');
   $('caja-reto').hidden = false;
   $('caja-normal').hidden = true;
-})();
+}
 $('btn-aceptar-reto').addEventListener('click', () => {
   const r = retoPendiente;
   const nombre = limpiarNombre($('reto-nombre').value);
   if (nombre) { escribirLS('dqelc-juego-nombre', nombre); $('final-nombre').value = nombre; }
   retoPendiente = null;
   history.replaceState(null, '', urlBase());
-  empezar({ zona: r.zona, dificultad: r.dificultad, regiones: r.regiones, jugadores: 1, plan: r.plan, reto: r });
+  empezar({ zona: r.zona, dificultad: r.dificultad, regiones: r.regiones, crono: r.crono, jugadores: 1, plan: r.plan, reto: r.rival });
 });
 $('btn-ignorar-reto').addEventListener('click', () => {
   retoPendiente = null;
@@ -942,6 +1085,46 @@ function errorCarga(err) {
   $('cargando').append(t, b);
 }
 
+// ---- Reloj (contrarreloj) ----
+let reloj = null;
+function iniciarReloj(alAgotar) {
+  detenerReloj();
+  const r = { t0: performance.now(), alAgotar, id: 0 };
+  reloj = r;
+  $('reloj').hidden = false;
+  const tick = () => {
+    if (reloj !== r) return;
+    const quedan = Math.max(0, SEGUNDOS_RONDA - (performance.now() - r.t0) / 1000);
+    $('reloj-barra').style.width = (quedan / SEGUNDOS_RONDA * 100) + '%';
+    $('reloj-texto').textContent = Math.ceil(quedan) + ' s';
+    $('reloj').classList.toggle('apurado', quedan <= 5);
+    if (quedan <= 0) { reloj = null; alAgotar(SEGUNDOS_RONDA); return; }
+    r.id = requestAnimationFrame(tick);
+  };
+  // Además del cuadro a cuadro, un respaldo por si la pestaña queda en segundo plano
+  r.respaldo = setTimeout(() => { if (reloj === r) tick(); }, SEGUNDOS_RONDA * 1000 + 50);
+  tick();
+}
+function detenerReloj() {
+  if (!reloj) return null;
+  cancelAnimationFrame(reloj.id);
+  clearTimeout(reloj.respaldo);
+  const s = Math.min(SEGUNDOS_RONDA, (performance.now() - reloj.t0) / 1000);
+  reloj = null;
+  return Math.round(s * 10) / 10;
+}
+function ocultarReloj() { detenerReloj(); $('reloj').hidden = true; }
+// Espera a que el plano se dibuje (o 3 s como máximo) antes de largar el reloj
+function esperarPlano() {
+  const cargas = capasRonda.map((c) => new Promise((res) => c.once('load', res)));
+  return Promise.race([Promise.all(cargas), new Promise((res) => setTimeout(res, 3000))]);
+}
+function largarReloj(ronda) {
+  if (!juego.crono || ronda.respondida) return;
+  iniciarReloj(() => responder(null, true));
+  [...$('opciones').children].forEach((b) => { if (!b.classList.contains('descartada')) b.disabled = false; });
+}
+
 // ---- Marcador ----
 function pintarMarcador() {
   const m = $('marcador');
@@ -965,9 +1148,10 @@ function pintarMarcador() {
 
 function empezar(opts) {
   if (juego) juego.cancelado = true;
+  ocultarReloj();
   const modo = opts.reto ? 'reto' : (opts.jugadores === 2 ? 'dos' : 'solo');
   juego = {
-    zona: opts.zona, dificultad: opts.dificultad, regiones: new Set(opts.regiones || ORDEN_REGIONES),
+    zona: opts.zona, dificultad: opts.dificultad, regiones: new Set(opts.regiones || ORDEN_REGIONES), crono: !!opts.crono,
     modo, plan: opts.plan || null, reto: opts.reto || null,
     usadas: new Set(), rondas: [], i: -1, puntaje: 0, cancelado: false, comodines: COMODINES_POR_PARTIDA
   };
@@ -1003,7 +1187,7 @@ function pintarTurno(ronda) {
   if (ronda.turno === 1) {
     const otro = juego.jug[ronda.orden[0]];
     const sub = document.createElement('span'); sub.className = 'sub';
-    sub.textContent = otro.nombre + ' ya eligió. ' + al(['Nada de mirar.', 'Sin soplar.', 'Ojos en el plano, no en el vecino.', 'Que no se note la cara de póker.']);
+    sub.textContent = otro.nombre + (ronda.resp[ronda.orden[0]] === null ? ' se quedó sin tiempo. ' : ' ya eligió. ') + al(['Nada de mirar.', 'Sin soplar.', 'Ojos en el plano, no en el vecino.', 'Que no se note la cara de póker.']);
     el.appendChild(sub);
   }
   el.style.display = 'flex';
@@ -1015,6 +1199,7 @@ async function mostrarSiguiente() {
   $('opciones').style.display = 'none';
   $('pistas').style.display = 'none';
   $('turno').style.display = 'none';
+  ocultarReloj();
   cargando(true);
   let ronda;
   try { ronda = await j.siguiente; } catch (e) { if (j === juego) errorCarga(e); return; }
@@ -1024,6 +1209,7 @@ async function mostrarSiguiente() {
   ronda.pistas = new Set();
   if (j.modo === 'dos') {
     ronda.resp = [null, null];
+    ronda.seg = [null, null];
     ronda.orden = j.i % 2 === 0 ? [0, 1] : [1, 0]; // parte un jugador distinto cada ronda
     ronda.turno = 0;
   }
@@ -1043,6 +1229,15 @@ async function mostrarSiguiente() {
   }
   pintarOpciones(ronda);
   pintarTurno(ronda);
+  if (j.crono) {
+    // Las alternativas se habilitan cuando el plano está a la vista y parte el reloj
+    [...$('opciones').children].forEach((b) => { b.disabled = true; });
+    $('reloj').hidden = false;
+    $('reloj-barra').style.width = '100%';
+    $('reloj-texto').textContent = SEGUNDOS_RONDA + ' s';
+    $('reloj').classList.remove('apurado');
+    esperarPlano().then(() => { if (juego === j && j.rondas[j.i] === ronda) largarReloj(ronda); });
+  }
 }
 
 function pintarOpciones(ronda) {
@@ -1104,23 +1299,32 @@ $('pista-satelital').addEventListener('click', () => usarPista('satelital'));
 
 const FRASES_ACIERTO = ['¡La clavaste!', '¡Bien ahí!', '¡Exacto!', '¡Ojo de tasador!', '¡Correctísimo!', '¡Eso!', '¡Te la sabías!'];
 const FRASES_ERROR = ['Nop.', 'Frío, frío.', 'Casi, pero no.', 'Uy.', 'Te fuiste a otra comuna.', 'Mmm, no.', 'Te pilló la manzana.'];
+const FRASES_TIEMPO = ['¡Se acabó el tiempo!', 'Tic, tac… ¡tiempo!', 'El reloj no perdona.', 'Más lento que trámite en la DOM.', 'Más lento que permiso del CMN.'];
 
-function responder(idx) {
+// idx = comuna elegida; null con porTiempo = se acabó el reloj
+function responder(idx, porTiempo) {
   const ronda = juego && juego.rondas[juego.i];
   if (!ronda || ronda.respondida) return;
-  if (ronda.descartadas && ronda.descartadas.has(idx)) return;
+  if (idx !== null && ronda.descartadas && ronda.descartadas.has(idx)) return;
+  if (juego.crono && !porTiempo && !reloj) return; // el reloj aún no parte
+  const seg = juego.crono ? (porTiempo ? SEGUNDOS_RONDA : detenerReloj()) : null;
   if (juego.modo === 'dos') {
-    ronda.resp[ronda.orden[ronda.turno]] = idx;
+    const jugador = ronda.orden[ronda.turno];
+    ronda.resp[jugador] = idx;
+    ronda.seg[jugador] = seg;
     ronda.turno += 1;
     if (ronda.turno < 2) {
       // Pasa al otro jugador sin mostrar lo que eligió el primero
-      pintarTurno(ronda);
       if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      pintarTurno(ronda);
+      if (juego.crono) largarReloj(ronda);
       return;
     }
   }
+  ocultarReloj();
   ronda.respondida = true;
   ronda.elegida = juego.modo === 'dos' ? null : idx;
+  ronda.segundos = juego.modo === 'dos' ? null : seg;
   const c = COMUNAS[ronda.idx];
   const marca = $('marcas').children[juego.i];
   marca.classList.remove('actual');
@@ -1145,10 +1349,12 @@ function responder(idx) {
     ronda.puntos = pts;
     juego.puntaje += pts;
     marca.classList.add(bien ? 'bien' : 'mal');
-    titular = bien ? al(FRASES_ACIERTO) + ' ' + c.n + ' (+' + pts + ')' : al(FRASES_ERROR) + ' Era ' + c.n + '.';
+    if (porTiempo) titular = al(FRASES_TIEMPO) + ' Era ' + c.n + '.';
+    else titular = bien ? al(FRASES_ACIERTO) + ' ' + c.n + ' (+' + pts + (juego.crono ? ', en ' + formatoSeg(seg) : '') + ')' : al(FRASES_ERROR) + ' Era ' + c.n + '.';
     if (juego.reto) {
-      const suyo = juego.plan[juego.i].puntos;
-      titular += ' ' + juego.reto.nombre + ': ' + (suyo ? '+' + suyo : 'falló') + '.';
+      const suyo = juego.reto.x[juego.i];
+      const ayudas = simbolosPistas(suyo.mask);
+      titular += ' ' + juego.reto.nombre + ': ' + (suyo.pos === -1 ? 'sin tiempo' : (suyo.pts ? '+' + suyo.pts : 'falló')) + (ayudas ? ' ' + ayudas : '') + '.';
     }
   }
   pintarMarcador();
@@ -1252,77 +1458,153 @@ function comentarioDuelo(ganador, perdedor, dif) {
     perdedor + ' dice que el mapa estaba al revés.'
   ]);
 }
+// Quién gana entre dos resúmenes de jugador (a igual puntaje, en contrarreloj, el más rápido)
+function compararJugadores(a, b, crono) {
+  if (a.puntaje !== b.puntaje) return a.puntaje > b.puntaje ? 0 : 1;
+  if (crono && a.segundos !== null && b.segundos !== null && a.segundos !== b.segundos) return a.segundos < b.segundos ? 0 : 1;
+  return -1;
+}
 
+// ---- Pantalla final ----
 function celda(texto, clase) { const td = document.createElement('td'); td.textContent = texto; if (clase) td.className = clase; return td; }
+function celdaJugador(x, plan, crono) {
+  const td = document.createElement('td');
+  td.className = 'jug ' + (x.pts > 0 ? 'ok' : 'no');
+  let t;
+  if (x.pos === -1) t = '⏱ sin tiempo';
+  else if (x.pts > 0) t = '✓ ' + x.pts;
+  else if (x.pos !== null && x.pos !== undefined && plan) t = '✗ ' + COMUNAS[plan.opciones[x.pos]].n;
+  else t = '✗';
+  td.textContent = t;
+  const extra = [simbolosPistas(x.mask), crono && x.seg !== null && x.pos !== -1 ? formatoSeg(x.seg) : ''].filter(Boolean).join(' ');
+  if (extra) { const s = document.createElement('span'); s.className = 'ayudas'; s.textContent = ' ' + extra; td.appendChild(s); }
+  return td;
+}
+const LEYENDA = '🔍 alejó la vista · 🛰️ vio la imagen satelital · ½ usó el comodín 50/50 · ⏱ se le acabó el tiempo';
+
+// Tabla de varios jugadores (duelo, reto o 2 jugadores)
+function pintarTablaDuelo(plan, jugadores, crono) {
+  const tabla = $('final-tabla');
+  tabla.innerHTML = '';
+  const th = document.createElement('tr');
+  ['', 'Comuna'].concat(jugadores.map((p) => p.nombre)).forEach((x) => { const c = document.createElement('th'); c.textContent = x; th.appendChild(c); });
+  tabla.appendChild(th);
+  plan.forEach((q, k) => {
+    const tr = document.createElement('tr');
+    tr.append(celda((k + 1) + '.'), celda(COMUNAS[q.idx].n));
+    jugadores.forEach((p) => tr.appendChild(celdaJugador(p.x[k], q, crono)));
+    tabla.appendChild(tr);
+  });
+  const tr = document.createElement('tr');
+  tr.className = 'totales';
+  tr.append(celda(''), celda('Total'));
+  jugadores.forEach((p) => tr.appendChild(celda(p.puntaje + (crono && p.segundos !== null ? ' · ' + formatoSeg(p.segundos) : ''), 'jug')));
+  tabla.appendChild(tr);
+  const tr2 = document.createElement('tr');
+  tr2.className = 'totales';
+  tr2.append(celda(''), celda('Ayudas'));
+  jugadores.forEach((p) => tr2.appendChild(celda(resumenPistas(p.x), 'jug')));
+  tabla.appendChild(tr2);
+  $('final-leyenda').textContent = LEYENDA;
+  $('final-leyenda').hidden = false;
+}
+
+// Texto para compartir: un cuadrado por ronda y el detalle de ayudas
+function textoCompartir(partida) {
+  const lineas = ['¿De qué comuna es? · ' + nombreModalidad(partida.zona, partida.dificultad, partida.regiones, partida.crono)];
+  const js = partida.jugadores;
+  if (js.length === 2) {
+    lineas.push(js[0].nombre + ' ' + js[0].puntaje + ' – ' + js[1].puntaje + ' ' + js[1].nombre);
+  } else {
+    lineas.push(js[0].nombre + ': ' + js[0].puntaje + ' de ' + (N_RONDAS * 100) + (partida.crono && js[0].segundos !== null ? ' en ' + formatoSeg(js[0].segundos) : ''));
+  }
+  js.forEach((p) => {
+    lineas.push((js.length === 2 ? p.nombre + ' ' : '') + p.x.map(cuadro).join('') + (partida.crono && p.segundos !== null && js.length === 2 ? ' ' + formatoSeg(p.segundos) : ''));
+  });
+  lineas.push('Ayudas: ' + js.map((p) => (js.length === 2 ? p.nombre + ' ' : '') + resumenPistas(p.x)).join(' · '));
+  return lineas.join('\n');
+}
+function enlaceCompartir(partida) {
+  const param = partida.jugadores.length === 2 ? 'duelo' : 'reto';
+  return urlBase() + '?' + param + '=' + codificarPartida(partida);
+}
+function prepararCompartir(partida, titulo, explica, etiqueta) {
+  compartirActual = { texto: textoCompartir(partida), url: enlaceCompartir(partida), partida };
+  $('reto-titulo').textContent = titulo;
+  $('reto-explica').textContent = explica;
+  $('btn-reto').textContent = etiqueta;
+  $('enlace-reto').hidden = true;
+  $('bloque-reto').hidden = false;
+}
 
 function terminar() {
   const j = juego;
   const max = N_RONDAS * 100;
+  ocultarReloj();
   const tabla = $('final-tabla');
   tabla.innerHTML = '';
   $('estado-guardar').textContent = '';
   $('final-ranking').innerHTML = '';
   $('btn-guardar').disabled = false;
-  $('enlace-reto').hidden = true;
+  $('final-leyenda').hidden = true;
   const grande = $('final-puntaje');
   grande.innerHTML = '';
+  accionOtra = () => empezar({ zona: j.zona, dificultad: j.dificultad, regiones: j.regiones, crono: j.crono, jugadores: j.modo === 'dos' ? 2 : 1 });
+  accionCambiar = mostrarPortada;
+  $('btn-cambiar').textContent = 'Cambiar zona';
 
   if (j.modo === 'dos') {
-    const [a, b] = j.jug;
-    const dif = Math.abs(a.puntaje - b.puntaje);
-    const gan = a.puntaje >= b.puntaje ? a : b;
-    const per = gan === a ? b : a;
-    grande.append(dif === 0 ? 'Empate ' : 'Gana ' + gan.nombre + ' ');
+    const partida = partidaDeJuego(j);
+    const [a, b] = partida.jugadores;
+    const g = compararJugadores(a, b, j.crono);
+    const gan = g === 1 ? b : a, per = g === 1 ? a : b;
+    grande.append(g === -1 ? 'Empate ' : 'Gana ' + gan.nombre + ' ');
     const s = document.createElement('small'); s.textContent = a.puntaje + ' a ' + b.puntaje; grande.appendChild(s);
-    $('final-comentario').textContent = comentarioDuelo(gan.nombre, per.nombre, dif);
-    const th = document.createElement('tr');
-    ['', 'Comuna', a.nombre, b.nombre].forEach((x) => { const c = document.createElement('th'); c.textContent = x; th.appendChild(c); });
-    tabla.appendChild(th);
-    j.rondas.forEach((r, k) => {
-      const tr = document.createElement('tr');
-      tr.append(celda((k + 1) + '.'), celda(COMUNAS[r.idx].n),
-        celda(r.puntosJ[0] ? '✓ 100' : '✗ ' + COMUNAS[r.resp[0]].n, 'jug ' + (r.puntosJ[0] ? 'ok' : 'no')),
-        celda(r.puntosJ[1] ? '✓ 100' : '✗ ' + COMUNAS[r.resp[1]].n, 'jug ' + (r.puntosJ[1] ? 'ok' : 'no')));
-      tabla.appendChild(tr);
-    });
+    $('final-comentario').textContent = (g !== -1 && a.puntaje === b.puntaje ? 'Empate en puntos; gana por ser más rápido. ' : '') + comentarioDuelo(gan.nombre, per.nombre, g === -1 ? 0 : Math.abs(a.puntaje - b.puntaje));
+    pintarTablaDuelo(partida.plan, partida.jugadores, j.crono);
     $('bloque-ranking').hidden = true;
-    $('bloque-reto').hidden = true;
+    prepararCompartir(partida, 'Compartir el resultado', 'Manda el marcador con un enlace para ver el duelo ronda por ronda.', 'Compartir resultado');
     $('btn-otra').textContent = 'Revancha';
   } else {
+    const nombreYo = limpiarNombre($('final-nombre').value) || leerLS('dqelc-juego-nombre', '') || (j.reto ? 'Tú' : 'Alguien');
+    const partida = partidaDeJuego(j, nombreYo);
+    const yo = partida.jugadores[partida.jugadores.length - 1];
+    j.aciertos = yo.aciertos;
+    j.segundosTotal = yo.segundos;
     grande.append(String(j.puntaje) + ' ');
-    const s = document.createElement('small'); s.textContent = 'de ' + max; grande.appendChild(s);
-    const aciertos = j.rondas.filter((r) => r.elegida === r.idx).length;
-    j.aciertos = aciertos;
-    let comentario = aciertos + ' de ' + N_RONDAS + ' aciertos. ';
+    const s = document.createElement('small'); s.textContent = 'de ' + max + (j.crono && yo.segundos !== null ? ' · ' + formatoSeg(yo.segundos) : ''); grande.appendChild(s);
+    let comentario = yo.aciertos + ' de ' + N_RONDAS + ' aciertos, ' + resumenPistasTexto(yo.x) + '. ';
     if (j.reto) {
-      const otro = j.reto.nombre, dif = Math.abs(j.puntaje - j.reto.puntaje);
-      if (dif === 0) comentario += 'Empate con ' + otro + '. ' + al(['Ni el SII podría desempatar esto.', 'Se reparten la propiedad en copropiedad.']);
-      else if (j.puntaje > j.reto.puntaje) comentario += 'Le ganaste a ' + otro + ' por ' + dif + '. ' + al(['Devuélvele el reto para que sufra.', 'Mándale el resultado, con cariño.', otro + ' va a pedir recuento.']);
-      else comentario += otro + ' te ganó por ' + dif + '. ' + al(['Pide la revancha… o un mapa.', 'Devuélvele el reto y cobra venganza.', 'Las manzanas estaban de su lado.']);
-      const th = document.createElement('tr');
-      ['', 'Comuna', 'Tú', otro].forEach((x) => { const c = document.createElement('th'); c.textContent = x; th.appendChild(c); });
-      tabla.appendChild(th);
+      const otro = j.reto.nombre;
+      const g = compararJugadores(yo, j.reto, j.crono);
+      const dif = Math.abs(j.puntaje - j.reto.puntaje);
+      if (g === -1) comentario += 'Empate con ' + otro + '. ' + al(['Ni el SII podría desempatar esto.', 'Se reparten la propiedad en copropiedad.']);
+      else if (g === 0) comentario += (dif ? 'Le ganaste a ' + otro + ' por ' + dif + '. ' : 'Empate en puntos, pero fuiste más rápido que ' + otro + '. ') + al(['Comparte el resultado para que sufra.', 'Mándale el duelo, con cariño.', otro + ' va a pedir recuento.']);
+      else comentario += (dif ? otro + ' te ganó por ' + dif + '. ' : 'Empate en puntos, pero ' + otro + ' fue más rápido. ') + al(['Pide la revancha… o un mapa.', 'Comparte el duelo y pide revancha.', 'Las manzanas estaban de su lado.']);
+      pintarTablaDuelo(partida.plan, [{ ...yo, nombre: 'Tú' }, j.reto], j.crono);
+      prepararCompartir(partida, 'Comparte el duelo con ' + otro, 'El enlace muestra a ' + otro + ' (y a quien quieras) los dos resultados, ronda por ronda, con las ayudas que usó cada uno.', 'Compartir resultado');
     } else {
       comentario += comentarioFinal(j.puntaje / max);
+      j.rondas.forEach((r, k) => {
+        const tr = document.createElement('tr');
+        const ok = r.elegida === r.idx;
+        const t2 = document.createElement('td');
+        const nombre = document.createElement('span'); nombre.className = ok ? 'ok' : 'no'; nombre.textContent = COMUNAS[r.idx].n;
+        t2.appendChild(nombre);
+        if (!ok) t2.append(r.elegida === null ? ' — se acabó el tiempo' : ' — elegiste ' + COMUNAS[r.elegida].n);
+        const extra = [simbolosPistas(mascaraPistas(r.pistas)), j.crono && r.elegida !== null ? formatoSeg(r.segundos) : ''].filter(Boolean).join(' ');
+        if (extra) { const sp = document.createElement('span'); sp.className = 'ayudas'; sp.textContent = ' ' + extra; t2.appendChild(sp); }
+        tr.append(celda((k + 1) + '.'), t2, celda(r.puntos, 'pts'));
+        tabla.appendChild(tr);
+      });
+      if (j.rondas.some((r) => r.pistas.size) || j.crono) { $('final-leyenda').textContent = LEYENDA; $('final-leyenda').hidden = false; }
+      prepararCompartir(partida, 'Comparte y desafía', 'Comparte tu resultado con un enlace: quien lo abra juega estas mismas 10 rondas y al final ve tu puntaje y tus ayudas al lado de los suyos.', 'Compartir resultado y desafiar');
     }
     $('final-comentario').textContent = comentario;
-    j.rondas.forEach((r, k) => {
-      const tr = document.createElement('tr');
-      const ok = r.elegida === r.idx;
-      const t2 = document.createElement('td');
-      const nombre = document.createElement('span'); nombre.className = ok ? 'ok' : 'no'; nombre.textContent = COMUNAS[r.idx].n;
-      t2.appendChild(nombre);
-      if (!ok) t2.append(' — elegiste ' + COMUNAS[r.elegida].n);
-      tr.append(celda((k + 1) + '.'), t2, celda(r.puntos, 'pts'));
-      if (j.reto) tr.appendChild(celda(j.plan[k].puntos, 'pts'));
-      tabla.appendChild(tr);
-    });
     $('bloque-ranking').hidden = false;
-    $('bloque-reto').hidden = false;
-    $('reto-titulo').textContent = j.reto ? 'Devuélvele el reto a ' + j.reto.nombre : 'Desafía a alguien';
     $('btn-otra').textContent = 'Jugar otra vez';
     // Ranking actual de la modalidad (para ver dónde quedarías)
-    const mod = modalidadDe(j.zona, j.dificultad, j.regiones);
+    const mod = modalidadDe(j.zona, j.dificultad, j.regiones, j.crono);
     leerRanking(mod).then((r) => { if (juego === j && !j.guardado) pintarRanking($('final-ranking'), r.lista, r); });
   }
   $('pistas').style.display = 'none';
@@ -1335,6 +1617,35 @@ function terminar() {
   $('btn-otra').focus({ preventScroll: true });
 }
 
+// Vista de un duelo recibido por enlace (solo mirar; se puede jugar las mismas rondas)
+function verDuelo(partida) {
+  juego = null;
+  const [a, b] = partida.jugadores;
+  const g = compararJugadores(a, b, partida.crono);
+  const grande = $('final-puntaje');
+  grande.innerHTML = '';
+  grande.append(g === -1 ? 'Empate ' : 'Gana ' + (g === 0 ? a : b).nombre + ' ');
+  const s = document.createElement('small'); s.textContent = a.nombre + ' ' + a.puntaje + ' – ' + b.puntaje + ' ' + b.nombre; grande.appendChild(s);
+  $('final-comentario').textContent = 'Duelo en ' + nombreModalidad(partida.zona, partida.dificultad, partida.regiones, partida.crono) + '. ' +
+    comentarioDuelo((g === 1 ? b : a).nombre, (g === 1 ? a : b).nombre, g === -1 ? 0 : Math.abs(a.puntaje - b.puntaje));
+  pintarTablaDuelo(partida.plan, partida.jugadores, partida.crono);
+  $('bloque-ranking').hidden = true;
+  prepararCompartir(partida, 'Compartir este duelo', 'Reenvía el resultado a quien quieras.', 'Compartir resultado');
+  $('btn-otra').textContent = 'Jugar estas mismas rondas';
+  $('btn-cambiar').textContent = 'Jugar normal';
+  accionOtra = () => {
+    history.replaceState(null, '', urlBase());
+    // Se juega contra quien ganó el duelo (o contra el primero si empataron)
+    const rival = g === 1 ? b : a;
+    prepararReto({ ...partida, jugadores: [rival] });
+  };
+  accionCambiar = () => { history.replaceState(null, '', urlBase()); $('btn-cambiar').textContent = 'Cambiar zona'; mostrarPortada(); };
+  $('portada').classList.add('oculta');
+  $('marco').classList.add('con-portada');
+  $('final').classList.remove('oculta');
+}
+
+
 $('btn-guardar').addEventListener('click', async () => {
   const j = juego;
   if (!j || j.guardado) return;
@@ -1343,11 +1654,11 @@ $('btn-guardar').addEventListener('click', async () => {
   escribirLS('dqelc-juego-nombre', nombre);
   $('btn-guardar').disabled = true;
   $('estado-guardar').textContent = 'Guardando…';
-  const mod = modalidadDe(j.zona, j.dificultad, j.regiones);
-  const r = await registrarPuntaje(mod, nombre, j.puntaje, j.aciertos);
+  const mod = modalidadDe(j.zona, j.dificultad, j.regiones, j.crono);
+  const r = await registrarPuntaje(mod, nombre, j.puntaje, j.aciertos, j.crono ? j.segundosTotal : null);
   j.guardado = true;
   pintarRanking($('final-ranking'), r.top, { resaltar: r.id, global: r.global, error: r.error });
-  const modo = nombreModalidad(j.zona, j.dificultad, j.regiones);
+  const modo = nombreModalidad(j.zona, j.dificultad, j.regiones, j.crono);
   if (r.posicion && r.posicion <= RANKING_TOP) {
     $('estado-guardar').textContent = 'Quedaste en el lugar ' + r.posicion + ' de ' + modo + '.' + (r.posicion === 1 ? ' ' + al(['¡Primer lugar!', 'Nadie te gana… por ahora.', 'Récord absoluto.']) : '');
   } else if (r.posicion) {
@@ -1358,18 +1669,24 @@ $('btn-guardar').addEventListener('click', async () => {
 });
 $('final-nombre').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('btn-guardar').click(); } });
 
+// Compartir: en el celular abre el menú de compartir; si no, copia el texto con el enlace
 $('btn-reto').addEventListener('click', async () => {
-  const j = juego;
-  if (!j || j.modo === 'dos') return;
-  const nombre = limpiarNombre($('final-nombre').value) || leerLS('dqelc-juego-nombre', '') || 'Alguien';
-  const url = urlBase() + '?reto=' + codificarReto(j, nombre);
-  $('enlace-reto-texto').value = url;
-  $('enlace-reto').hidden = false;
-  const texto = nombre + ' hizo ' + j.puntaje + ' puntos en ¿De qué comuna es? (' + nombreModalidad(j.zona, j.dificultad, j.regiones) + '). ¿Le ganas?';
-  if (navigator.share && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)) {
-    try { await navigator.share({ title: '¿De qué comuna es?', text: texto, url }); return; } catch (e) { /* se muestra el enlace */ }
+  if (!compartirActual) return;
+  // En partidas individuales, el enlace lleva el nombre que esté escrito al momento de compartir
+  if (juego && juego.modo !== 'dos' && compartirActual.partida.jugadores.length === 1) {
+    const nombre = limpiarNombre($('final-nombre').value) || leerLS('dqelc-juego-nombre', '') || 'Alguien';
+    compartirActual = { ...compartirActual, partida: { ...compartirActual.partida, jugadores: [{ ...compartirActual.partida.jugadores[0], nombre }] } };
+    compartirActual.texto = textoCompartir(compartirActual.partida);
+    compartirActual.url = enlaceCompartir(compartirActual.partida);
   }
-  $('enlace-reto-texto').select();
+  const { texto, url } = compartirActual;
+  const completo = texto + '\n' + url;
+  $('enlace-reto-texto').value = completo;
+  $('enlace-reto').hidden = false;
+  if (navigator.share && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)) {
+    try { await navigator.share({ title: '¿De qué comuna es?', text: texto, url }); return; } catch (e) { /* se muestra el texto */ }
+  }
+  try { await navigator.clipboard.writeText(completo); $('btn-copiar-reto').textContent = 'Copiado'; setTimeout(() => { $('btn-copiar-reto').textContent = 'Copiar'; }, 1800); } catch (e) { $('enlace-reto-texto').select(); }
 });
 $('btn-copiar-reto').addEventListener('click', async () => {
   const campo = $('enlace-reto-texto');
@@ -1383,11 +1700,8 @@ $('btn-siguiente').addEventListener('click', () => {
   if (juego.i + 1 < N_RONDAS) mostrarSiguiente(); else terminar();
 });
 $('btn-empezar').addEventListener('click', () => empezar(opcionesPortada()));
-$('btn-otra').addEventListener('click', () => {
-  const j = juego;
-  empezar({ zona: j.zona, dificultad: j.dificultad, regiones: j.regiones, jugadores: j.modo === 'dos' ? 2 : 1 });
-});
-$('btn-cambiar').addEventListener('click', mostrarPortada);
+$('btn-otra').addEventListener('click', () => { if (accionOtra) accionOtra(); });
+$('btn-cambiar').addEventListener('click', () => { (accionCambiar || mostrarPortada)(); });
 
 document.addEventListener('keydown', (e) => {
   if (!juego || e.altKey || e.ctrlKey || e.metaKey) return;
@@ -1399,6 +1713,8 @@ document.addEventListener('keydown', (e) => {
     $('btn-siguiente').click();
   }
 });
+
+revisarEnlace();
 </script>
 </body>
 </html>
