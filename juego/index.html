@@ -381,7 +381,7 @@
           <div class="etiqueta">Tiempo</div>
           <div class="seg" role="radiogroup" aria-label="Tiempo">
             <label><input type="radio" name="tiempo" value="libre" checked><span>Sin límite<small>piensa con calma</small></span></label>
-            <label><input type="radio" name="tiempo" value="crono"><span>Bomba de tiempo<small>15 s por ronda</small></span></label>
+            <label><input type="radio" name="tiempo" value="crono"><span>Bomba de tiempo<small>15 s · rápido = más puntos</small></span></label>
           </div>
         </div>
         <div class="grupo">
@@ -482,7 +482,7 @@
     </div>
   </div>
 
-  <p class="nota">Deslindes: Servicio de Impuestos Internos (SII). Imagen satelital: Esri. Zonas urbanas: zonas censales del INE (Censo 2017, vía el paquete chilemapas); las comunas sin zona urbana no se juegan. Todos los planos tienen la misma escala: 2 m por píxel, o 4 m en la vista de lejos (ver la barra abajo a la izquierda); si un monumento no cabe, el plano se aleja lo justo para mostrarlo completo. Monumentos nacionales: Consejo de Monumentos Nacionales; los que abarcan varias comunas no se juegan. Teclas: 1 a 4 para responder, Enter para seguir. Los nombres que guardes en un ranking compartido quedan visibles para quienes jueguen.</p>
+  <p class="nota">Deslindes: Servicio de Impuestos Internos (SII). Imagen satelital: Esri. Zonas urbanas: zonas censales del INE (Censo 2017, vía el paquete chilemapas); las comunas sin zona urbana no se juegan. Todos los planos tienen la misma escala: 2 m por píxel, o 4 m en la vista de lejos (ver la barra abajo a la izquierda); si un monumento no cabe, el plano se aleja lo justo para mostrarlo completo. Monumentos nacionales: Consejo de Monumentos Nacionales; los que abarcan varias comunas no se juegan. Con bomba de tiempo, un acierto vale entero si respondes en los primeros 3 segundos y va bajando hasta la mitad a los 15. Teclas: 1 a 4 para responder, Enter para seguir. Los nombres que guardes en un ranking compartido quedan visibles para quienes jueguen.</p>
 </div>
 
 <script>
@@ -783,6 +783,16 @@ let juego = null;
 const al = (lista) => lista[Math.floor(Math.random() * lista.length)];
 const COLORES = ['var(--j1)', 'var(--j2)'];
 const SEGUNDOS_RONDA = 15; // bomba de tiempo
+// Con bomba, el tiempo también cuenta: el acierto vale entero si se responde en los
+// primeros SEGUNDOS_GRACIA segundos y después baja de a poco hasta la mitad al explotar.
+const SEGUNDOS_GRACIA = 3;
+function puntosAcierto(pistas, seg) {
+  let pts = 100;
+  (pistas || []).forEach((p) => { pts -= COSTO[p]; });
+  if (seg === null || seg === undefined) return pts;
+  const t = Math.min(1, Math.max(0, seg - SEGUNDOS_GRACIA) / Math.max(1, SEGUNDOS_RONDA - SEGUNDOS_GRACIA));
+  return Math.max(10, Math.round(pts * (1 - 0.5 * t) / 10) * 10);
+}
 // Estado de la pantalla final (se declaran arriba porque un enlace de duelo la abre al cargar)
 let compartirActual = null; // { texto, url, partida }
 let accionOtra = null;
@@ -836,7 +846,7 @@ function mascara(regiones) { return ORDEN_REGIONES.map((r) => (regiones.has(r) ?
 function regionesDeMascara(m) { return new Set(ORDEN_REGIONES.filter((_, i) => m[i] === '1')); }
 // Las modalidades de siempre (cerca, 10 rondas) conservan su nombre para no perder el ranking
 function modalidadDe(zona, dif, regiones, crono, lejos, nRondas, lugares) {
-  return zona + (zona === 'reg' ? '-' + mascara(regiones) : '') + '-' + dif + (lugares === 'mn' ? '-mn' : '') + (lejos ? '-lejos' : '') + (nRondas === 5 ? '-5' : '') + (crono ? '-crono' : '');
+  return zona + (zona === 'reg' ? '-' + mascara(regiones) : '') + '-' + dif + (lugares === 'mn' ? '-mn' : '') + (lejos ? '-lejos' : '') + (nRondas === 5 ? '-5' : '') + (crono ? '-bomba' : '');
 }
 function nombreModalidad(zona, dif, regiones, crono, lejos, nRondas, lugares) {
   let z = { gs: 'Gran Santiago', rm: 'Región Metropolitana', cl: 'Todo Chile', co: 'Comunas costeras', an: 'Comunas cordilleranas' }[zona];
@@ -1671,7 +1681,7 @@ function responder(idx, porTiempo) {
 
   if (juego.modo === 'dos') {
     const aciertos = ronda.resp.map((r) => r === ronda.idx);
-    ronda.puntosJ = aciertos.map((a, k) => (a ? [...ronda.pistasJ[k]].reduce((p, x) => p - COSTO[x], 100) : 0));
+    ronda.puntosJ = aciertos.map((a, k) => (a ? puntosAcierto(ronda.pistasJ[k], juego.crono ? ronda.seg[k] : null) : 0));
     juego.jug.forEach((p, k) => { p.puntaje += ronda.puntosJ[k]; });
     marca.style.background = 'linear-gradient(90deg,' + aciertos.map((a, k) => (a ? 'var(--ok)' : 'var(--bad)') + ' ' + (k * 50) + '% ' + (k * 50 + 50) + '%').join(',') + ')';
     bien = aciertos.some(Boolean);
@@ -1686,12 +1696,12 @@ function responder(idx, porTiempo) {
   } else {
     bien = idx === ronda.idx;
     let pts = 0;
-    if (bien) { pts = 100; ronda.pistas.forEach((p) => { pts -= COSTO[p]; }); }
+    if (bien) pts = puntosAcierto(ronda.pistas, juego.crono ? seg : null);
     ronda.puntos = pts;
     juego.puntaje += pts;
     marca.classList.add(bien ? 'bien' : 'mal');
     if (porTiempo) titular = al(FRASES_TIEMPO) + ' Era ' + c.n + '.';
-    else titular = bien ? al(FRASES_ACIERTO) + ' ' + c.n + ' (+' + pts + (juego.crono ? ', en ' + formatoSeg(seg) : '') + ')' : al(FRASES_ERROR) + ' Era ' + c.n + '.';
+    else titular = bien ? al(FRASES_ACIERTO) + ' ' + c.n + ' (+' + pts + (juego.crono ? ', en ' + formatoSeg(seg) + (seg > SEGUNDOS_GRACIA + 0.5 ? '; el tiempo restó ' + (puntosAcierto(ronda.pistas, null) - pts) : '') : '') + ')' : al(FRASES_ERROR) + ' Era ' + c.n + '.';
     if (juego.reto) {
       const suyo = juego.reto.x[juego.i];
       const ayudas = simbolosPistas(suyo.mask);
