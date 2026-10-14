@@ -855,17 +855,85 @@ function resumenJugador(nombre, x) {
     segundos: seg === null ? null : Math.round(seg * 10) / 10
   };
 }
+// Formato compacto (v3): la partida va en bits y luego en base64url. Cada ronda ocupa
+// 43 bits (comuna, punto, posición de la correcta y las otras 3 alternativas) y cada
+// jugada de cada jugador 10 bits (+8 en contrarreloj). Una partida cabe en ~110 caracteres.
+const ZONAS_ENLACE = ['gs', 'rm', 'cl', 'co', 'an', 'reg'];
+function bitsABase64Url(bits) {
+  while (bits.length % 8) bits.push(0);
+  let bin = '';
+  for (let i = 0; i < bits.length; i += 8) bin += String.fromCharCode(parseInt(bits.slice(i, i + 8).join(''), 2));
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
 function codificarPartida(p) {
-  const d = {
-    v: VERSION_PARTIDA, z: p.zona, d: p.dificultad, c: p.crono ? 1 : 0,
-    r: p.plan.map((q) => [q.idx, q.pIdx].concat(q.opciones)),
-    j: p.jugadores.map((jg) => ({ n: jg.nombre, x: jg.x.map((f) => [f.pts, f.mask, f.pos, f.seg === null || f.seg === undefined ? null : Math.round(f.seg * 10) / 10]) }))
-  };
-  if (p.zona === 'reg') d.g = mascara(p.regiones);
-  return aBase64Url(JSON.stringify(d));
+  const bits = [];
+  const poner = (v, n) => { for (let i = n - 1; i >= 0; i--) bits.push((v >> i) & 1); };
+  poner(3, 4);                                   // versión del formato
+  poner(ZONAS_ENLACE.indexOf(p.zona), 3);
+  poner(p.dificultad === 'dificil' ? 1 : 0, 1);
+  poner(p.crono ? 1 : 0, 1);
+  poner(p.jugadores.length - 1, 1);
+  if (p.zona === 'reg') mascara(p.regiones).split('').forEach((b) => poner(Number(b), 1));
+  p.plan.forEach((q) => {
+    poner(q.idx, 9); poner(q.pIdx, 5);
+    const pos = q.opciones.indexOf(q.idx);
+    poner(pos, 2);
+    q.opciones.filter((_, k) => k !== pos).forEach((o) => poner(o, 9));
+  });
+  p.jugadores.forEach((jg) => {
+    const nombre = Array.from(new TextEncoder().encode(String(jg.nombre || '').slice(0, 20))).slice(0, 63);
+    poner(nombre.length, 6); nombre.forEach((b) => poner(b, 8));
+    jg.x.forEach((f) => {
+      poner(Math.max(0, Math.min(10, Math.round((Number(f.pts) || 0) / 10))), 4);
+      poner((Number(f.mask) || 0) & 7, 3);
+      poner(f.pos === null || f.pos === undefined || f.pos < 0 ? 0 : f.pos + 1, 3);
+      if (p.crono) poner(f.seg === null || f.seg === undefined ? 255 : Math.max(0, Math.min(254, Math.round(f.seg * 10))), 8);
+    });
+  });
+  return bitsABase64Url(bits);
+}
+function decodificarCompacto(codigo) {
+  const b = atob(codigo.replace(/-/g, '+').replace(/_/g, '/'));
+  const bits = [];
+  for (const c of b) { const v = c.charCodeAt(0); for (let i = 7; i >= 0; i--) bits.push((v >> i) & 1); }
+  let k = 0;
+  const leer = (n) => { if (k + n > bits.length) throw new Error('corto'); let v = 0; for (let i = 0; i < n; i++) v = v * 2 + bits[k++]; return v; };
+  if (leer(4) !== 3) return null;
+  const zona = ZONAS_ENLACE[leer(3)];
+  if (!zona) return null;
+  const dificultad = leer(1) ? 'dificil' : 'facil';
+  const crono = !!leer(1);
+  const nJug = leer(1) + 1;
+  let regiones = new Set(ORDEN_REGIONES);
+  if (zona === 'reg') { let m = ''; for (let i = 0; i < 16; i++) m += leer(1); regiones = regionesDeMascara(m); }
+  const plan = [];
+  for (let r = 0; r < N_RONDAS; r++) {
+    const idx = leer(9), pIdx = leer(5), pos = leer(2);
+    const otras = [leer(9), leer(9), leer(9)];
+    const opciones = otras.slice(); opciones.splice(pos, 0, idx);
+    if (!(COMUNAS[idx] && COMUNAS[idx].p && pIdx < COMUNAS[idx].p.length && opciones.every((o) => COMUNAS[o]))) return null;
+    plan.push({ idx, pIdx, opciones });
+  }
+  const jugadores = [];
+  for (let j = 0; j < nJug; j++) {
+    const largo = leer(6), bytes = [];
+    for (let i = 0; i < largo; i++) bytes.push(leer(8));
+    const nombre = limpiarNombre(new TextDecoder().decode(Uint8Array.from(bytes))) || 'Alguien';
+    const x = [];
+    for (let r = 0; r < N_RONDAS; r++) {
+      const pts = Math.min(10, leer(4)) * 10, mask = leer(3), pos = leer(3) - 1;
+      let seg = null;
+      if (crono) { const s = leer(8); seg = s === 255 ? null : s / 10; }
+      x.push({ pts, mask, pos, seg });
+    }
+    jugadores.push(resumenJugador(nombre, x));
+  }
+  return { zona, dificultad, crono, regiones, plan, jugadores };
 }
 function decodificarPartida(codigo) {
   try {
+    // Los enlaces anteriores eran JSON en base64url, que siempre empieza con "ey"
+    if (!codigo.startsWith('ey')) return decodificarCompacto(codigo);
     const d = JSON.parse(deBase64Url(codigo));
     if (!d || !Array.isArray(d.r) || d.r.length !== N_RONDAS) return null;
     if (!['gs', 'rm', 'cl', 'co', 'an', 'reg'].includes(d.z) || !['facil', 'dificil'].includes(d.d)) return null;
@@ -1017,8 +1085,8 @@ function mostrarPortada() {
 // Al abrir un enlace de reto o de duelo (se ejecuta al final del script, cuando todo está definido)
 function revisarEnlace() {
   const params = new URLSearchParams(location.search);
-  const codigoDuelo = params.get('duelo');
-  const codigoReto = params.get('reto');
+  const codigoDuelo = params.get('d') || params.get('duelo');
+  const codigoReto = params.get('r') || params.get('reto');
   if (!codigoDuelo && !codigoReto) return;
   const partida = decodificarPartida(codigoDuelo || codigoReto);
   if (!partida) {
@@ -1529,7 +1597,7 @@ function textoCompartir(partida) {
   return lineas.join('\n');
 }
 function enlaceCompartir(partida) {
-  const param = partida.jugadores.length === 2 ? 'duelo' : 'reto';
+  const param = partida.jugadores.length === 2 ? 'd' : 'r';
   return urlBase() + '?' + param + '=' + codificarPartida(partida);
 }
 function prepararCompartir(partida, titulo, explica, etiqueta) {
