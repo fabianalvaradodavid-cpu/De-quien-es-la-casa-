@@ -260,6 +260,9 @@
   .sala-jugadores .vacio{ color:var(--soft); }
   .sala-estado{ font-size:0.85rem; color:var(--muted); min-height:1.3em; margin:6px 0 12px; }
   .cuenta-sala{ font-family:var(--serif); font-size:4rem; font-weight:700; line-height:1; color:var(--clay); text-align:center; margin:10px 0; }
+  .imagen-resultado{ margin-top:10px; display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
+  .imagen-resultado img{ width:100%; max-width:360px; border:1px solid var(--line); border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.12); }
+  .imagen-resultado .btn{ text-decoration:none; }
   .pares{ display:grid; grid-template-columns:1fr 1fr; column-gap:14px; }
   @media (max-width:560px){ .pares{ grid-template-columns:1fr; } }
   /* Que las opciones de un mismo grupo tengan igual alto aunque una ocupe dos líneas */
@@ -485,6 +488,10 @@
           <div class="enlace-reto" id="enlace-reto" hidden>
             <textarea class="campo" id="enlace-reto-texto" rows="5" readonly aria-label="Texto para compartir"></textarea>
             <button class="btn sec" id="btn-copiar-reto" type="button">Copiar</button>
+          </div>
+          <div class="imagen-resultado" id="imagen-resultado" hidden>
+            <img id="imagen-resultado-img" alt="Imagen con los resultados">
+            <a class="btn sec" id="btn-descargar-imagen" download="de-que-comuna-es.png" href="#">Descargar imagen</a>
           </div>
         </div>
         <div class="botones">
@@ -1597,7 +1604,11 @@ async function crearSala(o) {
   } catch (e) {
     if (sala !== intento) return;
     $('sala-texto').textContent = 'No se pudo crear la sala.';
-    estadoSala(String(e.message || e) + '. Revisa tu conexión e inténtalo de nuevo.');
+    const msg = String(e.message || e);
+    // Una val del ranking anterior a los duelos en línea responde como si fuera un puntaje
+    estadoSala(/modalidad inválida|acción desconocida/.test(msg)
+      ? 'La val del ranking en Val Town todavía no tiene los duelos en línea: hay que volver a pegar ranking.ts.'
+      : msg + '. Revisa tu conexión e inténtalo de nuevo.');
   }
 }
 
@@ -2223,12 +2234,113 @@ function enlaceCompartir(partida) {
   const param = partida.jugadores.length === 2 ? 'd' : 'r';
   return urlBase() + '?' + param + '=' + codificarPartida(partida);
 }
+// ---- Imagen con la pantalla de resultados, para compartir ----
+// Se dibuja en un canvas (sin el mapa) y se convierte de forma síncrona, para que el
+// menú de compartir del celular se abra dentro del mismo toque.
+function recortarAncho(c, s, ancho) {
+  s = String(s);
+  if (c.measureText(s).width <= ancho) return s;
+  while (s.length > 1 && c.measureText(s + '…').width > ancho) s = s.slice(0, -1);
+  return s.trimEnd() + '…';
+}
+function lienzoResultado(partida) {
+  const js = partida.jugadores, plan = partida.plan, dos = js.length === 2;
+  const W = 1080, PAD = 64;
+  const conMon = partida.lugares === 'mn' && MONUMENTOS;
+  const FILA = conMon ? 88 : 68;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = 520 + plan.length * FILA + 220;
+  const c = cv.getContext('2d');
+  const css = (v, d) => (getComputedStyle(document.documentElement).getPropertyValue(v) || '').trim() || d;
+  const C = { ink: css('--ink', '#1f2a33'), muted: css('--muted', '#5a6873'), line: css('--line', '#d3dae1'), dark: css('--moss-dark', '#1c3347'),
+    ok: css('--ok', '#2f7d55'), bad: css('--bad', '#a3402b'), paper: css('--paper', '#f4f6f8'), j: [css('--j1', '#2f5f82'), css('--j2', '#b5622f')] };
+  const SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  const SERIF = 'Georgia, "Times New Roman", serif';
+  c.fillStyle = C.paper; c.fillRect(0, 0, W, cv.height);
+  // Cabecera
+  c.fillStyle = C.dark; c.fillRect(0, 0, W, 156);
+  c.fillStyle = '#fff'; c.font = 'bold 56px ' + SERIF;
+  c.fillText('¿De qué comuna es?', PAD, 86);
+  c.fillStyle = '#c9d6e2'; c.font = '28px ' + SANS;
+  c.fillText(recortarAncho(c, nombreModalidad(partida.zona, partida.dificultad, partida.regiones, partida.crono, partida.lejos, plan.length, partida.lugares), W - 2 * PAD), PAD, 130);
+  // Resultado grande
+  let y = 240;
+  const g = dos ? compararJugadores(js[0], js[1], partida.crono) : null;
+  c.fillStyle = C.ink; c.font = 'bold 62px ' + SANS;
+  const titulo = dos ? (g === -1 ? 'Empate' : 'Gana ' + js[g].nombre) : js[0].nombre + ': ' + js[0].puntaje + ' de ' + plan.length * 100;
+  c.fillText(recortarAncho(c, titulo, W - 2 * PAD), PAD, y);
+  y += 56;
+  c.fillStyle = C.muted; c.font = '32px ' + SANS;
+  const sub = dos ? js[0].nombre + ' ' + js[0].puntaje + ' – ' + js[1].puntaje + ' ' + js[1].nombre
+    : js[0].aciertos + ' de ' + plan.length + ' aciertos' + (partida.crono && js[0].segundos !== null ? ' · ' + formatoSeg(js[0].segundos) : '') + ' · ' + resumenPistas(js[0].x);
+  c.fillText(recortarAncho(c, sub, W - 2 * PAD), PAD, y);
+  // Tabla ronda por ronda
+  y += 70;
+  const colW = dos ? 250 : 280;
+  const xCol = W - PAD - js.length * colW;
+  c.font = 'bold 26px ' + SANS;
+  c.fillStyle = C.muted; c.fillText('Comuna', PAD + 62, y);
+  js.forEach((p, i) => {
+    const x = xCol + i * colW;
+    if (dos) { c.fillStyle = C.j[i]; c.beginPath(); c.arc(x + 9, y - 9, 9, 0, 2 * Math.PI); c.fill(); }
+    c.fillStyle = C.ink; c.fillText(recortarAncho(c, dos ? p.nombre : 'Puntos', colW - 40), x + (dos ? 28 : 0), y);
+  });
+  y += 20;
+  c.strokeStyle = C.line; c.lineWidth = 2;
+  const linea = (yy) => { c.beginPath(); c.moveTo(PAD, yy); c.lineTo(W - PAD, yy); c.stroke(); };
+  linea(y);
+  plan.forEach((q, k) => {
+    const base = y + (conMon ? 42 : 45);
+    c.fillStyle = C.muted; c.font = '28px ' + SANS; c.fillText((k + 1) + '.', PAD, base);
+    c.fillStyle = C.ink; c.font = '30px ' + SANS; c.fillText(recortarAncho(c, COMUNAS[q.idx].n, xCol - PAD - 80), PAD + 62, base);
+    if (conMon && MONUMENTOS[q.pIdx]) { c.fillStyle = C.muted; c.font = '22px ' + SANS; c.fillText(recortarAncho(c, MONUMENTOS[q.pIdx].n, xCol - PAD - 80), PAD + 62, base + 32); }
+    js.forEach((p, i) => {
+      const f = p.x[k] || {};
+      const x = xCol + i * colW;
+      let t, col;
+      if (f.pos === -1) { t = '💥 sin tiempo'; col = C.bad; }
+      else if (f.pts > 0) { t = '✓ ' + f.pts; col = C.ok; }
+      else { t = '✗'; col = C.bad; }
+      c.font = 'bold 30px ' + SANS; c.fillStyle = col; c.fillText(t, x, base);
+      const extra = [simbolosPistas(f.mask), partida.crono && f.seg !== null && f.seg !== undefined && f.pos !== -1 ? formatoSeg(f.seg) : ''].filter(Boolean).join(' ');
+      if (extra) { const w = c.measureText(t + ' ').width; c.font = '22px ' + SANS; c.fillStyle = C.muted; c.fillText(recortarAncho(c, extra, colW - w - 10), x + w, base); }
+    });
+    y += FILA;
+    linea(y);
+  });
+  // Totales
+  y += 52;
+  c.fillStyle = C.ink; c.font = 'bold 32px ' + SANS; c.fillText('Total', PAD + 62, y);
+  js.forEach((p, i) => {
+    const x = xCol + i * colW;
+    c.font = 'bold 32px ' + SANS; c.fillStyle = C.ink;
+    const t = String(p.puntaje);
+    c.fillText(t, x, y);
+    if (partida.crono && p.segundos !== null) { const w = c.measureText(t + ' ').width; c.font = '24px ' + SANS; c.fillStyle = C.muted; c.fillText(formatoSeg(p.segundos), x + w, y); }
+  });
+  // Pie
+  y += 76;
+  c.fillStyle = C.muted; c.font = '26px ' + SANS;
+  c.fillText(recortarAncho(c, (dos ? '¿Quién sigue? ' : '¿Me ganas? ') + 'Juega en ' + (location.host + location.pathname).replace(/index\.html$/, ''), W - 2 * PAD), PAD, y);
+  // Se recorta al alto usado
+  const fin = document.createElement('canvas');
+  fin.width = W; fin.height = y + 50;
+  fin.getContext('2d').drawImage(cv, 0, 0);
+  return fin;
+}
+function archivoDeLienzo(cv) {
+  const bin = atob(cv.toDataURL('image/png').split(',')[1]);
+  const u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return new File([u], 'de-que-comuna-es.png', { type: 'image/png' });
+}
 function prepararCompartir(partida, titulo, explica, etiqueta) {
   compartirActual = { texto: textoCompartir(partida), url: enlaceCompartir(partida), partida };
   $('reto-titulo').textContent = titulo;
   $('reto-explica').textContent = explica;
   $('btn-reto').textContent = etiqueta;
   $('enlace-reto').hidden = true;
+  $('imagen-resultado').hidden = true;
   $('bloque-reto').hidden = false;
 }
 
@@ -2288,7 +2400,7 @@ function terminar() {
     $('final-comentario').textContent = (g !== -1 && a.puntaje === b.puntaje ? 'Empate en puntos; gana por ser más rápido. ' : '') + comentarioDuelo(gan.nombre, per.nombre, g === -1 ? 0 : Math.abs(a.puntaje - b.puntaje), N_RONDAS * 100);
     pintarTablaDuelo(partida.plan, partida.jugadores, j.crono, j.lugares);
     $('bloque-ranking').hidden = true;
-    prepararCompartir(partida, 'Compartir el resultado', 'Manda el marcador con un enlace para ver el duelo ronda por ronda.', 'Compartir resultado');
+    prepararCompartir(partida, 'Compartir el resultado', 'Se comparte una imagen con la pantalla de resultados y un enlace para ver el duelo ronda por ronda.', 'Compartir resultado');
     $('btn-otra').textContent = 'Revancha';
   } else {
     const nombreYo = limpiarNombre($('final-nombre').value) || leerLS('dqelc-juego-nombre', '') || (j.reto ? 'Tú' : 'Alguien');
@@ -2307,7 +2419,7 @@ function terminar() {
       else if (g === 0) comentario += (dif ? 'Le ganaste a ' + otro + ' por ' + dif + '. ' : 'Empate en puntos, pero fuiste más rápido que ' + otro + '. ') + al(['Comparte el resultado para que sufra.', 'Mándale el duelo, con cariño.', otro + ' va a pedir recuento.']);
       else comentario += (dif ? otro + ' te ganó por ' + dif + '. ' : 'Empate en puntos, pero ' + otro + ' fue más rápido. ') + al(['Pide la revancha… o un mapa.', 'Comparte el duelo y pide revancha.', 'Las manzanas estaban de su lado.']);
       pintarTablaDuelo(partida.plan, [{ ...yo, nombre: 'Tú' }, j.reto], j.crono, j.lugares);
-      prepararCompartir(partida, 'Comparte el duelo con ' + otro, 'El enlace muestra a ' + otro + ' (y a quien quieras) los dos resultados, ronda por ronda, con las ayudas que usó cada uno.', 'Compartir resultado');
+      prepararCompartir(partida, 'Comparte el duelo con ' + otro, 'Se comparte una imagen con la pantalla de resultados y un enlace que muestra a ' + otro + ' (y a quien quieras) los dos resultados, ronda por ronda, con las ayudas de cada uno.', 'Compartir resultado');
     } else {
       comentario += comentarioFinal(j.puntaje / max);
       j.rondas.forEach((r, k) => {
@@ -2324,7 +2436,7 @@ function terminar() {
         tabla.appendChild(tr);
       });
       if (j.rondas.some((r) => r.pistas.size) || j.crono) { $('final-leyenda').textContent = LEYENDA; $('final-leyenda').hidden = false; }
-      prepararCompartir(partida, 'Comparte y desafía', 'Comparte tu resultado con un enlace: quien lo abra juega estas mismas ' + N_RONDAS + ' rondas y al final ve tu puntaje y tus ayudas al lado de los suyos.', 'Compartir resultado y desafiar');
+      prepararCompartir(partida, 'Comparte y desafía', 'Se comparte una imagen con tu resultado y un enlace: quien lo abra juega estas mismas ' + N_RONDAS + ' rondas y al final ve tu puntaje y tus ayudas al lado de los suyos.', 'Compartir resultado y desafiar');
     }
     $('final-comentario').textContent = comentario;
     $('bloque-ranking').hidden = false;
@@ -2405,12 +2517,29 @@ $('btn-reto').addEventListener('click', async () => {
     compartirActual.texto = textoCompartir(compartirActual.partida);
     compartirActual.url = enlaceCompartir(compartirActual.partida);
   }
-  const { texto, url } = compartirActual;
+  const { texto, url, partida } = compartirActual;
   const completo = texto + '\n' + url;
   $('enlace-reto-texto').value = completo;
   $('enlace-reto').hidden = false;
+  // La imagen de la pantalla de resultados (todo síncrono, para no perder el toque)
+  let archivo = null;
+  try {
+    const cv = lienzoResultado(partida);
+    archivo = archivoDeLienzo(cv);
+    const dataUrl = cv.toDataURL('image/png');
+    $('imagen-resultado-img').src = dataUrl;
+    $('btn-descargar-imagen').href = dataUrl;
+    $('imagen-resultado').hidden = false;
+  } catch (e) { console.error('No se pudo armar la imagen', e); }
   if (navigator.share && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)) {
-    try { await navigator.share({ title: '¿De qué comuna es?', text: texto, url }); return; } catch (e) { /* se muestra el texto */ }
+    try {
+      if (archivo && navigator.canShare && navigator.canShare({ files: [archivo] })) {
+        await navigator.share({ files: [archivo], title: '¿De qué comuna es?', text: completo });
+      } else {
+        await navigator.share({ title: '¿De qué comuna es?', text: texto, url });
+      }
+      return;
+    } catch (e) { if (e && e.name === 'AbortError') return; /* si no, se muestra el texto y la imagen */ }
   }
   try { await navigator.clipboard.writeText(completo); $('btn-copiar-reto').textContent = 'Copiado'; setTimeout(() => { $('btn-copiar-reto').textContent = 'Copiar'; }, 1800); } catch (e) { $('enlace-reto-texto').select(); }
 });
