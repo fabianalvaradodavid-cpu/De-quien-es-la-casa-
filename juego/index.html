@@ -251,6 +251,15 @@
   @keyframes onda-mon{ from{ transform:scale(0.5); opacity:0.9; } to{ transform:scale(1.6); opacity:0; } }
   @media (prefers-reduced-motion: reduce){ .mon-onda{ animation:none; } }
   .final td .monumento{ display:block; color:var(--muted); font-size:0.76rem; line-height:1.3; }
+  .seg.donde{ margin-bottom:8px; }
+  .enlace-sala{ display:flex; gap:8px; margin:12px 0 4px; }
+  .enlace-sala input{ flex:1; min-width:0; font-size:0.8rem; }
+  .sala-jugadores{ margin:14px 0 6px; display:flex; flex-direction:column; gap:6px; font-size:0.95rem; }
+  .sala-jugadores div{ display:flex; align-items:center; gap:8px; }
+  .sala-jugadores .ficha{ width:12px; height:12px; border-radius:50%; flex:none; }
+  .sala-jugadores .vacio{ color:var(--soft); }
+  .sala-estado{ font-size:0.85rem; color:var(--muted); min-height:1.3em; margin:6px 0 12px; }
+  .cuenta-sala{ font-family:var(--serif); font-size:4rem; font-weight:700; line-height:1; color:var(--clay); text-align:center; margin:10px 0; }
   .pares{ display:grid; grid-template-columns:1fr 1fr; column-gap:14px; }
   @media (max-width:560px){ .pares{ grid-template-columns:1fr; } }
   /* Que las opciones de un mismo grupo tengan igual alto aunque una ocupe dos líneas */
@@ -305,7 +314,7 @@
     <h1>¿De qué comuna es?</h1>
     <a href="../simple/">← Volver al mapa</a>
   </header>
-  <p class="bajada">Un pedazo de los deslindes de predios del SII, en un sector urbano al azar o alrededor de un monumento nacional. Adivina a qué comuna pertenece. Cada ronda vale 100 puntos; las pistas restan, y tienes 3 comodines 50/50 por partida. Juega con o sin reloj, entra al ranking, desafía a alguien con un enlace o juega contra otra persona en el mismo equipo.</p>
+  <p class="bajada">Un pedazo de los deslindes de predios del SII, en un sector urbano al azar o alrededor de un monumento nacional. Adivina a qué comuna pertenece. Cada ronda vale 100 puntos; las pistas restan, y tienes 3 comodines 50/50 por partida. Juega con o sin reloj, entra al ranking, desafía a alguien con un enlace o juega un duelo: en el mismo equipo o cada uno en su celular.</p>
 
   <div class="estado" id="estado">
     <span>Ronda <strong id="num-ronda">1</strong> de <span id="total-rondas">10</span></span>
@@ -342,6 +351,27 @@
     </div>
 
     <div class="portada" id="portada">
+      <div class="caja" id="caja-sala" hidden>
+        <div class="reto-texto" id="sala-texto"></div>
+        <div id="sala-unirse" hidden>
+          <div class="grupo">
+            <div class="etiqueta">Tu nombre</div>
+            <div class="campos"><input class="campo" id="sala-nombre" maxlength="20" placeholder="Tu nombre" autocomplete="nickname"></div>
+          </div>
+          <div class="botones"><button class="btn" id="btn-sala-unirse" type="button">Entrar al duelo</button></div>
+        </div>
+        <div class="enlace-sala" id="sala-enlace" hidden>
+          <input class="campo" id="sala-url" readonly aria-label="Enlace de la sala">
+          <button class="btn sec" id="btn-sala-compartir" type="button">Enviar enlace</button>
+        </div>
+        <div class="sala-jugadores" id="sala-jugadores"></div>
+        <div class="cuenta-sala" id="sala-cuenta" hidden aria-live="assertive"></div>
+        <div class="sala-estado" id="sala-estado" role="status"></div>
+        <div class="botones">
+          <button class="btn" id="btn-sala-empezar" type="button" hidden>¡Empezar el duelo!</button>
+          <button class="btn sec" id="btn-sala-salir" type="button">Salir</button>
+        </div>
+      </div>
       <div class="caja" id="caja-reto" hidden>
         <div class="reto-texto" id="reto-texto"></div>
         <div class="grupo">
@@ -414,6 +444,10 @@
         </div>
         </div>
         <div class="grupo" id="grupo-nombres" hidden>
+          <div class="seg donde" role="radiogroup" aria-label="Dónde juegan">
+            <label><input type="radio" name="donde" value="local" checked><span>En este equipo<small>se turnan</small></span></label>
+            <label><input type="radio" name="donde" value="linea"><span>Cada uno en su celular<small>con un enlace, a la vez</small></span></label>
+          </div>
           <div class="campos">
             <input class="campo j1" id="nombre-j1" maxlength="20" placeholder="Jugador 1" autocomplete="off" aria-label="Nombre del jugador 1">
             <input class="campo j2" id="nombre-j2" maxlength="20" placeholder="Jugador 2" autocomplete="off" aria-label="Nombre del jugador 2">
@@ -1106,7 +1140,7 @@ function partidaDeJuego(j, nombreYo) {
   if (j.modo === 'dos') jugadores = j.jug.map((p, k) => resumenJugador(p.nombre, filasJugador(j, k)));
   else {
     const yo = resumenJugador(nombreYo || 'Alguien', filasJugador(j, 0));
-    jugadores = j.reto ? [j.reto, yo] : [yo];
+    jugadores = j.reto ? (j.sala && j.sala.quien === 1 ? [yo, j.reto] : [j.reto, yo]) : [yo];
   }
   return { zona: j.zona, dificultad: j.dificultad, regiones: j.regiones, crono: j.crono, lejos: j.lejos, nRondas: j.nRondas, lugares: j.lugares, plan, jugadores };
 }
@@ -1123,14 +1157,19 @@ function opcionesPortada() {
     jugadores: Number(document.querySelector('input[name="jugadores"]:checked').value),
     lejos: document.querySelector('input[name="vista"]:checked').value === 'lejos',
     nRondas: Number(document.querySelector('input[name="rondas"]:checked').value) === 5 ? 5 : 10,
-    lugares: document.querySelector('input[name="lugares"]:checked').value === 'mn' ? 'mn' : 'urb'
+    lugares: document.querySelector('input[name="lugares"]:checked').value === 'mn' ? 'mn' : 'urb',
+    donde: document.querySelector('input[name="donde"]:checked').value === 'linea' ? 'linea' : 'local'
   };
 }
 let temporizadorRanking = null;
 function actualizarRecord() {
-  const { zona, dificultad, regiones, crono, jugadores, lejos, nRondas, lugares } = opcionesPortada();
+  const { zona, dificultad, regiones, crono, jugadores, lejos, nRondas, lugares, donde } = opcionesPortada();
   $('grupo-regiones').hidden = zona !== 'reg';
   $('grupo-nombres').hidden = jugadores !== 2;
+  const enLinea = jugadores === 2 && donde === 'linea';
+  $('nombre-j2').hidden = enLinea;
+  $('nombre-j1').placeholder = enLinea ? 'Tu nombre' : 'Jugador 1';
+  $('btn-empezar').textContent = enLinea ? 'Crear sala' : 'Empezar';
   const mn = lugares === 'mn';
   pintarCuentas(mn);
   if (mn && !MONUMENTOS) {
@@ -1225,6 +1264,8 @@ function mostrarPortada() {
   $('marco').classList.add('con-portada');
   $('caja-reto').hidden = !retoPendiente;
   $('caja-normal').hidden = !!retoPendiente;
+  $('caja-sala').hidden = true;
+  if (sala) { detenerSala(); sala = null; if (/[?&]sala=/.test(location.search)) history.replaceState(null, '', urlBase()); }
   $('portada').classList.remove('oculta');
   actualizarRecord();
 }
@@ -1234,6 +1275,8 @@ async function revisarEnlace() {
   const params = new URLSearchParams(location.search);
   const codigoDuelo = params.get('d') || params.get('duelo');
   const codigoReto = params.get('r') || params.get('reto');
+  const codigoSala = params.get('sala');
+  if (codigoSala) { abrirSala(codigoSala.toUpperCase()); return; }
   if (!codigoDuelo && !codigoReto) return;
   let partida = decodificarPartida(codigoDuelo || codigoReto);
   if (partida && partida.lugares === 'mn') {
@@ -1394,6 +1437,286 @@ async function prepararRondaMonumento(j) {
   throw new Error('No se encontraron monumentos con plano del SII en esta zona.');
 }
 
+// ---- Duelo en línea: cada jugador en su celular ----
+// Quien crea la sala arma las rondas y las guarda en el servidor (la val del ranking);
+// manda el enlace ?sala=CÓDIGO; cuando el otro entra, le da partida y los dos parten a la
+// misma hora (la del servidor). Cada uno juega a su ritmo y ve el puntaje del otro.
+let sala = null; // { codigo, token, quien (1 creó, 2 invitado, 0 aún no entra), info, partida }
+let desfase = null; // hora del servidor menos hora local, en ms
+const SALA_LS = 'dqelc-juego-sala-';
+function ajustarHora(ahora, t0) {
+  const t1 = Date.now();
+  if (desfase === null || t1 - t0 < desfase.rtt) desfase = { ms: ahora - (t0 + t1) / 2, rtt: t1 - t0 };
+}
+function horaServidor() { return Date.now() + (desfase ? desfase.ms : 0); }
+async function pedirSala(datos) {
+  const t0 = Date.now();
+  const r = await fetch(RANKING_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proxy-Token': PROXY_TOKEN }, body: JSON.stringify(datos) });
+  const d = await r.json().catch(() => ({}));
+  if (d.ahora) ajustarHora(d.ahora, t0);
+  if (!r.ok) { const e = new Error(d.error || ('HTTP ' + r.status)); e.datos = d; throw e; }
+  return d;
+}
+async function consultarSala(codigo) {
+  const t0 = Date.now();
+  const r = await fetch(RANKING_URL + '?sala=' + encodeURIComponent(codigo), { headers: { 'X-Proxy-Token': PROXY_TOKEN } });
+  const d = await r.json().catch(() => ({}));
+  if (d.ahora) ajustarHora(d.ahora, t0);
+  if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+  return d.sala;
+}
+function filasDeServidor(f) { return (f || []).map((x) => ({ pts: x[0], mask: x[1], pos: x[2], seg: x[3] })); }
+function rivalSala() {
+  const q = sala.quien === 1 ? 2 : 1;
+  return { nombre: sala.info['n' + q] || 'Rival', filas: sala.info['f' + q] || [], fin: !!sala.info['fin' + q] };
+}
+function partidaConJugadores(info) {
+  const p = decodificarPartida(info.partida);
+  return p && { ...p, jugadores: [resumenJugador(info.n1, filasDeServidor(info.f1)), resumenJugador(info.n2 || 'Rival', filasDeServidor(info.f2))] };
+}
+function detenerSala() {
+  if (sala) { clearInterval(sala.timer); clearInterval(sala.cuenta); }
+}
+function salirDeSala() {
+  detenerSala();
+  sala = null;
+  history.replaceState(null, '', urlBase());
+  $('caja-sala').hidden = true;
+  mostrarPortada();
+}
+function mostrarCajaSala() {
+  $('final').classList.add('oculta');
+  $('portada').classList.remove('oculta');
+  $('marco').classList.add('con-portada');
+  $('caja-reto').hidden = true;
+  $('caja-normal').hidden = true;
+  $('caja-sala').hidden = false;
+  $('sala-unirse').hidden = true;
+  $('sala-enlace').hidden = true;
+  $('btn-sala-empezar').hidden = true;
+  $('sala-cuenta').hidden = true;
+  $('sala-jugadores').textContent = '';
+}
+function estadoSala(texto) { $('sala-estado').textContent = texto; }
+function urlSala() { return urlBase() + '?sala=' + sala.codigo; }
+
+function pintarSala() {
+  const info = sala.info;
+  const p = sala.partida;
+  const modo = nombreModalidad(p.zona, p.dificultad, p.regiones, p.crono, p.lejos, p.plan.length, p.lugares);
+  const t = $('sala-texto');
+  t.textContent = '';
+  const fuerte = (x) => { const s = document.createElement('strong'); s.textContent = x; return s; };
+  if (sala.quien === 1) t.append('Sala ', fuerte(sala.codigo), ' · ', fuerte(modo), '. Envía el enlace a tu rival. Cuando entre, le das partida y los dos parten a la vez, cada uno en su celular.');
+  else t.append('Duelo con ', fuerte(info.n1), ' · ', fuerte(modo), '. Las mismas ' + p.plan.length + ' rondas para los dos, al mismo tiempo.');
+  $('sala-enlace').hidden = sala.quien !== 1;
+  $('sala-url').value = urlSala();
+  const lista = $('sala-jugadores');
+  lista.textContent = '';
+  [[info.n1, 1], [info.n2, 2]].forEach(([n, q], k) => {
+    const fila = document.createElement('div');
+    const ficha = document.createElement('span'); ficha.className = 'ficha'; ficha.style.background = COLORES[k];
+    fila.append(ficha, n ? n + (sala.quien === q ? ' (tú)' : '') : 'esperando rival…');
+    if (!n) fila.className = 'vacio';
+    lista.appendChild(fila);
+  });
+  const listo = !!info.n2;
+  $('btn-sala-empezar').hidden = !(sala.quien === 1 && listo && !info.inicio);
+  if (info.inicio) return;
+  if (sala.quien === 1) estadoSala(listo ? info.n2 + ' entró a la sala. ¡Cuando quieras!' : 'Esperando que entre tu rival…');
+  else estadoSala('Esperando que ' + info.n1 + ' dé la partida…');
+}
+
+// Mientras se espera en la sala, se consulta cada 1,5 s
+function seguirSala() {
+  clearInterval(sala.timer);
+  const s = sala;
+  const paso = async () => {
+    try {
+      s.info = await consultarSala(s.codigo);
+      if (sala !== s) return;
+      pintarSala();
+      if (s.info.inicio) programarInicio();
+    } catch (e) { if (sala === s) estadoSala('Se perdió la conexión con la sala; reintentando…'); }
+  };
+  s.timer = setInterval(paso, 1500);
+  paso();
+}
+function programarInicio() {
+  if (sala.cuenta) return;
+  const s = sala;
+  clearInterval(s.timer);
+  $('btn-sala-empezar').hidden = true;
+  $('sala-cuenta').hidden = false;
+  estadoSala('¡Prepárate!');
+  const tic = () => {
+    const falta = s.info.inicio - horaServidor();
+    if (falta <= 0) { clearInterval(s.cuenta); arrancarSala(); return; }
+    $('sala-cuenta').textContent = Math.ceil(falta / 1000);
+  };
+  s.cuenta = setInterval(tic, 100);
+  tic();
+}
+function arrancarSala() {
+  if (sala.iniciada) return;
+  sala.iniciada = true;
+  $('caja-sala').hidden = true;
+  const p = sala.partida;
+  empezar({ zona: p.zona, dificultad: p.dificultad, regiones: p.regiones, crono: p.crono, lejos: p.lejos, lugares: p.lugares, jugadores: 1, plan: p.plan, sala });
+}
+
+// Quien crea la sala arma las rondas antes (con el SII), para que ambos jueguen lo mismo
+async function crearSala(o) {
+  const nombre = limpiarNombre($('nombre-j1').value) || 'Jugador 1';
+  escribirLS('dqelc-juego-nombre', nombre);
+  sala = null;
+  mostrarCajaSala();
+  $('sala-texto').textContent = 'Preparando las rondas del duelo…';
+  estadoSala('');
+  const tmp = { zona: o.zona, dificultad: o.dificultad, regiones: new Set(o.regiones), lugares: o.lugares, lejos: o.lejos,
+    usadas: new Set(), monUsados: new Set(), rondas: [], plan: null, cancelado: false };
+  const intento = (sala = { preparando: tmp });
+  try {
+    const plan = [];
+    for (let k = 0; k < o.nRondas; k++) {
+      const r = await prepararRonda(tmp);
+      if (sala !== intento) return; // se salió mientras se preparaba
+      tmp.rondas.push(r);
+      plan.push({ idx: r.idx, pIdx: r.pIdx, opciones: r.opciones });
+      estadoSala('Ronda ' + (k + 1) + ' de ' + o.nRondas + ' lista.');
+    }
+    const partida = { zona: o.zona, dificultad: o.dificultad, regiones: tmp.regiones, crono: o.crono, lejos: o.lejos, nRondas: o.nRondas, lugares: o.lugares, plan,
+      jugadores: [resumenJugador('sala', plan.map(() => ({ pts: 0, mask: 0, pos: 0, seg: null })))] };
+    const d = await pedirSala({ accion: 'sala-crear', partida: codificarPartida(partida), nombre });
+    if (sala !== intento) return;
+    sala = { codigo: d.codigo, token: d.token, quien: 1, info: d.sala, partida: decodificarPartida(d.sala.partida) };
+    escribirLS(SALA_LS + sala.codigo, JSON.stringify({ token: sala.token, quien: 1 }));
+    history.replaceState(null, '', urlSala());
+    pintarSala();
+    seguirSala();
+  } catch (e) {
+    if (sala !== intento) return;
+    $('sala-texto').textContent = 'No se pudo crear la sala.';
+    estadoSala(String(e.message || e) + '. Revisa tu conexión e inténtalo de nuevo.');
+  }
+}
+
+// Al abrir un enlace ?sala=CÓDIGO
+async function abrirSala(codigo) {
+  sala = null;
+  mostrarCajaSala();
+  $('sala-texto').textContent = 'Buscando la sala ' + codigo + '…';
+  estadoSala('');
+  let info;
+  try { info = await consultarSala(codigo); } catch (e) {
+    $('sala-texto').textContent = 'No se encontró la sala ' + codigo + '.';
+    estadoSala(String(e.message || e) + '.');
+    return;
+  }
+  const partida = decodificarPartida(info.partida);
+  if (partida && partida.lugares === 'mn') { try { await cargarMonumentos(); } catch (e) { /* se avisa al jugar */ } }
+  if (!partida) { $('sala-texto').textContent = 'Esa sala es de otra versión del juego.'; return; }
+  // Si ya terminaron los dos, se muestra el resultado
+  if (info.fin1 && info.fin2) { verDuelo(partidaConJugadores(info)); return; }
+  let guardada = null;
+  try { guardada = JSON.parse(leerLS(SALA_LS + info.codigo, 'null')); } catch (e) {}
+  if (guardada && guardada.token) {
+    sala = { codigo: info.codigo, token: guardada.token, quien: guardada.quien, info, partida };
+    if (info.inicio && horaServidor() > info.inicio + 3000) {
+      $('sala-texto').textContent = 'Este duelo ya empezó y se cerró la página en medio de la partida.';
+      estadoSala('Cuando los dos terminen, este mismo enlace muestra el resultado.');
+      detenerSala();
+      sala = null;
+      return;
+    }
+    pintarSala();
+    seguirSala();
+    return;
+  }
+  if (info.n2) {
+    $('sala-texto').textContent = 'Esta sala ya tiene dos jugadores (' + info.n1 + ' y ' + info.n2 + ').';
+    estadoSala('Cuando terminen, este mismo enlace muestra el resultado.');
+    return;
+  }
+  sala = { codigo: info.codigo, quien: 0, info, partida };
+  const t = $('sala-texto');
+  t.textContent = '';
+  const fuerte = (x) => { const s = document.createElement('strong'); s.textContent = x; return s; };
+  t.append(fuerte(info.n1), ' te invita a un duelo en ',
+    fuerte(nombreModalidad(partida.zona, partida.dificultad, partida.regiones, partida.crono, partida.lejos, partida.plan.length, partida.lugares)),
+    '. Los dos juegan las mismas ' + partida.plan.length + ' rondas al mismo tiempo, cada uno en su celular.');
+  $('sala-nombre').value = leerLS('dqelc-juego-nombre', '');
+  $('sala-unirse').hidden = false;
+}
+$('btn-sala-unirse').addEventListener('click', async () => {
+  if (!sala || sala.quien !== 0) return;
+  const nombre = limpiarNombre($('sala-nombre').value);
+  if (!nombre) { estadoSala('Escribe tu nombre.'); $('sala-nombre').focus(); return; }
+  escribirLS('dqelc-juego-nombre', nombre);
+  $('btn-sala-unirse').disabled = true;
+  try {
+    const d = await pedirSala({ accion: 'sala-unirse', codigo: sala.codigo, nombre });
+    sala.token = d.token; sala.quien = 2; sala.info = d.sala;
+    escribirLS(SALA_LS + sala.codigo, JSON.stringify({ token: sala.token, quien: 2 }));
+    $('sala-unirse').hidden = true;
+    pintarSala();
+    seguirSala();
+  } catch (e) {
+    estadoSala(String(e.message || e) + '.');
+  } finally { $('btn-sala-unirse').disabled = false; }
+});
+$('sala-nombre').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('btn-sala-unirse').click(); } });
+$('btn-sala-empezar').addEventListener('click', async () => {
+  if (!sala || sala.quien !== 1) return;
+  $('btn-sala-empezar').disabled = true;
+  try {
+    const d = await pedirSala({ accion: 'sala-empezar', codigo: sala.codigo, token: sala.token });
+    sala.info = d.sala;
+    pintarSala();
+    if (d.sala.inicio) programarInicio();
+  } catch (e) { estadoSala(String(e.message || e) + '.'); }
+  finally { $('btn-sala-empezar').disabled = false; }
+});
+$('btn-sala-salir').addEventListener('click', salirDeSala);
+$('btn-sala-compartir').addEventListener('click', async () => {
+  if (!sala || !sala.codigo) return;
+  const p = sala.partida;
+  const texto = '¡Te desafío a un duelo de ¿De qué comuna es? (' + nombreModalidad(p.zona, p.dificultad, p.regiones, p.crono, p.lejos, p.plan.length, p.lugares) + ')! Entra a la sala:';
+  if (navigator.share && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)) {
+    try { await navigator.share({ title: '¿De qué comuna es?', text: texto, url: urlSala() }); return; } catch (e) { /* se copia */ }
+  }
+  try { await navigator.clipboard.writeText(texto + ' ' + urlSala()); $('btn-sala-compartir').textContent = 'Copiado'; }
+  catch (e) { $('sala-url').select(); }
+  setTimeout(() => { $('btn-sala-compartir').textContent = 'Enviar enlace'; }, 1800);
+});
+
+// Durante la partida: se manda cada jugada y se consulta la del rival cada 2,5 s
+function seguirSalaEnJuego(j) {
+  const s = j.sala;
+  clearInterval(s.timer);
+  s.timer = setInterval(async () => {
+    try {
+      s.info = await consultarSala(s.codigo);
+      if (juego !== j) { clearInterval(s.timer); return; }
+      if (s.finPendiente) enviarJugada(j, true);
+      pintarMarcador();
+      if (j.esperandoRival) { if (rivalSala().fin) { j.esperandoRival = false; clearInterval(s.timer); terminar(); } else pintarEspera(j); }
+    } catch (e) { /* se reintenta en la siguiente vuelta */ }
+  }, 2500);
+}
+function enviarJugada(j, fin) {
+  const s = j.sala;
+  const filas = filasJugador(j, 0).map((f) => [f.pts, f.mask, f.pos, f.seg === null || f.seg === undefined ? null : Math.round(f.seg * 10) / 10]);
+  if (fin) s.finPendiente = true;
+  pedirSala({ accion: 'sala-jugada', codigo: s.codigo, token: s.token, filas, fin: !!fin })
+    .then((d) => { s.info = d.sala; if (fin) s.finPendiente = false; if (juego === j) pintarMarcador(); })
+    .catch(() => {});
+}
+function pintarEspera(j) {
+  const r = rivalSala();
+  $('final-comentario').textContent = 'Terminaste. Esperando a ' + r.nombre + ', que va en la ronda ' + Math.min(r.filas.length + 1, N_RONDAS) + ' de ' + N_RONDAS + '…';
+}
+
 // ---- Reloj (contrarreloj) ----
 let reloj = null;
 function iniciarReloj(alAgotar) {
@@ -1461,6 +1784,12 @@ function pintarMarcador() {
     const pt = document.createElement('strong'); pt.id = 'puntaje'; pt.textContent = juego.puntaje;
     m.append(pt, ' puntos');
     if (juego.reto) m.append(' · ' + juego.reto.nombre + ' hizo ' + juego.reto.puntaje);
+    else if (juego.sala && juego.sala.info) {
+      const r = rivalSala();
+      const pts = r.filas.reduce((a, f) => a + f[0], 0);
+      const n = document.createElement('strong'); n.textContent = pts;
+      m.append(' · ' + r.nombre + ' ', n, r.fin ? ' (terminó)' : ' (ronda ' + Math.min(r.filas.length + 1, N_RONDAS) + ')');
+    }
   }
 }
 
@@ -1469,8 +1798,10 @@ function empezar(opts) {
   ocultarReloj();
   const modo = opts.reto ? 'reto' : (opts.jugadores === 2 ? 'dos' : 'solo');
   N_RONDAS = opts.plan ? opts.plan.length : (opts.nRondas === 5 ? 5 : 10);
+  if (!opts.sala && sala) { detenerSala(); sala = null; }
+  if (!opts.sala && /[?&]sala=/.test(location.search)) history.replaceState(null, '', urlBase());
   juego = {
-    lejos: !!opts.lejos, nRondas: N_RONDAS, lugares: opts.lugares === 'mn' ? 'mn' : 'urb', monUsados: new Set(),
+    lejos: !!opts.lejos, nRondas: N_RONDAS, sala: opts.sala || null, lugares: opts.lugares === 'mn' ? 'mn' : 'urb', monUsados: new Set(),
     zona: opts.zona, dificultad: opts.dificultad, regiones: new Set(opts.regiones || ORDEN_REGIONES), crono: !!opts.crono,
     modo, plan: opts.plan || null, reto: opts.reto || null,
     usadas: new Set(), rondas: [], i: -1, puntaje: 0, cancelado: false, comodines: COMODINES_POR_PARTIDA
@@ -1489,6 +1820,7 @@ function empezar(opts) {
   $('total-rondas').textContent = N_RONDAS;
   $('marcas').innerHTML = '';
   for (let k = 0; k < N_RONDAS; k++) $('marcas').appendChild(document.createElement('span'));
+  if (juego.sala) seguirSalaEnJuego(juego);
   pintarMarcador();
   juego.siguiente = prepararRonda(juego);
   mostrarSiguiente();
@@ -1706,7 +2038,12 @@ function responder(idx, porTiempo) {
       const suyo = juego.reto.x[juego.i];
       const ayudas = simbolosPistas(suyo.mask);
       titular += ' ' + juego.reto.nombre + ': ' + (suyo.pos === -1 ? 'sin tiempo' : (suyo.pts ? '+' + suyo.pts : 'falló')) + (ayudas ? ' ' + ayudas : '') + '.';
+    } else if (juego.sala && juego.sala.info) {
+      const r = rivalSala();
+      const f = r.filas[juego.i];
+      if (f) titular += ' ' + r.nombre + ': ' + (f[2] === -1 ? 'sin tiempo' : (f[0] ? '+' + f[0] : 'falló')) + '.';
     }
+    if (juego.sala) enviarJugada(juego, false);
   }
   pintarMarcador();
 
@@ -1895,10 +2232,40 @@ function prepararCompartir(partida, titulo, explica, etiqueta) {
   $('bloque-reto').hidden = false;
 }
 
+// Fin de un duelo en línea cuando el rival todavía no termina
+function mostrarEspera(j) {
+  j.esperandoRival = true;
+  $('final-tabla').innerHTML = '';
+  $('final-leyenda').hidden = true;
+  $('bloque-ranking').hidden = true;
+  $('bloque-reto').hidden = true;
+  const grande = $('final-puntaje');
+  grande.innerHTML = '';
+  grande.append(String(j.puntaje) + ' ');
+  const s = document.createElement('small'); s.textContent = 'de ' + (N_RONDAS * 100); grande.appendChild(s);
+  pintarEspera(j);
+  $('btn-otra').textContent = 'No esperar más';
+  $('btn-cambiar').textContent = 'Cambiar zona';
+  accionOtra = () => { j.esperandoRival = false; j.sinEsperar = true; clearInterval(j.sala.timer); terminar(); };
+  accionCambiar = mostrarPortada;
+  $('pistas').style.display = 'none';
+  $('opciones').style.display = 'none';
+  $('resultado').style.display = 'none';
+  interaccion(false);
+  $('marco').classList.add('con-portada');
+  $('final').classList.remove('oculta');
+}
 function terminar() {
   const j = juego;
   const max = N_RONDAS * 100;
   ocultarReloj();
+  if (j.sala && !j.reto && !j.sinEsperar) {
+    if (!j.finEnviado) { j.finEnviado = true; enviarJugada(j, true); }
+    const r = rivalSala();
+    if (r.fin) j.reto = resumenJugador(r.nombre, filasDeServidor(r.filas));
+    else { mostrarEspera(j); return; }
+  }
+  if (j.sala) clearInterval(j.sala.timer);
   const tabla = $('final-tabla');
   tabla.innerHTML = '';
   $('estado-guardar').textContent = '';
@@ -1926,7 +2293,7 @@ function terminar() {
   } else {
     const nombreYo = limpiarNombre($('final-nombre').value) || leerLS('dqelc-juego-nombre', '') || (j.reto ? 'Tú' : 'Alguien');
     const partida = partidaDeJuego(j, nombreYo);
-    const yo = partida.jugadores[partida.jugadores.length - 1];
+    const yo = partida.jugadores.find((p) => p !== j.reto);
     j.aciertos = yo.aciertos;
     j.segundosTotal = yo.segundos;
     grande.append(String(j.puntaje) + ' ');
@@ -2058,7 +2425,13 @@ $('btn-siguiente').addEventListener('click', () => {
   if (!juego) return;
   if (juego.i + 1 < N_RONDAS) mostrarSiguiente(); else terminar();
 });
-$('btn-empezar').addEventListener('click', () => empezar(opcionesPortada()));
+$('btn-empezar').addEventListener('click', () => {
+  const o = opcionesPortada();
+  if (o.jugadores === 2 && o.donde === 'linea') {
+    if (!RANKING_URL) { $('aviso-portada').textContent = 'El duelo en línea necesita la val del ranking (RANKING_URL).'; return; }
+    crearSala(o);
+  } else empezar(o);
+});
 $('btn-otra').addEventListener('click', () => { if (accionOtra) accionOtra(); });
 $('btn-cambiar').addEventListener('click', () => { (accionCambiar || mostrarPortada)(); });
 
