@@ -2338,11 +2338,17 @@ function prepararCompartir(partida, titulo, explica, etiqueta) {
   $('reto-explica').textContent = explica;
   $('enlace-reto').hidden = true;
   $('bloque-reto').hidden = false;
-  actualizarImagen();
+  // Partida de una persona: solo el enlace para desafiar. Con dos jugadores: la imagen
+  const soloEnlace = partida.jugadores.length === 1;
+  $('btn-reto').textContent = etiqueta;
+  $('btn-reto').parentElement.hidden = !soloEnlace;
+  if (soloEnlace) { $('imagen-resultado').hidden = true; compartirActual.lienzo = null; }
+  else actualizarImagen();
 }
 // La imagen se arma apenas aparece la pantalla final (y de nuevo si cambia el nombre)
 function actualizarImagen() {
   if (!compartirActual) return;
+  if (compartirActual.partida.jugadores.length === 1) { actualizarEnlace(); return; }
   // En partidas individuales, la imagen y el enlace llevan el nombre que esté escrito
   if (juego && juego.modo !== 'dos' && compartirActual.partida.jugadores.length === 1) {
     const nombre = limpiarNombre($('final-nombre').value) || leerLS('dqelc-juego-nombre', '') || 'Alguien';
@@ -2356,6 +2362,14 @@ function actualizarImagen() {
     $('imagen-resultado-img').src = cv.toDataURL('image/png');
     $('imagen-resultado').hidden = false;
   } catch (e) { console.error('No se pudo armar la imagen', e); $('imagen-resultado').hidden = true; }
+}
+// En la partida individual, el enlace del desafío lleva el nombre que esté escrito
+function actualizarEnlace() {
+  if (!compartirActual || !juego || juego.modo === 'dos' || compartirActual.partida.jugadores.length !== 1) return;
+  const nombre = limpiarNombre($('final-nombre').value) || leerLS('dqelc-juego-nombre', '') || 'Alguien';
+  compartirActual = { ...compartirActual, partida: { ...compartirActual.partida, jugadores: [{ ...compartirActual.partida.jugadores[0], nombre }] } };
+  compartirActual.texto = textoCompartir(compartirActual.partida);
+  compartirActual.url = enlaceCompartir(compartirActual.partida);
 }
 $('final-nombre').addEventListener('input', () => { clearTimeout(actualizarImagen.t); actualizarImagen.t = setTimeout(actualizarImagen, 300); });
 
@@ -2451,7 +2465,7 @@ function terminar() {
         tabla.appendChild(tr);
       });
       if (j.rondas.some((r) => r.pistas.size) || j.crono) { $('final-leyenda').textContent = LEYENDA; $('final-leyenda').hidden = false; }
-      prepararCompartir(partida, 'Comparte y desafía', 'Comparte la imagen con tu resultado; va con un enlace para que quien lo abra juegue estas mismas ' + N_RONDAS + ' rondas y compare.', 'Compartir resultado y desafiar');
+      prepararCompartir(partida, 'Comparte y desafía', 'Comparte tu resultado con un enlace: quien lo abra juega estas mismas ' + N_RONDAS + ' rondas y al final ve tu puntaje y tus ayudas al lado de los suyos.', 'Compartir resultado y desafiar');
     }
     $('final-comentario').textContent = comentario;
     $('bloque-ranking').hidden = false;
@@ -2553,6 +2567,28 @@ $('btn-compartir-imagen').addEventListener('click', async () => {
   a.download = 'de-que-comuna-es.png';
   document.body.appendChild(a); a.click(); a.remove();
   avisar('Este navegador no comparte imágenes: se descargó');
+});
+
+// Comparte y desafía (partida individual): el texto con el enlace del desafío
+$('btn-reto').addEventListener('click', async () => {
+  if (!compartirActual) return;
+  actualizarEnlace();
+  const { texto, url } = compartirActual;
+  const completo = texto + '\n' + url;
+  $('enlace-reto-texto').value = completo;
+  if (navigator.share && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)) {
+    try { await navigator.share({ title: '¿De qué comuna es?', text: texto, url }); return; }
+    catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  $('enlace-reto').hidden = false;
+  try { await navigator.clipboard.writeText(completo); $('btn-copiar-reto').textContent = 'Copiado'; setTimeout(() => { $('btn-copiar-reto').textContent = 'Copiar'; }, 1800); }
+  catch (e) { $('enlace-reto-texto').select(); }
+});
+$('btn-copiar-reto').addEventListener('click', async () => {
+  const campo = $('enlace-reto-texto');
+  try { await navigator.clipboard.writeText(campo.value); } catch (e) { campo.select(); document.execCommand && document.execCommand('copy'); }
+  $('btn-copiar-reto').textContent = 'Copiado';
+  setTimeout(() => { $('btn-copiar-reto').textContent = 'Copiar'; }, 1800);
 });
 
 $('btn-siguiente').addEventListener('click', () => {
