@@ -263,6 +263,8 @@
   .imagen-resultado{ margin-top:10px; display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
   .imagen-resultado img{ width:100%; max-width:360px; border:1px solid var(--line); border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,0.12); }
   .imagen-resultado .btn{ text-decoration:none; }
+  /* Si queda un grupo solo en la última fila (Jugadores), ocupa todo el ancho */
+  .pares > .grupo:last-child:nth-child(odd){ grid-column:1 / -1; }
   .pares{ display:grid; grid-template-columns:1fr 1fr; column-gap:14px; }
   @media (max-width:560px){ .pares{ grid-template-columns:1fr; } }
   /* Que las opciones de un mismo grupo tengan igual alto aunque una ocupe dos líneas */
