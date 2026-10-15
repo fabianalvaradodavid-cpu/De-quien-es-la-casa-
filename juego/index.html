@@ -425,13 +425,6 @@
           </div>
         </div>
         <div class="grupo">
-          <div class="etiqueta">Vista</div>
-          <div class="seg" role="radiogroup" aria-label="Vista">
-            <label><input type="radio" name="vista" value="cerca" checked><span>Cerca<small>2 m por píxel</small></span></label>
-            <label><input type="radio" name="vista" value="lejos"><span>De lejos<small>4 m por píxel · más fácil</small></span></label>
-          </div>
-        </div>
-        <div class="grupo">
           <div class="etiqueta">Lugares</div>
           <div class="seg" role="radiogroup" aria-label="Lugares">
             <label><input type="radio" name="lugares" value="urb" checked><span>Sectores urbanos<small>al azar</small></span></label>
@@ -523,7 +516,7 @@
     </div>
   </div>
 
-  <p class="nota">Deslindes: Servicio de Impuestos Internos (SII). Imagen satelital: Esri. Zonas urbanas: zonas censales del INE (Censo 2017, vía el paquete chilemapas); las comunas sin zona urbana no se juegan. Todos los planos tienen la misma escala: 2 m por píxel, o 4 m en la vista de lejos (ver la barra abajo a la izquierda); si un monumento no cabe, el plano se aleja lo justo para mostrarlo completo. Monumentos nacionales: Consejo de Monumentos Nacionales; los que abarcan varias comunas no se juegan. Con bomba de tiempo, un acierto vale entero si respondes en los primeros 3 segundos y va bajando hasta la mitad a los 15. Teclas: 1 a 4 para responder, Enter para seguir. Los nombres que guardes en un ranking compartido quedan visibles para quienes jueguen.</p>
+  <p class="nota">Deslindes: Servicio de Impuestos Internos (SII). Imagen satelital: Esri. Zonas urbanas: zonas censales del INE (Censo 2017, vía el paquete chilemapas); las comunas sin zona urbana no se juegan. Todos los planos tienen la misma escala: 2 m por píxel (ver la barra abajo a la izquierda); si un monumento no cabe, el plano se aleja lo justo para mostrarlo completo. Monumentos nacionales: Consejo de Monumentos Nacionales; los que abarcan varias comunas no se juegan. Con bomba de tiempo, un acierto vale entero si respondes en los primeros 3 segundos y va bajando hasta la mitad a los 15. Teclas: 1 a 4 para responder, Enter para seguir. Los nombres que guardes en un ranking compartido quedan visibles para quienes jueguen.</p>
 </div>
 
 <script>
@@ -1162,7 +1155,7 @@ function opcionesPortada() {
     regiones: new Set(regionesElegidas),
     crono: document.querySelector('input[name="tiempo"]:checked').value === 'crono',
     jugadores: Number(document.querySelector('input[name="jugadores"]:checked').value),
-    lejos: document.querySelector('input[name="vista"]:checked').value === 'lejos',
+    lejos: false, // la vista de lejos se quitó: el SII no la dibujaba bien
     nRondas: Number(document.querySelector('input[name="rondas"]:checked').value) === 5 ? 5 : 10,
     lugares: document.querySelector('input[name="lugares"]:checked').value === 'mn' ? 'mn' : 'urb',
     donde: document.querySelector('input[name="donde"]:checked').value === 'linea' ? 'linea' : 'local'
@@ -1812,7 +1805,7 @@ function empezar(opts) {
   if (!opts.sala && sala) { detenerSala(); sala = null; }
   if (!opts.sala && /[?&]sala=/.test(location.search)) history.replaceState(null, '', urlBase());
   juego = {
-    lejos: !!opts.lejos, nRondas: N_RONDAS, sala: opts.sala || null, lugares: opts.lugares === 'mn' ? 'mn' : 'urb', monUsados: new Set(),
+    lejos: false, nRondas: N_RONDAS, sala: opts.sala || null, lugares: opts.lugares === 'mn' ? 'mn' : 'urb', monUsados: new Set(),
     zona: opts.zona, dificultad: opts.dificultad, regiones: new Set(opts.regiones || ORDEN_REGIONES), crono: !!opts.crono,
     modo, plan: opts.plan || null, reto: opts.reto || null,
     usadas: new Set(), rondas: [], i: -1, puntaje: 0, cancelado: false, comodines: COMODINES_POR_PARTIDA
@@ -1980,7 +1973,10 @@ $('pista-satelital').addEventListener('click', () => usarPista('satelital'));
 
 const FRASES_ACIERTO = ['¡La clavaste!', '¡Bien ahí!', '¡Exacto!', '¡Ojo de tasador!', '¡Correctísimo!', '¡Eso!', '¡Te la sabías!'];
 const FRASES_ERROR = ['Nop.', 'Frío, frío.', 'Casi, pero no.', 'Uy.', 'Te fuiste a otra comuna.', 'Mmm, no.', 'Te pilló la manzana.'];
-const FRASES_TIEMPO = ['¡BUM! Se acabó el tiempo.', 'Tic, tac… ¡bum!', 'La bomba no espera a nadie.', 'Explotó. Las manzanas sobrevivieron.', 'Más lento que trámite en la DOM.', 'Más lento que permiso del CMN.'];
+const FRASES_TIEMPO = ['¡BUM! Se acabó el tiempo.', 'Tic, tac… ¡bum!', 'La bomba no espera a nadie.', 'Explotó. Las manzanas sobrevivieron.'];
+// Las favoritas salen más seguido: 2 de cada 3 veces
+const FRASES_LENTO = ['Más lento que autorización del CMN.', 'Más lento que trámite ante la DOM.'];
+function fraseTiempo() { return Math.random() < 2 / 3 ? al(FRASES_LENTO) : al(FRASES_TIEMPO); }
 
 // idx = comuna elegida; null con porTiempo = se acabó el reloj
 function responder(idx, porTiempo) {
@@ -2043,7 +2039,7 @@ function responder(idx, porTiempo) {
     ronda.puntos = pts;
     juego.puntaje += pts;
     marca.classList.add(bien ? 'bien' : 'mal');
-    if (porTiempo) titular = al(FRASES_TIEMPO) + ' Era ' + c.n + '.';
+    if (porTiempo) titular = fraseTiempo() + ' Era ' + c.n + '.';
     else titular = bien ? al(FRASES_ACIERTO) + ' ' + c.n + ' (+' + pts + (juego.crono ? ', en ' + formatoSeg(seg) + (seg > SEGUNDOS_GRACIA + 0.5 ? '; el tiempo restó ' + (puntosAcierto(ronda.pistas, null) - pts) : '') : '') + ')' : al(FRASES_ERROR) + ' Era ' + c.n + '.';
     if (juego.reto) {
       const suyo = juego.reto.x[juego.i];
@@ -2525,29 +2521,36 @@ $('btn-guardar').addEventListener('click', async () => {
 $('final-nombre').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('btn-guardar').click(); } });
 
 // Compartir: en el celular abre el menú de compartir; si no, copia el texto con el enlace
-// Compartir imagen: en el celular abre el menú de compartir con la imagen, el resumen y el
-// enlace; en el computador descarga la imagen y copia el resumen con el enlace
+// Compartir imagen: abre el menú de compartir del sistema con la imagen (en celulares y en
+// los computadores que lo permiten). Si el navegador no puede compartir archivos, la imagen
+// se copia al portapapeles para pegarla directo en el chat; descargarla es el último recurso.
 $('btn-compartir-imagen').addEventListener('click', async () => {
   if (!compartirActual || !compartirActual.lienzo) return;
   const { texto, url, lienzo } = compartirActual;
   const completo = texto + '\n' + url;
   const boton = $('btn-compartir-imagen');
-  const avisar = (s) => { boton.textContent = s; setTimeout(() => { boton.textContent = 'Compartir imagen'; }, 2200); };
+  const avisar = (s) => { boton.textContent = s; setTimeout(() => { boton.textContent = 'Compartir imagen'; }, 2600); };
   const archivo = archivoDeLienzo(lienzo);
-  if (navigator.share && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)) {
+  if (navigator.canShare && navigator.share && navigator.canShare({ files: [archivo] })) {
+    try { await navigator.share({ files: [archivo], title: '¿De qué comuna es?', text: completo }); return; }
+    catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  if (navigator.clipboard && window.ClipboardItem) {
     try {
-      if (navigator.canShare && navigator.canShare({ files: [archivo] })) await navigator.share({ files: [archivo], title: '¿De qué comuna es?', text: completo });
-      else await navigator.share({ title: '¿De qué comuna es?', text: texto, url });
-      return;
-    } catch (e) { if (e && e.name === 'AbortError') return; }
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': archivo, 'text/plain': new Blob([completo], { type: 'text/plain' }) })]);
+      avisar('Imagen copiada: pégala en el chat'); return;
+    } catch (e) {
+      try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': archivo })]); avisar('Imagen copiada: pégala en el chat'); return; } catch (e2) { /* sin portapapeles de imágenes */ }
+    }
+  }
+  if (navigator.share) {
+    try { await navigator.share({ title: '¿De qué comuna es?', text: texto, url }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
   }
   const a = document.createElement('a');
   a.href = lienzo.toDataURL('image/png');
   a.download = 'de-que-comuna-es.png';
   document.body.appendChild(a); a.click(); a.remove();
-  let copiado = false;
-  try { await navigator.clipboard.writeText(completo); copiado = true; } catch (e) { /* sin portapapeles */ }
-  avisar(copiado ? 'Imagen descargada · enlace copiado' : 'Imagen descargada');
+  avisar('Este navegador no comparte imágenes: se descargó');
 });
 
 $('btn-siguiente').addEventListener('click', () => {
