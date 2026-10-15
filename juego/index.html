@@ -484,14 +484,14 @@
         <div class="bloque" id="bloque-reto">
           <div class="titulo" id="reto-titulo">Desafía a alguien</div>
           <div class="explica" id="reto-explica"></div>
-          <div class="botones" style="margin-top:8px"><button class="btn sec" id="btn-reto" type="button">Compartir resultado</button></div>
+          <div class="botones" style="margin-top:8px" hidden><button class="btn sec" id="btn-reto" type="button">Compartir resultado</button></div>
           <div class="enlace-reto" id="enlace-reto" hidden>
             <textarea class="campo" id="enlace-reto-texto" rows="5" readonly aria-label="Texto para compartir"></textarea>
             <button class="btn sec" id="btn-copiar-reto" type="button">Copiar</button>
           </div>
           <div class="imagen-resultado" id="imagen-resultado" hidden>
             <img id="imagen-resultado-img" alt="Imagen con los resultados">
-            <a class="btn sec" id="btn-descargar-imagen" download="de-que-comuna-es.png" href="#">Descargar imagen</a>
+            <button class="btn" id="btn-compartir-imagen" type="button">Compartir imagen</button>
           </div>
         </div>
         <div class="botones">
@@ -2338,11 +2338,28 @@ function prepararCompartir(partida, titulo, explica, etiqueta) {
   compartirActual = { texto: textoCompartir(partida), url: enlaceCompartir(partida), partida };
   $('reto-titulo').textContent = titulo;
   $('reto-explica').textContent = explica;
-  $('btn-reto').textContent = etiqueta;
   $('enlace-reto').hidden = true;
-  $('imagen-resultado').hidden = true;
   $('bloque-reto').hidden = false;
+  actualizarImagen();
 }
+// La imagen se arma apenas aparece la pantalla final (y de nuevo si cambia el nombre)
+function actualizarImagen() {
+  if (!compartirActual) return;
+  // En partidas individuales, la imagen y el enlace llevan el nombre que esté escrito
+  if (juego && juego.modo !== 'dos' && compartirActual.partida.jugadores.length === 1) {
+    const nombre = limpiarNombre($('final-nombre').value) || leerLS('dqelc-juego-nombre', '') || 'Alguien';
+    compartirActual = { ...compartirActual, partida: { ...compartirActual.partida, jugadores: [{ ...compartirActual.partida.jugadores[0], nombre }] } };
+    compartirActual.texto = textoCompartir(compartirActual.partida);
+    compartirActual.url = enlaceCompartir(compartirActual.partida);
+  }
+  try {
+    const cv = lienzoResultado(compartirActual.partida);
+    compartirActual.lienzo = cv;
+    $('imagen-resultado-img').src = cv.toDataURL('image/png');
+    $('imagen-resultado').hidden = false;
+  } catch (e) { console.error('No se pudo armar la imagen', e); $('imagen-resultado').hidden = true; }
+}
+$('final-nombre').addEventListener('input', () => { clearTimeout(actualizarImagen.t); actualizarImagen.t = setTimeout(actualizarImagen, 300); });
 
 // Fin de un duelo en línea cuando el rival todavía no termina
 function mostrarEspera(j) {
@@ -2400,7 +2417,7 @@ function terminar() {
     $('final-comentario').textContent = (g !== -1 && a.puntaje === b.puntaje ? 'Empate en puntos; gana por ser más rápido. ' : '') + comentarioDuelo(gan.nombre, per.nombre, g === -1 ? 0 : Math.abs(a.puntaje - b.puntaje), N_RONDAS * 100);
     pintarTablaDuelo(partida.plan, partida.jugadores, j.crono, j.lugares);
     $('bloque-ranking').hidden = true;
-    prepararCompartir(partida, 'Compartir el resultado', 'Se comparte una imagen con la pantalla de resultados y un enlace para ver el duelo ronda por ronda.', 'Compartir resultado');
+    prepararCompartir(partida, 'Compartir el resultado', 'Comparte la imagen con los resultados; va con un enlace para ver el duelo ronda por ronda.', 'Compartir resultado');
     $('btn-otra').textContent = 'Revancha';
   } else {
     const nombreYo = limpiarNombre($('final-nombre').value) || leerLS('dqelc-juego-nombre', '') || (j.reto ? 'Tú' : 'Alguien');
@@ -2419,7 +2436,7 @@ function terminar() {
       else if (g === 0) comentario += (dif ? 'Le ganaste a ' + otro + ' por ' + dif + '. ' : 'Empate en puntos, pero fuiste más rápido que ' + otro + '. ') + al(['Comparte el resultado para que sufra.', 'Mándale el duelo, con cariño.', otro + ' va a pedir recuento.']);
       else comentario += (dif ? otro + ' te ganó por ' + dif + '. ' : 'Empate en puntos, pero ' + otro + ' fue más rápido. ') + al(['Pide la revancha… o un mapa.', 'Comparte el duelo y pide revancha.', 'Las manzanas estaban de su lado.']);
       pintarTablaDuelo(partida.plan, [{ ...yo, nombre: 'Tú' }, j.reto], j.crono, j.lugares);
-      prepararCompartir(partida, 'Comparte el duelo con ' + otro, 'Se comparte una imagen con la pantalla de resultados y un enlace que muestra a ' + otro + ' (y a quien quieras) los dos resultados, ronda por ronda, con las ayudas de cada uno.', 'Compartir resultado');
+      prepararCompartir(partida, 'Comparte el duelo con ' + otro, 'Comparte la imagen con los resultados; va con un enlace que muestra a ' + otro + ' (y a quien quieras) el duelo ronda por ronda.', 'Compartir resultado');
     } else {
       comentario += comentarioFinal(j.puntaje / max);
       j.rondas.forEach((r, k) => {
@@ -2436,7 +2453,7 @@ function terminar() {
         tabla.appendChild(tr);
       });
       if (j.rondas.some((r) => r.pistas.size) || j.crono) { $('final-leyenda').textContent = LEYENDA; $('final-leyenda').hidden = false; }
-      prepararCompartir(partida, 'Comparte y desafía', 'Se comparte una imagen con tu resultado y un enlace: quien lo abra juega estas mismas ' + N_RONDAS + ' rondas y al final ve tu puntaje y tus ayudas al lado de los suyos.', 'Compartir resultado y desafiar');
+      prepararCompartir(partida, 'Comparte y desafía', 'Comparte la imagen con tu resultado; va con un enlace para que quien lo abra juegue estas mismas ' + N_RONDAS + ' rondas y compare.', 'Compartir resultado y desafiar');
     }
     $('final-comentario').textContent = comentario;
     $('bloque-ranking').hidden = false;
@@ -2508,46 +2525,29 @@ $('btn-guardar').addEventListener('click', async () => {
 $('final-nombre').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('btn-guardar').click(); } });
 
 // Compartir: en el celular abre el menú de compartir; si no, copia el texto con el enlace
-$('btn-reto').addEventListener('click', async () => {
-  if (!compartirActual) return;
-  // En partidas individuales, el enlace lleva el nombre que esté escrito al momento de compartir
-  if (juego && juego.modo !== 'dos' && compartirActual.partida.jugadores.length === 1) {
-    const nombre = limpiarNombre($('final-nombre').value) || leerLS('dqelc-juego-nombre', '') || 'Alguien';
-    compartirActual = { ...compartirActual, partida: { ...compartirActual.partida, jugadores: [{ ...compartirActual.partida.jugadores[0], nombre }] } };
-    compartirActual.texto = textoCompartir(compartirActual.partida);
-    compartirActual.url = enlaceCompartir(compartirActual.partida);
-  }
-  const { texto, url, partida } = compartirActual;
+// Compartir imagen: en el celular abre el menú de compartir con la imagen, el resumen y el
+// enlace; en el computador descarga la imagen y copia el resumen con el enlace
+$('btn-compartir-imagen').addEventListener('click', async () => {
+  if (!compartirActual || !compartirActual.lienzo) return;
+  const { texto, url, lienzo } = compartirActual;
   const completo = texto + '\n' + url;
-  $('enlace-reto-texto').value = completo;
-  $('enlace-reto').hidden = false;
-  // La imagen de la pantalla de resultados (todo síncrono, para no perder el toque)
-  let archivo = null;
-  try {
-    const cv = lienzoResultado(partida);
-    archivo = archivoDeLienzo(cv);
-    const dataUrl = cv.toDataURL('image/png');
-    $('imagen-resultado-img').src = dataUrl;
-    $('btn-descargar-imagen').href = dataUrl;
-    $('imagen-resultado').hidden = false;
-  } catch (e) { console.error('No se pudo armar la imagen', e); }
+  const boton = $('btn-compartir-imagen');
+  const avisar = (s) => { boton.textContent = s; setTimeout(() => { boton.textContent = 'Compartir imagen'; }, 2200); };
+  const archivo = archivoDeLienzo(lienzo);
   if (navigator.share && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)) {
     try {
-      if (archivo && navigator.canShare && navigator.canShare({ files: [archivo] })) {
-        await navigator.share({ files: [archivo], title: '¿De qué comuna es?', text: completo });
-      } else {
-        await navigator.share({ title: '¿De qué comuna es?', text: texto, url });
-      }
+      if (navigator.canShare && navigator.canShare({ files: [archivo] })) await navigator.share({ files: [archivo], title: '¿De qué comuna es?', text: completo });
+      else await navigator.share({ title: '¿De qué comuna es?', text: texto, url });
       return;
-    } catch (e) { if (e && e.name === 'AbortError') return; /* si no, se muestra el texto y la imagen */ }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
   }
-  try { await navigator.clipboard.writeText(completo); $('btn-copiar-reto').textContent = 'Copiado'; setTimeout(() => { $('btn-copiar-reto').textContent = 'Copiar'; }, 1800); } catch (e) { $('enlace-reto-texto').select(); }
-});
-$('btn-copiar-reto').addEventListener('click', async () => {
-  const campo = $('enlace-reto-texto');
-  try { await navigator.clipboard.writeText(campo.value); $('btn-copiar-reto').textContent = 'Copiado'; }
-  catch (e) { campo.select(); document.execCommand && document.execCommand('copy'); $('btn-copiar-reto').textContent = 'Copiado'; }
-  setTimeout(() => { $('btn-copiar-reto').textContent = 'Copiar'; }, 1800);
+  const a = document.createElement('a');
+  a.href = lienzo.toDataURL('image/png');
+  a.download = 'de-que-comuna-es.png';
+  document.body.appendChild(a); a.click(); a.remove();
+  let copiado = false;
+  try { await navigator.clipboard.writeText(completo); copiado = true; } catch (e) { /* sin portapapeles */ }
+  avisar(copiado ? 'Imagen descargada · enlace copiado' : 'Imagen descargada');
 });
 
 $('btn-siguiente').addEventListener('click', () => {
