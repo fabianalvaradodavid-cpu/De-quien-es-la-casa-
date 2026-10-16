@@ -265,6 +265,11 @@
   .imagen-resultado .btn{ text-decoration:none; }
   /* Si queda un grupo solo en la última fila (Jugadores), ocupa todo el ancho */
   .pares > .grupo:last-child:nth-child(odd){ grid-column:1 / -1; }
+  .cabecera-der{ display:flex; align-items:baseline; gap:14px; }
+  .btn-sonido{ font-family:var(--sans); font-size:0.85rem; padding:3px 10px; border:1px solid var(--line); border-radius:14px; background:transparent;
+    color:var(--muted); cursor:pointer; }
+  .btn-sonido:hover{ color:var(--ink); }
+  .btn-sonido[aria-pressed="false"]{ opacity:0.7; }
   .pares{ display:grid; grid-template-columns:1fr 1fr; column-gap:14px; }
   @media (max-width:560px){ .pares{ grid-template-columns:1fr; } }
   /* Que las opciones de un mismo grupo tengan igual alto aunque una ocupe dos líneas */
@@ -317,7 +322,10 @@
 <div class="wrap">
   <header>
     <h1>¿De qué comuna es?</h1>
-    <a href="../simple/">← Volver al mapa</a>
+    <span class="cabecera-der">
+      <button class="btn-sonido" id="btn-sonido" type="button" aria-pressed="true" title="Silenciar los sonidos">🔊 Sonido</button>
+      <a href="../simple/">← Volver al mapa</a>
+    </span>
   </header>
   <p class="bajada">Un pedazo de los deslindes de predios del SII, en un sector urbano al azar o alrededor de un monumento nacional. Adivina a qué comuna pertenece. Cada ronda vale 100 puntos; las pistas restan, y tienes 3 comodines 50/50 por partida. Juega con o sin reloj, entra al ranking, desafía a alguien con un enlace o juega un duelo: en el mismo equipo o cada uno en su celular.</p>
 
@@ -1553,8 +1561,10 @@ function programarInicio() {
   estadoSala('¡Prepárate!');
   const tic = () => {
     const falta = s.info.inicio - horaServidor();
-    if (falta <= 0) { clearInterval(s.cuenta); arrancarSala(); return; }
-    $('sala-cuenta').textContent = Math.ceil(falta / 1000);
+    if (falta <= 0) { clearInterval(s.cuenta); sonar('ya'); arrancarSala(); return; }
+    const n = Math.ceil(falta / 1000);
+    if (n !== s.ultimoNumero) { s.ultimoNumero = n; sonar('cuenta'); }
+    $('sala-cuenta').textContent = n;
   };
   s.cuenta = setInterval(tic, 100);
   tic();
@@ -1723,6 +1733,82 @@ function pintarEspera(j) {
   $('final-comentario').textContent = 'Terminaste. Esperando a ' + r.nombre + ', que va en la ronda ' + Math.min(r.filas.length + 1, N_RONDAS) + ' de ' + N_RONDAS + '…';
 }
 
+// ---- Sonidos (generados con Web Audio, sin archivos) ----
+let audio = null;
+let conSonido = leerLS('dqelc-juego-sonido', '1') !== '0';
+function ctxAudio() {
+  if (!conSonido) return null;
+  const C = window.AudioContext || window.webkitAudioContext;
+  if (!C) return null;
+  if (!audio) { try { audio = new C(); } catch (e) { return null; } }
+  if (audio.state === 'suspended') audio.resume().catch(() => {});
+  return audio;
+}
+// Una nota: frecuencia (o barrido de f a f2), duración, forma de onda, volumen
+function nota(ctx, t, f, dur, tipo, vol, f2) {
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = tipo || 'triangle';
+  o.frequency.setValueAtTime(f, t);
+  if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol || 0.2, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(ctx.destination);
+  o.start(t);
+  o.stop(t + dur + 0.05);
+}
+function ruido(ctx, t, dur, vol, desde, hasta) {
+  const n = Math.floor(ctx.sampleRate * dur);
+  const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2);
+  const s = ctx.createBufferSource(), fil = ctx.createBiquadFilter(), g = ctx.createGain();
+  s.buffer = buf;
+  fil.type = 'lowpass';
+  fil.frequency.setValueAtTime(desde, t);
+  fil.frequency.exponentialRampToValueAtTime(hasta, t + dur);
+  g.gain.setValueAtTime(vol, t);
+  s.connect(fil).connect(g).connect(ctx.destination);
+  s.start(t);
+}
+function sonar(tipo) {
+  const ctx = ctxAudio();
+  if (!ctx) return;
+  const t = ctx.currentTime + 0.01;
+  switch (tipo) {
+    case 'acierto': nota(ctx, t, 659, 0.12, 'triangle', 0.22); nota(ctx, t + 0.1, 880, 0.22, 'triangle', 0.22); break;
+    case 'error': nota(ctx, t, 233, 0.16, 'sawtooth', 0.09, 196); nota(ctx, t + 0.15, 185, 0.32, 'sawtooth', 0.09, 147); break;
+    case 'tic': nota(ctx, t, 1250, 0.035, 'square', 0.05); break;
+    case 'tic-apurado': nota(ctx, t, 1700, 0.05, 'square', 0.08); break;
+    case 'bum': ruido(ctx, t, 1.1, 0.9, 3000, 90); nota(ctx, t, 110, 0.7, 'sine', 0.6, 38); break;
+    case 'pista': nota(ctx, t, 523, 0.08, 'sine', 0.15); nota(ctx, t + 0.07, 784, 0.12, 'sine', 0.12); break;
+    case 'comodin': nota(ctx, t, 392, 0.09, 'square', 0.07); nota(ctx, t + 0.08, 523, 0.09, 'square', 0.07); nota(ctx, t + 0.16, 392, 0.14, 'square', 0.07); break;
+    case 'turno': nota(ctx, t, 440, 0.1, 'triangle', 0.15); nota(ctx, t + 0.12, 554, 0.16, 'triangle', 0.15); break;
+    case 'cuenta': nota(ctx, t, 660, 0.12, 'sine', 0.25); break;
+    case 'ya': nota(ctx, t, 990, 0.35, 'sine', 0.28); break;
+    case 'fanfarria': [523, 659, 784, 1047].forEach((f, i) => nota(ctx, t + i * 0.11, f, i === 3 ? 0.5 : 0.14, 'triangle', 0.2)); break;
+    case 'final-bajo': [392, 330, 262].forEach((f, i) => nota(ctx, t + i * 0.18, f, i === 2 ? 0.5 : 0.2, 'triangle', 0.18)); break;
+  }
+}
+function pintarBotonSonido() {
+  const b = $('btn-sonido');
+  if (!b) return;
+  b.textContent = conSonido ? '🔊 Sonido' : '🔇 Sin sonido';
+  b.setAttribute('aria-pressed', conSonido ? 'true' : 'false');
+  b.title = conSonido ? 'Silenciar los sonidos' : 'Activar los sonidos';
+}
+if ($('btn-sonido')) {
+  $('btn-sonido').addEventListener('click', () => {
+    conSonido = !conSonido;
+    escribirLS('dqelc-juego-sonido', conSonido ? '1' : '0');
+    pintarBotonSonido();
+    if (conSonido) sonar('pista');
+  });
+  pintarBotonSonido();
+}
+// Los navegadores solo permiten sonido después de un toque del usuario: se prepara en el primero
+document.addEventListener('pointerdown', () => { ctxAudio(); }, { once: true });
+
 // ---- Reloj (contrarreloj) ----
 let reloj = null;
 function iniciarReloj(alAgotar) {
@@ -1736,6 +1822,11 @@ function iniciarReloj(alAgotar) {
     $('reloj-barra').style.width = (quedan / SEGUNDOS_RONDA * 100) + '%';
     $('reloj-texto').textContent = Math.ceil(quedan);
     $('reloj').classList.toggle('apurado', quedan <= 5);
+    const seg = Math.ceil(quedan);
+    if (seg !== r.ultimo) {
+      if (r.ultimo !== undefined && seg > 0) sonar(seg <= 5 ? 'tic-apurado' : 'tic');
+      r.ultimo = seg;
+    }
     if (quedan <= 0) { reloj = null; explotar(); alAgotar(SEGUNDOS_RONDA); return; }
     r.id = requestAnimationFrame(tick);
   };
@@ -1757,6 +1848,7 @@ function explotar() {
   e.classList.remove('activa');
   void e.offsetWidth; // reinicia la animación
   e.classList.add('activa');
+  sonar('bum');
   clearTimeout(explotar.t);
   explotar.t = setTimeout(() => e.classList.remove('activa'), 1300);
 }
@@ -1948,6 +2040,7 @@ function usarPista(tipo) {
   const ronda = juego && juego.rondas[juego.i];
   if (!ronda || ronda.respondida || ronda.pistas.has(tipo)) return;
   ronda.pistas.add(tipo);
+  sonar('pista');
   if (tipo === 'alejar') { mapa.setZoom(ronda.zoom - 1, { animate: false }); $('pista-alejar').disabled = true; }
   if (tipo === 'satelital') { satelital.addTo(mapa); fijarRelleno(0.3); $('pista-satelital').disabled = true; }
 }
@@ -1956,6 +2049,7 @@ function usarComodin() {
   const dueño = dueñoComodines(ronda);
   if (!ronda || ronda.respondida || ronda.pistas.has('comodin') || dueño.comodines <= 0) return;
   ronda.pistas.add('comodin');
+  sonar('comodin');
   dueño.comodines -= 1;
   const malas = mezclar(ronda.opciones.filter((i) => i !== ronda.idx)).slice(0, 2);
   ronda.descartadas = new Set(malas);
@@ -2007,6 +2101,7 @@ function responder(idx, porTiempo) {
       if (juego.crono) [...$('opciones').children].forEach((b) => { b.disabled = true; });
       activarPistas(ronda);
       pintarTurno(ronda);
+      sonar('turno');
       if (juego.crono) largarReloj(ronda);
       return;
     }
@@ -2055,6 +2150,7 @@ function responder(idx, porTiempo) {
     if (juego.sala) enviarJugada(juego, false);
   }
   pintarMarcador();
+  if (!porTiempo) sonar(bien ? 'acierto' : 'error');
 
   [...$('opciones').children].forEach((b) => {
     const i = Number(b.dataset.idx);
@@ -2429,6 +2525,7 @@ function terminar() {
     $('final-comentario').textContent = (g !== -1 && a.puntaje === b.puntaje ? 'Empate en puntos; gana por ser más rápido. ' : '') + comentarioDuelo(gan.nombre, per.nombre, g === -1 ? 0 : Math.abs(a.puntaje - b.puntaje), N_RONDAS * 100);
     pintarTablaDuelo(partida.plan, partida.jugadores, j.crono, j.lugares);
     $('bloque-ranking').hidden = true;
+    sonar('fanfarria');
     prepararCompartir(partida, 'Compartir el resultado', 'Comparte la imagen con los resultados; va con un enlace para ver el duelo ronda por ronda.', 'Compartir resultado');
     $('btn-otra').textContent = 'Revancha';
   } else {
@@ -2448,9 +2545,11 @@ function terminar() {
       else if (g === 0) comentario += (dif ? 'Le ganaste a ' + otro + ' por ' + dif + '. ' : 'Empate en puntos, pero fuiste más rápido que ' + otro + '. ') + al(['Comparte el resultado para que sufra.', 'Mándale el duelo, con cariño.', otro + ' va a pedir recuento.']);
       else comentario += (dif ? otro + ' te ganó por ' + dif + '. ' : 'Empate en puntos, pero ' + otro + ' fue más rápido. ') + al(['Pide la revancha… o un mapa.', 'Comparte el duelo y pide revancha.', 'Las manzanas estaban de su lado.']);
       pintarTablaDuelo(partida.plan, [{ ...yo, nombre: 'Tú' }, j.reto], j.crono, j.lugares);
+      sonar(g === 1 ? 'final-bajo' : 'fanfarria');
       prepararCompartir(partida, 'Comparte el duelo con ' + otro, 'Comparte la imagen con los resultados; va con un enlace que muestra a ' + otro + ' (y a quien quieras) el duelo ronda por ronda.', 'Compartir resultado');
     } else {
       comentario += comentarioFinal(j.puntaje / max);
+      sonar(j.puntaje / max >= 0.6 ? 'fanfarria' : 'final-bajo');
       j.rondas.forEach((r, k) => {
         const tr = document.createElement('tr');
         const ok = r.elegida === r.idx;
