@@ -1554,6 +1554,11 @@ async function consultarPuntoEnMapa(latlng) {
       return;
     }
 
+    // Al apretar un punto se despliegan solos los deslindes de esa comuna
+    // (salvo que la persona haya desmarcado la casilla a propósito).
+    activarDeslindesAuto();
+    if (!SUBCOMUNAS_SII[candidatas[0].codigo]) agregarCapaDeslindes(candidatas[0].codigo);
+
     let ultimoSinRol = null;
     for (const c of candidatas.slice(0, 3)) {
       // Una comuna del geojson puede corresponder a varias "comunas" del SII
@@ -2074,7 +2079,18 @@ function renderListaDeslindes() {
   });
 }
 
+// Deslindes automáticos al hacer clic: se marca la casilla sola, a menos que
+// la persona la haya desmarcado ella misma (entonces se respeta).
+let deslindesApagadosPorUsuario = false;
+function activarDeslindesAuto() {
+  const chk = document.getElementById('toggle-deslindes');
+  if (chk.checked || deslindesApagadosPorUsuario) return;
+  chk.checked = true;
+  document.getElementById('deslindes-opacity-row').style.display = 'flex';
+}
+
 document.getElementById('toggle-deslindes').addEventListener('change', (e) => {
+  deslindesApagadosPorUsuario = !e.target.checked;
   if (e.target.checked) {
     // Sin clic: se usa la comuna donde está el mouse justo al marcar la casilla.
     agregarCapaDeslindes((comunaBajoMouse && comunaBajoMouse.codigo) || comunaDeslindesActual);
