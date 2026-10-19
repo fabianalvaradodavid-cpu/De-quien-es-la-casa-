@@ -288,6 +288,39 @@
 
   .nota{ font-family:var(--sans); font-size:0.75rem; color:var(--soft); margin-top:18px; line-height:1.45; }
 
+  /* Celular, durante una ronda: plano, pistas y alternativas en una sola pantalla, sin
+     desplazarse. El plano ocupa el alto que queda libre. */
+  @media (max-width:560px){
+    body.en-juego{ overflow:hidden; }
+    body.en-juego .wrap{ display:flex; flex-direction:column; height:100vh; height:100dvh; padding:6px 10px calc(8px + env(safe-area-inset-bottom)); box-sizing:border-box; }
+    body.en-juego header{ margin-bottom:4px; flex-wrap:nowrap; align-items:center; }
+    body.en-juego h1{ font-size:1.05rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    body.en-juego header a{ display:none; }
+    body.en-juego .btn-sonido{ font-size:0.75rem; padding:2px 8px; }
+    body.en-juego .bajada, body.en-juego .nota{ display:none; }
+    body.en-juego .estado{ margin-bottom:5px; font-size:0.85rem; flex-wrap:nowrap; }
+    body.en-juego .marcas{ display:none; }
+    /* Ya respondida la ronda, las pistas no sirven: su espacio queda para el plano */
+    body.en-juego:has(#resultado[style*="block"]) .pistas{ display:none !important; }
+    body.en-juego .marco{ aspect-ratio:auto; max-height:none; flex:1 1 auto; min-height:150px; }
+    body.en-juego .pistas{ flex-wrap:nowrap; gap:5px; margin:6px 0 0; }
+    body.en-juego .pistas-titulo{ display:none; }
+    body.en-juego .pistas button{ flex:1 1 0; min-width:0; font-size:0.72rem; padding:4px 3px; line-height:1.2; text-align:center; }
+    body.en-juego .pistas button .costo{ display:block; margin-left:0; font-size:0.68rem; }
+    body.en-juego .turno{ margin-top:6px; font-size:0.85rem; }
+    body.en-juego .opciones{ grid-template-columns:1fr 1fr; gap:6px; margin-top:6px; }
+    body.en-juego .opciones button{ min-height:46px; padding:6px 8px; font-size:0.9rem; gap:6px; line-height:1.2; }
+    body.en-juego .opciones .tecla{ display:none; }
+    body.en-juego .opciones .region{ font-size:0.68rem; }
+    body.en-juego .resultado{ margin-top:6px; padding:8px 10px; max-height:42vh; max-height:42dvh; overflow:auto; flex:0 0 auto; }
+    body.en-juego .resultado .titular{ font-size:0.92rem; }
+    body.en-juego .resultado .detalle{ font-size:0.78rem; }
+    body.en-juego .resultado .btn{ padding:8px 14px; }
+    /* "Siguiente" siempre a la vista, aunque el texto (p. ej. la ficha de un monumento) sea largo */
+    body.en-juego .resultado #btn-siguiente{ position:sticky; bottom:0; box-shadow:0 -6px 8px var(--panel); }
+    body.en-juego .resultado .res-monumento{ margin-top:4px; padding:5px 8px; }
+  }
+
   @media (max-width:560px){
     h1{ font-size:1.55rem; }
     .marco{ aspect-ratio:4 / 5; max-height:58vh; }
@@ -1732,6 +1765,30 @@ function pintarEspera(j) {
   const r = rivalSala();
   $('final-comentario').textContent = 'Terminaste. Esperando a ' + r.nombre + ', que va en la ronda ' + Math.min(r.filas.length + 1, N_RONDAS) + ' de ' + N_RONDAS + '…';
 }
+
+// ---- Vista de juego en el celular ----
+// Mientras hay una ronda en pantalla (el plano sin portada encima), el cuerpo lleva la clase
+// "en-juego": en pantallas angostas el CSS acomoda plano, pistas y alternativas en una sola
+// pantalla. El plano cambia de tamaño, así que Leaflet debe recalcularlo.
+(function () {
+  const marco = $('marco');
+  const actualizar = () => {
+    const enJuego = !marco.classList.contains('con-portada');
+    if (enJuego !== document.body.classList.contains('en-juego')) {
+      document.body.classList.toggle('en-juego', enJuego);
+      if (enJuego && window.matchMedia('(max-width:560px)').matches) window.scrollTo(0, 0);
+    }
+  };
+  new MutationObserver(actualizar).observe(marco, { attributes: true, attributeFilter: ['class'] });
+  actualizar();
+  if (window.ResizeObserver) {
+    let pendiente = 0;
+    new ResizeObserver(() => {
+      cancelAnimationFrame(pendiente);
+      pendiente = requestAnimationFrame(() => mapa.invalidateSize({ animate: false }));
+    }).observe($('mapa'));
+  }
+})();
 
 // ---- Sonidos (generados con Web Audio, sin archivos) ----
 let audio = null;
