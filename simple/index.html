@@ -446,6 +446,9 @@
   button.secondary:hover{ background:#eef2f5; }
   button.secondary:active{ transform:translateY(1px); }
   button:disabled{ opacity:0.45; cursor:not-allowed; }
+  .street-view{ margin-top:0.75rem; }
+  .street-view[hidden]{ display:none; }
+  .street-view button{ width:100%; }
   .copied{
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     font-size:0.78rem;
@@ -828,6 +831,10 @@
         <button class="secondary" id="ver-unidades-btn" style="display:none;">Buscar todas las unidades de este edificio</button>
         <div class="copied" id="copied-msg"></div>
       </div>
+    </div>
+
+    <div class="street-view" id="street-view" hidden>
+      <button class="secondary" id="street-view-btn" type="button">Ver en Google Street View</button>
     </div>
   </aside>
 </main>
@@ -1528,6 +1535,7 @@ async function consultarPuntoEnMapa(latlng) {
 
   if (marker) map.removeLayer(marker);
   marker = L.marker(latlng).addTo(map);
+  mostrarBotonStreetView(latlng);
 
   hideResult();
   setStatus('Detectando comuna…');
@@ -1709,6 +1717,20 @@ function setStatus(msg, isError) {
   el.textContent = msg || '';
   el.classList.toggle('error', !!isError);
 }
+
+// ---- Google Street View en el último punto consultado ----
+// Abre la vista de calle más cercana a ese punto (Google elige la panorámica disponible
+// más próxima). Sirve también cuando el punto no tiene rol, por ejemplo en una calle.
+let puntoStreetView = null;
+function mostrarBotonStreetView(latlng) {
+  puntoStreetView = latlng;
+  document.getElementById('street-view').hidden = !latlng;
+}
+document.getElementById('street-view-btn').addEventListener('click', () => {
+  if (!puntoStreetView) return;
+  const p = puntoStreetView.lat.toFixed(6) + ',' + puntoStreetView.lng.toFixed(6);
+  window.open('https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + p, '_blank', 'noopener');
+});
 
 function hideResult() {
   document.getElementById('result').classList.remove('visible');
