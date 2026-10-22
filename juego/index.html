@@ -464,7 +464,7 @@
         <div class="grupo">
           <div class="etiqueta">Dificultad</div>
           <div class="seg" role="radiogroup" aria-label="Dificultad">
-            <label><input type="radio" name="dificultad" value="muyfacil" checked><span>Fácil<small>calles · 3 alternativas · pistas gratis</small></span></label>
+            <label><input type="radio" name="dificultad" value="muyfacil" checked><span>Fácil<small>calles · comunas lejanas · pistas gratis</small></span></label>
             <label><input type="radio" name="dificultad" value="facil"><span>Medio<small>comunas al azar</small></span></label>
             <label><input type="radio" name="dificultad" value="dificil"><span>Difícil<small>comunas vecinas</small></span></label>
           </div>
@@ -729,12 +729,12 @@ function distanciaComunas(a, b) {
   const dy = (A.lat - B.lat) * 111, dx = (A.lng - B.lng) * 111 * Math.cos(A.lat * Math.PI / 180);
   return Math.hypot(dx, dy);
 }
-// Fácil: 3 alternativas, ninguna vecina de otra y lo más separadas posible (se elige al
+// Fácil: 4 alternativas, ninguna vecina de otra y lo más separadas posible (se elige al
 // azar entre las más lejanas de las ya elegidas), para que se distingan sin esfuerzo.
 function armarOpcionesLejanas(idx, zona, regiones, todas) {
   const elegidas = [idx];
   const pool = COMUNAS.map((_, j) => j).filter((j) => j !== idx && enZona(j, zona, regiones, todas));
-  while (elegidas.length < 3 && pool.length) {
+  while (elegidas.length < 4 && pool.length) {
     const libres = pool.filter((j) => !elegidas.includes(j) && elegidas.every((e) => !COMUNAS[e].v.includes(j) && !COMUNAS[j].v.includes(e)));
     const cand = (libres.length ? libres : pool.filter((j) => !elegidas.includes(j)))
       .map((j) => ({ j, d: Math.min(...elegidas.map((e) => distanciaComunas(e, j))) }))
@@ -832,8 +832,8 @@ const mapa = L.map('mapa', {
 L.control.scale({ metric: true, imperial: false, position: 'bottomleft', maxWidth: 140 }).addTo(mapa);
 
 const satelital = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, zIndex: 1 });
-// Fácil: calles con sus nombres de fondo (CARTO Voyager, sobre datos de OpenStreetMap)
-const calles = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 21, maxNativeZoom: 20, zIndex: 0 });
+// Fácil: calles con sus nombres de fondo (Esri World Street Map, mismo servidor que la satelital)
+const calles = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, zIndex: 0 });
 const RELLENO_CALLES = 0.12;
 function rellenoBase() { return juego && juego.dificultad === 'muyfacil' ? RELLENO_CALLES : 0.55; }
 const nombres = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, zIndex: 8 });
@@ -1133,7 +1133,7 @@ function decodificarCompacto(codigo) {
   if (!zona) return null;
   const dificultad = version >= 6 ? DIFICULTADES_ENLACE[leer(2)] : (leer(1) ? 'dificil' : 'facil');
   if (!dificultad) return null;
-  const nOtras = dificultad === 'muyfacil' ? 2 : 3;
+  const nOtras = 3;
   const crono = !!leer(1);
   const nJug = leer(1) + 1;
   const lejos = version >= 4 ? !!leer(1) : false;
