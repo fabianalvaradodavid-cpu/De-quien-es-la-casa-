@@ -110,6 +110,8 @@
   .opciones .tecla{ font-size:0.75rem; color:var(--soft); border:1px solid var(--line); border-radius:4px; padding:1px 6px; }
   .opciones .nombre{ display:block; }
   .opciones .region{ display:block; font-size:0.78rem; color:var(--soft); margin-top:1px; }
+  /* Calles de Fácil: el mapa de Esri es amarillento; se pasa a gris y se aclara para dejar el fondo blanco */
+  .capa-calles{ filter:grayscale(1) brightness(1.1) contrast(1.05); }
   .opciones.tres button:last-child{ grid-column:1 / -1; }
   .opciones button.correcta{ background:var(--ok-bg); border-color:var(--ok); }
   .opciones button.equivocada{ background:var(--bad-bg); border-color:var(--bad); }
@@ -833,7 +835,7 @@ L.control.scale({ metric: true, imperial: false, position: 'bottomleft', maxWidt
 
 const satelital = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, zIndex: 1 });
 // Fácil: calles con sus nombres de fondo (Esri World Street Map, mismo servidor que la satelital)
-const calles = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, zIndex: 0 });
+const calles = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, zIndex: 0, className: 'capa-calles' });
 const RELLENO_CALLES = 0.12;
 function rellenoBase() { return juego && juego.dificultad === 'muyfacil' ? RELLENO_CALLES : 0.55; }
 const nombres = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, zIndex: 8 });
