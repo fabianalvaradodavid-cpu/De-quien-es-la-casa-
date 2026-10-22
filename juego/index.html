@@ -110,6 +110,7 @@
   .opciones .tecla{ font-size:0.75rem; color:var(--soft); border:1px solid var(--line); border-radius:4px; padding:1px 6px; }
   .opciones .nombre{ display:block; }
   .opciones .region{ display:block; font-size:0.78rem; color:var(--soft); margin-top:1px; }
+  .opciones.tres button:last-child{ grid-column:1 / -1; }
   .opciones button.correcta{ background:var(--ok-bg); border-color:var(--ok); }
   .opciones button.equivocada{ background:var(--bad-bg); border-color:var(--bad); }
   .opciones button:disabled{ cursor:default; }
@@ -461,9 +462,10 @@
           </div>
         </div>
         <div class="grupo">
-          <div class="etiqueta">Alternativas</div>
+          <div class="etiqueta">Dificultad</div>
           <div class="seg" role="radiogroup" aria-label="Dificultad">
-            <label><input type="radio" name="dificultad" value="facil" checked><span>Fácil<small>comunas al azar</small></span></label>
+            <label><input type="radio" name="dificultad" value="muyfacil" checked><span>Fácil<small>calles · 3 alternativas · pistas gratis</small></span></label>
+            <label><input type="radio" name="dificultad" value="facil"><span>Medio<small>comunas al azar</small></span></label>
             <label><input type="radio" name="dificultad" value="dificil"><span>Difícil<small>comunas vecinas</small></span></label>
           </div>
         </div>
@@ -721,7 +723,29 @@ function mezclar(a) {
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
+// Distancia aproximada en km entre dos comunas (por su centro)
+function distanciaComunas(a, b) {
+  const A = COMUNAS[a], B = COMUNAS[b];
+  const dy = (A.lat - B.lat) * 111, dx = (A.lng - B.lng) * 111 * Math.cos(A.lat * Math.PI / 180);
+  return Math.hypot(dx, dy);
+}
+// Fácil: 3 alternativas, ninguna vecina de otra y lo más separadas posible (se elige al
+// azar entre las más lejanas de las ya elegidas), para que se distingan sin esfuerzo.
+function armarOpcionesLejanas(idx, zona, regiones, todas) {
+  const elegidas = [idx];
+  const pool = COMUNAS.map((_, j) => j).filter((j) => j !== idx && enZona(j, zona, regiones, todas));
+  while (elegidas.length < 3 && pool.length) {
+    const libres = pool.filter((j) => !elegidas.includes(j) && elegidas.every((e) => !COMUNAS[e].v.includes(j) && !COMUNAS[j].v.includes(e)));
+    const cand = (libres.length ? libres : pool.filter((j) => !elegidas.includes(j)))
+      .map((j) => ({ j, d: Math.min(...elegidas.map((e) => distanciaComunas(e, j))) }))
+      .sort((x, y) => y.d - x.d);
+    if (!cand.length) break;
+    elegidas.push(al(cand.slice(0, Math.max(1, Math.ceil(cand.length / 3)))).j);
+  }
+  return mezclar(elegidas);
+}
 function armarOpciones(idx, zona, dificultad, regiones, todas) {
+  if (dificultad === 'muyfacil') return armarOpcionesLejanas(idx, zona, regiones, todas);
   const elegidas = new Set([idx]);
   if (dificultad === 'dificil') {
     const vecinas = COMUNAS[idx].v.filter((j) => enZona(j, zona, regiones, todas)).slice(0, 6);
@@ -808,6 +832,10 @@ const mapa = L.map('mapa', {
 L.control.scale({ metric: true, imperial: false, position: 'bottomleft', maxWidth: 140 }).addTo(mapa);
 
 const satelital = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, zIndex: 1 });
+// Fácil: calles con sus nombres de fondo (CARTO Voyager, sobre datos de OpenStreetMap)
+const calles = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 21, maxNativeZoom: 20, zIndex: 0 });
+const RELLENO_CALLES = 0.12;
+function rellenoBase() { return juego && juego.dificultad === 'muyfacil' ? RELLENO_CALLES : 0.55; }
 const nombres = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, zIndex: 8 });
 const zoomCtl = L.control.zoom({ position: 'topright' });
 let capasRonda = [];
@@ -823,9 +851,10 @@ function interaccion(activa) {
 function mostrarPlano(ronda) {
   capasRonda.forEach((c) => mapa.removeLayer(c));
   capasRonda = [];
-  [satelital, nombres].forEach((c) => mapa.hasLayer(c) && mapa.removeLayer(c));
+  [satelital, nombres, calles].forEach((c) => mapa.hasLayer(c) && mapa.removeLayer(c));
   interaccion(false);
-  fijarRelleno(0.55);
+  if (juego && juego.dificultad === 'muyfacil') calles.addTo(mapa);
+  fijarRelleno(rellenoBase());
   // En la vista de lejos, un nivel menos de zoom: 4 m por píxel en vez de 2
   ronda.zoom = zoomEscalaFija(ronda.lat) - (juego && juego.lejos ? 1 : 0);
   let centro = [ronda.lat, ronda.lng];
@@ -865,7 +894,7 @@ const SEGUNDOS_RONDA = 15; // bomba de tiempo
 const SEGUNDOS_GRACIA = 3;
 function puntosAcierto(pistas, seg) {
   let pts = 100;
-  (pistas || []).forEach((p) => { pts -= COSTO[p]; });
+  if (!(juego && juego.dificultad === 'muyfacil')) (pistas || []).forEach((p) => { pts -= COSTO[p]; });
   if (seg === null || seg === undefined) return pts;
   const t = Math.min(1, Math.max(0, seg - SEGUNDOS_GRACIA) / Math.max(1, SEGUNDOS_RONDA - SEGUNDOS_GRACIA));
   return Math.max(10, Math.round(pts * (1 - 0.5 * t) / 10) * 10);
@@ -928,7 +957,7 @@ function modalidadDe(zona, dif, regiones, crono, lejos, nRondas, lugares) {
 function nombreModalidad(zona, dif, regiones, crono, lejos, nRondas, lugares) {
   let z = { gs: 'Gran Santiago', rm: 'Región Metropolitana', cl: 'Todo Chile', co: 'Comunas costeras', an: 'Comunas cordilleranas' }[zona];
   if (!z) z = regiones.size === 1 ? nombreRegion([...regiones][0]) : regiones.size + ' regiones';
-  return z + (lugares === 'mn' ? ' · Monumentos' : '') + ' · ' + (dif === 'dificil' ? 'Difícil' : 'Fácil') + (lejos ? ' · De lejos' : '') + (nRondas === 5 ? ' · 5 rondas' : '') + (crono ? ' · Bomba de tiempo' : '');
+  return z + (lugares === 'mn' ? ' · Monumentos' : '') + ' · ' + (dif === 'dificil' ? 'Difícil' : dif === 'muyfacil' ? 'Fácil' : 'Medio') + (lejos ? ' · De lejos' : '') + (nRondas === 5 ? ' · 5 rondas' : '') + (crono ? ' · Bomba de tiempo' : '');
 }
 
 // ---- Ranking ----
@@ -1054,6 +1083,7 @@ function resumenJugador(nombre, x) {
 // v4 agrega la vista (cerca/de lejos) y la cantidad de rondas (10 o 5); v5, si se juega con
 // monumentos (y entonces el "punto" es el número del monumento, con 11 bits). v3 y v4 se siguen leyendo.
 const ZONAS_ENLACE = ['gs', 'rm', 'cl', 'co', 'an', 'reg'];
+const DIFICULTADES_ENLACE = ['facil', 'dificil', 'muyfacil']; // v6: 2 bits (antes 1: fácil/difícil)
 function bitsABase64Url(bits) {
   while (bits.length % 8) bits.push(0);
   let bin = '';
@@ -1063,9 +1093,9 @@ function bitsABase64Url(bits) {
 function codificarPartida(p) {
   const bits = [];
   const poner = (v, n) => { for (let i = n - 1; i >= 0; i--) bits.push((v >> i) & 1); };
-  poner(5, 4);                                   // versión del formato
+  poner(6, 4);                                   // versión del formato
   poner(ZONAS_ENLACE.indexOf(p.zona), 3);
-  poner(p.dificultad === 'dificil' ? 1 : 0, 1);
+  poner(Math.max(0, DIFICULTADES_ENLACE.indexOf(p.dificultad)), 2);
   poner(p.crono ? 1 : 0, 1);
   poner(p.jugadores.length - 1, 1);
   poner(p.lejos ? 1 : 0, 1);
@@ -1098,10 +1128,12 @@ function decodificarCompacto(codigo) {
   let k = 0;
   const leer = (n) => { if (k + n > bits.length) throw new Error('corto'); let v = 0; for (let i = 0; i < n; i++) v = v * 2 + bits[k++]; return v; };
   const version = leer(4);
-  if (version < 3 || version > 5) return null;
+  if (version < 3 || version > 6) return null;
   const zona = ZONAS_ENLACE[leer(3)];
   if (!zona) return null;
-  const dificultad = leer(1) ? 'dificil' : 'facil';
+  const dificultad = version >= 6 ? DIFICULTADES_ENLACE[leer(2)] : (leer(1) ? 'dificil' : 'facil');
+  if (!dificultad) return null;
+  const nOtras = dificultad === 'muyfacil' ? 2 : 3;
   const crono = !!leer(1);
   const nJug = leer(1) + 1;
   const lejos = version >= 4 ? !!leer(1) : false;
@@ -1112,7 +1144,8 @@ function decodificarCompacto(codigo) {
   const plan = [];
   for (let r = 0; r < nR; r++) {
     const idx = leer(9), pIdx = leer(mn ? 11 : 5), pos = leer(2);
-    const otras = [leer(9), leer(9), leer(9)];
+    const otras = [];
+    for (let o = 0; o < nOtras; o++) otras.push(leer(9));
     const opciones = otras.slice(); opciones.splice(pos, 0, idx);
     // En monumentos, el número del monumento se revisa después de cargarlos (revisarEnlace)
     if (!(COMUNAS[idx] && (mn || (COMUNAS[idx].p && pIdx < COMUNAS[idx].p.length)) && opciones.every((o) => COMUNAS[o]))) return null;
@@ -2049,6 +2082,7 @@ function pintarOpciones(ronda) {
   const j = juego;
   const cont = $('opciones');
   cont.innerHTML = '';
+  cont.classList.toggle('tres', ronda.opciones.length === 3);
   ronda.opciones.forEach((idx, k) => {
     const c = COMUNAS[idx];
     const b = document.createElement('button');
@@ -2080,16 +2114,20 @@ function dueñoComodines(ronda) {
   return juego.modo === 'dos' && ronda ? juego.jug[ronda.orden[Math.min(ronda.turno, 1)]] : juego;
 }
 function activarPistas(ronda) {
+  const gratis = juego && juego.dificultad === 'muyfacil';
+  [['pista-alejar', 20], ['pista-satelital', 30], ['comodin', 40]].forEach(([id, c]) => {
+    const e = $(id).querySelector('.costo'); if (e) e.textContent = gratis ? 'gratis' : '−' + c + ' puntos';
+  });
   $('pista-alejar').disabled = false;
   $('pista-satelital').disabled = false;
   actualizarComodin(ronda);
   $('pistas').style.display = 'flex';
 }
 // En 2 jugadores, al pasar el turno el plano vuelve a como estaba: sin alejar, sin
-// satelital y con las 4 alternativas, para que el segundo no vea las ayudas del primero
+// satelital y con todas las alternativas, para que el segundo no vea las ayudas del primero
 function restablecerPlano(ronda) {
   if (mapa.hasLayer(satelital)) mapa.removeLayer(satelital);
-  fijarRelleno(0.55);
+  fijarRelleno(rellenoBase());
   if (ronda.vista) mapa.setView(ronda.vista.centro, ronda.vista.zoom, { animate: false });
   ronda.descartadas = null;
 }
@@ -2099,7 +2137,7 @@ function usarPista(tipo) {
   ronda.pistas.add(tipo);
   sonar('pista');
   if (tipo === 'alejar') { mapa.setZoom(ronda.zoom - 1, { animate: false }); $('pista-alejar').disabled = true; }
-  if (tipo === 'satelital') { satelital.addTo(mapa); fijarRelleno(0.3); $('pista-satelital').disabled = true; }
+  if (tipo === 'satelital') { satelital.addTo(mapa); fijarRelleno(Math.min(0.3, rellenoBase())); $('pista-satelital').disabled = true; }
 }
 function usarComodin() {
   const ronda = juego && juego.rondas[juego.i];
@@ -2108,7 +2146,7 @@ function usarComodin() {
   ronda.pistas.add('comodin');
   sonar('comodin');
   dueño.comodines -= 1;
-  const malas = mezclar(ronda.opciones.filter((i) => i !== ronda.idx)).slice(0, 2);
+  const malas = mezclar(ronda.opciones.filter((i) => i !== ronda.idx)).slice(0, ronda.opciones.length <= 3 ? 1 : 2);
   ronda.descartadas = new Set(malas);
   [...$('opciones').children].forEach((b) => {
     if (ronda.descartadas.has(Number(b.dataset.idx))) { b.disabled = true; b.classList.add('descartada'); }
