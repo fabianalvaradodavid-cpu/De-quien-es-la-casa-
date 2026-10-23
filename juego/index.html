@@ -111,7 +111,6 @@
   .opciones .nombre{ display:block; }
   .opciones .region{ display:block; font-size:0.78rem; color:var(--soft); margin-top:1px; }
   /* Calles de Fácil: el mapa de Esri es amarillento; se pasa a gris y se aclara para dejar el fondo blanco */
-  .capa-calles{ filter:grayscale(1) brightness(1.1) contrast(1.05); }
   .opciones.tres button:last-child{ grid-column:1 / -1; }
   .opciones button.correcta{ background:var(--ok-bg); border-color:var(--ok); }
   .opciones button.equivocada{ background:var(--bad-bg); border-color:var(--bad); }
@@ -466,8 +465,8 @@
         <div class="grupo">
           <div class="etiqueta">Dificultad</div>
           <div class="seg" role="radiogroup" aria-label="Dificultad">
-            <label><input type="radio" name="dificultad" value="muyfacil" checked><span>Fácil<small>calles · comunas lejanas · pistas gratis</small></span></label>
-            <label><input type="radio" name="dificultad" value="facil"><span>Medio<small>comunas al azar</small></span></label>
+            <label><input type="radio" name="dificultad" value="muyfacil"><span>Fácil<small>calles · comunas lejanas · pistas gratis</small></span></label>
+            <label><input type="radio" name="dificultad" value="facil" checked><span>Medio<small>comunas al azar</small></span></label>
             <label><input type="radio" name="dificultad" value="dificil"><span>Difícil<small>comunas vecinas</small></span></label>
           </div>
         </div>
@@ -834,9 +833,66 @@ const mapa = L.map('mapa', {
 L.control.scale({ metric: true, imperial: false, position: 'bottomleft', maxWidth: 140 }).addTo(mapa);
 
 const satelital = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, zIndex: 1 });
-// Fácil: calles con sus nombres de fondo (Esri World Street Map, mismo servidor que la satelital)
-const calles = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, zIndex: 0, className: 'capa-calles' });
+// Fácil: calles con sus nombres de fondo. Es un mapa vectorial (OpenFreeMap, estilo
+// Positron: blanco, sin clave) dibujado con MapLibre, para poder quitarle todo texto que no
+// sea nombre de calle: comunas, barrios, lugares, comercios y límites delatarían la respuesta.
+// Las librerías se cargan solo la primera vez que se juega en Fácil.
+const ESTILO_CALLES = 'https://tiles.openfreemap.org/styles/positron';
+const LIBS_CALLES = [
+  'https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css',
+  'https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js',
+  'https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.3/leaflet-maplibre-gl.js'
+];
+const TEXTOS_PERMITIDOS = ['transportation_name', 'housenumber'];
+let callesGL = null;
+let promesaCalles = null;
+function cargarLib(url) {
+  return new Promise((ok, mal) => {
+    const css = url.endsWith('.css');
+    const e = document.createElement(css ? 'link' : 'script');
+    if (css) { e.rel = 'stylesheet'; e.href = url; } else { e.src = url; }
+    e.onload = ok; e.onerror = () => mal(new Error('No se pudo cargar ' + url));
+    document.head.appendChild(e);
+  });
+}
+function prepararCalles() {
+  if (promesaCalles) return promesaCalles;
+  promesaCalles = (async () => {
+    await cargarLib(LIBS_CALLES[0]);
+    await cargarLib(LIBS_CALLES[1]);
+    await cargarLib(LIBS_CALLES[2]);
+    const r = await fetch(ESTILO_CALLES);
+    if (!r.ok) throw new Error('estilo HTTP ' + r.status);
+    const estilo = await r.json();
+    // Fuera todos los textos salvo los nombres de calles (y números de casa), y los límites
+    estilo.layers = estilo.layers.filter((l) => (l.type === 'symbol'
+      ? TEXTOS_PERMITIDOS.includes(l['source-layer'])
+      : l['source-layer'] !== 'boundary'));
+    if (!mapa.getPane('fondoCalles')) {
+      mapa.createPane('fondoCalles');
+      mapa.getPane('fondoCalles').style.zIndex = 150; // bajo los deslindes y la satelital
+    }
+    callesGL = L.maplibreGL({ style: estilo, pane: 'fondoCalles', interactive: false });
+    return callesGL;
+  })().catch((e) => { console.warn('No se pudo cargar el mapa de calles', e); promesaCalles = null; return null; });
+  return promesaCalles;
+}
+// El mapa de calles queda puesto mientras se juega en Fácil (crearlo en cada ronda es lento)
+function ponerCalles() {
+  const facil = juego && juego.dificultad === 'muyfacil';
+  if (!facil) { if (callesGL && mapa.hasLayer(callesGL)) mapa.removeLayer(callesGL); return; }
+  if (callesGL) { if (!mapa.hasLayer(callesGL)) callesGL.addTo(mapa); return; }
+  const j = juego;
+  prepararCalles().then((gl) => { if (gl && juego === j && !mapa.hasLayer(gl)) gl.addTo(mapa); });
+}
 const RELLENO_CALLES = 0.12;
+// La librería del mapa de calles se baja apenas termina de cargar la página (sin frenar lo
+// demás), para que al empezar una partida en Fácil ya esté lista
+window.addEventListener('load', () => {
+  const precargar = () => prepararCalles();
+  if ('requestIdleCallback' in window) requestIdleCallback(precargar, { timeout: 3000 });
+  else setTimeout(precargar, 1500);
+});
 function rellenoBase() { return juego && juego.dificultad === 'muyfacil' ? RELLENO_CALLES : 0.55; }
 const nombres = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, zIndex: 8 });
 const zoomCtl = L.control.zoom({ position: 'topright' });
@@ -853,9 +909,9 @@ function interaccion(activa) {
 function mostrarPlano(ronda) {
   capasRonda.forEach((c) => mapa.removeLayer(c));
   capasRonda = [];
-  [satelital, nombres, calles].forEach((c) => mapa.hasLayer(c) && mapa.removeLayer(c));
+  [satelital, nombres].forEach((c) => mapa.hasLayer(c) && mapa.removeLayer(c));
   interaccion(false);
-  if (juego && juego.dificultad === 'muyfacil') calles.addTo(mapa);
+  ponerCalles();
   fijarRelleno(rellenoBase());
   // En la vista de lejos, un nivel menos de zoom: 4 m por píxel en vez de 2
   ronda.zoom = zoomEscalaFija(ronda.lat) - (juego && juego.lejos ? 1 : 0);
@@ -2012,6 +2068,7 @@ function empezar(opts) {
   for (let k = 0; k < N_RONDAS; k++) $('marcas').appendChild(document.createElement('span'));
   if (juego.sala) seguirSalaEnJuego(juego);
   pintarMarcador();
+  if (juego.dificultad === 'muyfacil') prepararCalles();
   juego.siguiente = prepararRonda(juego);
   mostrarSiguiente();
 }
