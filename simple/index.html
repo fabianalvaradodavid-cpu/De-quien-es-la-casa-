@@ -2368,28 +2368,64 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
   const buscarBtn = document.getElementById('buscar-direccion-btn');
   input.value = direccionBase(direccionClic);
 
-  async function ejecutarBusqueda() {
-    const { calle, numero } = separarCalleYNumero(input.value);
+  // Una calle larga sin número (Huérfanos, Providencia…) trae miles de unidades: el SII
+  // tarda tanto que la conexión se corta ("Failed to fetch"). Por eso, sin número se usa
+  // el número de la dirección del clic (si es la misma calle), y la calle completa solo
+  // se busca a propósito con el enlace "Buscar en toda la calle".
+  async function ejecutarBusqueda(callecompleta) {
+    let { calle, numero } = separarCalleYNumero(input.value);
     if (!calle) {
       resultsEl.innerHTML = '<p class="modal-error">Escribe al menos el nombre de la calle, por ejemplo "Los Aliaga" (el número es opcional).</p>';
       return;
     }
+    const base = separarCalleYNumero(direccionBase(direccionClic));
+    const numeroClic = base.numero && normNombre(base.calle) === normNombre(calle) ? base.numero : '';
+    let nota = '';
+    if (!numero && numeroClic && callecompleta !== true) {
+      numero = numeroClic;
+      nota = 'Se buscó en el número ' + numeroClic + ' (el del punto donde hiciste clic). ';
+    }
     resultsEl.innerHTML = '<p class="modal-loading">Buscando…</p>';
     try {
-      let unidades = await buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero);
-      // Sin número y sin resultados: si es la misma calle del clic, se reintenta con
-      // el número de esa dirección (por si el SII no acepta la búsqueda sin número).
-      if (!numero && !unidades.length) {
-        const base = separarCalleYNumero(direccionBase(direccionClic));
-        if (base.numero && normNombre(base.calle) === normNombre(calle)) {
-          unidades = await buscarPorDireccion(comunaCodigo, nombreComuna, base.calle, base.numero);
-        }
+      let unidades;
+      try {
+        unidades = await buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero);
+      } catch (err) {
+        // Calle completa que falló: se repite sola con el número del clic
+        if (numero || !numeroClic) throw err;
+        console.warn('Búsqueda en toda la calle falló; se repite con el número del clic', err);
+        numero = numeroClic;
+        nota = 'La calle completa es muy larga para el SII; se muestran las unidades del número ' + numeroClic + '. ';
+        unidades = await buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero);
+      }
+      // Sin número y sin resultados: se reintenta con el número del clic (por si el SII
+      // no acepta la búsqueda sin número)
+      if (!numero && !unidades.length && numeroClic) {
+        numero = numeroClic;
+        unidades = await buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero);
       }
       renderUnidades(unidades);
+      if (numero && !separarCalleYNumero(input.value).numero) {
+        const p = document.createElement('p');
+        p.className = 'modal-loading';
+        p.textContent = nota;
+        if (callecompleta !== true) {
+          const a = document.createElement('a');
+          a.href = '#';
+          a.textContent = 'Buscar en toda la calle';
+          a.onclick = (e) => { e.preventDefault(); ejecutarBusqueda(true); };
+          p.appendChild(a);
+          p.appendChild(document.createTextNode(' (puede tardar, o fallar si la calle es muy larga).'));
+        }
+        resultsEl.insertBefore(p, resultsEl.firstChild);
+      }
     } catch (err) {
       console.error('Error buscando por dirección', err);
       const msg = (err && err.message) ? err.message : String(err);
-      resultsEl.innerHTML = `<p class="modal-error">No se pudo consultar (${escapeHtml(msg)}). Revisa la URL del proxy o intenta de nuevo.</p>`;
+      const red = /fetch|network|load failed|abort|HTTP 5\d\d/i.test(msg);
+      resultsEl.innerHTML = !numero && red
+        ? `<p class="modal-error">La búsqueda en toda la calle no alcanzó a llegar: la calle es muy larga para buscarla completa. Escribe también el número del edificio (por ejemplo, ${escapeHtml(calle)} 1160) y vuelve a buscar.</p>`
+        : `<p class="modal-error">No se pudo consultar (${escapeHtml(msg)}). Puede ser la conexión o el SII; intenta de nuevo en un momento.</p>`;
     }
   }
 
@@ -2511,7 +2547,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
     resultsEl.appendChild(nota);
   }
 
-  buscarBtn.addEventListener('click', ejecutarBusqueda);
+  buscarBtn.addEventListener('click', () => ejecutarBusqueda());
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') ejecutarBusqueda(); });
 
   ejecutarBusqueda(); // búsqueda automática al abrir, con la dirección del clic
@@ -2523,9 +2559,9 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
 // esta consulta trae TODAS las unidades de esa calle/número en una sola llamada,
 // sin necesidad de recorrer números de predio uno por uno.
 async function buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero) {
-  // Con detalle: 0 el SII responde la lista resumida y el avalúo viene en 0.
-  // Se pide primero con detalle: 1 (lista completa); si esa variante falla o no
-  // trae nada, se vuelve a la resumida para no perder la lista de unidades.
+  // Con detalle: 0 el SII responde la lista resumida (rápida; el avalúo viene en 0 y se
+  // pide unidad por unidad al abrir "Ver"). Solo si esa no trae nada se prueba la
+  // completa (detalle: 1), que es mucho más pesada.
   const pedir = async (detalle) => {
     const res = await callProxy('/getPrediosDireccion', {
       rolDireccion: {
@@ -2539,13 +2575,14 @@ async function buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero) {
     });
     return Array.isArray(res && res.data) ? res.data : [];
   };
-  let unidades = [];
-  try {
-    unidades = await pedir(1);
-  } catch (err) {
-    console.warn('getPrediosDireccion con detalle 1 falló; se usa detalle 0', err);
+  let unidades = await pedir(0);
+  if (!unidades.length) {
+    try {
+      unidades = await pedir(1);
+    } catch (err) {
+      console.warn('getPrediosDireccion con detalle 1 falló', err);
+    }
   }
-  if (!unidades.length) unidades = await pedir(0);
   // DEBUG: para ver en la consola qué campos trae cada unidad (ej. dónde viene el avalúo)
   if (unidades.length) console.log('Unidad de ejemplo (getPrediosDireccion):', unidades[0]);
   return unidades;
