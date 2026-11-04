@@ -2586,7 +2586,7 @@ function mismoNombre(a, b) {
 // Un grupo chico (pocas unidades) cuyos roles caen entre los de otro grupo de la misma
 // manzana es parte de ese edificio: el SII numera los roles de un edificio seguidos
 // ("262-133 … ED NVO CENTRO" entre "262-132" y "262-135 … EDIF NUEVO CENTRO").
-function unirPorRoles(grupos) {
+function unirPorRoles(grupos, puedeMoverse = () => true) {
   const rolDe = (x) => { const r = String((x.u && x.u.rol) || '').split('-'); return { m: r[0], p: parseInt(r[1], 10) }; };
   const claves = Object.keys(grupos);
   const rango = {};
@@ -2597,7 +2597,7 @@ function unirPorRoles(grupos) {
   });
   claves.forEach((k) => {
     const g = grupos[k];
-    if (!g || !rango[k] || g.length > 3) return;
+    if (!g || !rango[k] || g.length > 3 || !puedeMoverse(k)) return;
     const destino = claves.find((o) => o !== k && grupos[o] && rango[o] && rango[o].n >= 10 && rango[o].m === rango[k].m &&
       rango[k].min >= rango[o].min && rango[k].max <= rango[o].max);
     if (destino) { grupos[destino].push(...g); delete grupos[k]; }
@@ -2712,12 +2712,15 @@ function agruparEdificios(items) {
       edificios.push({ titulo, items: g });
     });
   });
-  // Lo mismo entre edificios: una unidad con la dirección mal escrita ("TORO MAZOTTE76")
-  // queda en el edificio cuyos roles la rodean
+  // Entre edificios: solo una unidad SIN número de calle reconocible ("TORO MAZOTTE76") puede
+  // pasar al edificio cuyos roles la rodean. Unidades con otro número de calle son siempre
+  // otro edificio, aunque sus roles queden entremedio (en una búsqueda por calle completa,
+  // las casas y edificios de una misma manzana tienen roles mezclados)
   const porTitulo = {};
   edificios.forEach((e, i) => { porTitulo[i] = e.items; });
-  unirPorRoles(porTitulo);
-  return edificios.filter((e, i) => porTitulo[i]).map((e, i) => e);
+  const sinNumero = (items) => items.every((x) => !x.numCalle);
+  unirPorRoles(porTitulo, (k) => sinNumero(porTitulo[k]));
+  return edificios.filter((e, i) => porTitulo[i]);
 }
 
 function construirPlanoEdificio(unidades, alElegir) {
