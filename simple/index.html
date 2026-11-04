@@ -2914,6 +2914,8 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
         <button class="primary" id="buscar-direccion-btn" style="white-space:nowrap; padding:0.5rem 0.9rem;">Buscar</button>
       </div>
       <div class="filter-hint">Busca en el SII las unidades (departamentos, bodegas, estacionamientos) de esa calle que pertenecen a la manzana ${escapeHtml(manzana)}. Si no pones número, se buscan en toda la calle y se muestran solo las de esa manzana.</div>
+      <button type="button" id="buscar-manzana-btn" style="margin-top:0.5rem; padding:0.45rem 0.9rem;">Buscar todas las unidades de esta copropiedad</button>
+      <div class="filter-hint">Para copropiedades de casas con direcciones distintas: revisa uno por uno los roles de la manzana ${escapeHtml(manzana)}, sin importar la calle ni el número. Va despacio (un rol por segundo) para no saturar al SII.</div>
     </div>
     <div id="modal-results"></div>
   `;
@@ -2921,7 +2923,56 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
   const input = document.getElementById('filtro-direccion');
   const resultsEl = document.getElementById('modal-results');
   const buscarBtn = document.getElementById('buscar-direccion-btn');
+  const manzanaBtn = document.getElementById('buscar-manzana-btn');
   input.value = direccionBase(direccionClic);
+  // Cada búsqueda nueva deja obsoleta la anterior (y detiene el recorrido de la copropiedad)
+  let busquedaActual = 0;
+
+  async function ejecutarBusquedaManzana() {
+    const id = ++busquedaActual;
+    resultsEl.innerHTML = '';
+    const estado = document.createElement('p');
+    estado.className = 'modal-loading';
+    const txt = document.createElement('span');
+    const detener = document.createElement('a');
+    detener.href = '#';
+    detener.textContent = 'Detener';
+    let detenido = false;
+    detener.onclick = (e) => { e.preventDefault(); detenido = true; };
+    estado.append(txt, ' ', detener);
+    resultsEl.appendChild(estado);
+    txt.textContent = `Revisando los roles de la manzana ${manzana}…`;
+    manzanaBtn.disabled = true;
+    try {
+      const r = await buscarManzanaCompleta(comunaCodigo, manzana, (revisados, encontrados) => {
+        txt.textContent = `Revisando los roles de la manzana ${manzana} (uno por segundo): ${revisados} revisados, ${encontrados} unidades encontradas…`;
+      }, () => detenido || id !== busquedaActual);
+      if (id !== busquedaActual) return;
+      if (!r.unidades.length) {
+        resultsEl.innerHTML = r.limitado
+          ? '<p class="modal-error">El SII limitó las consultas por un rato. Intenta más tarde.</p>'
+          : `<p class="modal-error">No se encontraron unidades en la manzana ${escapeHtml(manzana)}.</p>`;
+        return;
+      }
+      renderUnidades(r.unidades);
+      const p = document.createElement('p');
+      p.className = 'modal-loading';
+      p.textContent = r.limitado
+        ? 'El SII limitó las consultas, así que la búsqueda se detuvo: se muestran las unidades encontradas hasta ese momento.'
+        : r.tope
+          ? 'Se revisaron los primeros 200 roles de la manzana (el máximo de esta búsqueda); puede haber más. Para un edificio grande conviene buscar por calle y número.'
+          : detenido
+          ? 'Búsqueda detenida: se muestran las unidades encontradas hasta ese momento.'
+          : `Todas las unidades de la manzana ${manzana}, sin importar la calle ni el número.`;
+      resultsEl.insertBefore(p, resultsEl.firstChild);
+    } catch (err) {
+      if (id !== busquedaActual) return;
+      console.error('Error recorriendo la manzana', err);
+      resultsEl.innerHTML = `<p class="modal-error">No se pudo revisar la manzana (${escapeHtml((err && err.message) || String(err))}). Intenta de nuevo en un momento.</p>`;
+    } finally {
+      manzanaBtn.disabled = false;
+    }
+  }
 
   // Una calle larga sin número (Huérfanos, Providencia…) trae miles de unidades: el SII
   // tarda tanto que la conexión se corta ("Failed to fetch"). Por eso, sin número se usa
@@ -2930,9 +2981,10 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
   async function ejecutarBusqueda(callecompleta) {
     let { calle, numero } = separarCalleYNumero(input.value);
     if (!calle) {
-      resultsEl.innerHTML = '<p class="modal-error">Escribe al menos el nombre de la calle, por ejemplo "Los Aliaga" (el número es opcional).</p>';
+      resultsEl.innerHTML = '<p class="modal-error">Escribe al menos el nombre de la calle, por ejemplo "Los Aliaga" (el número es opcional), o toca «Buscar todas las unidades de esta copropiedad».</p>';
       return;
     }
+    const id = ++busquedaActual;
     const base = separarCalleYNumero(direccionBase(direccionClic));
     const numeroClic = base.numero && normNombre(base.calle) === normNombre(calle) ? base.numero : '';
     let nota = '';
@@ -2959,6 +3011,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
         numero = numeroClic;
         unidades = await buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero);
       }
+      if (id !== busquedaActual) return;
       renderUnidades(unidades);
       if (numero && !separarCalleYNumero(input.value).numero) {
         const p = document.createElement('p');
@@ -2975,6 +3028,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
         resultsEl.insertBefore(p, resultsEl.firstChild);
       }
     } catch (err) {
+      if (id !== busquedaActual) return;
       console.error('Error buscando por dirección', err);
       const msg = (err && err.message) ? err.message : String(err);
       const red = /fetch|network|load failed|abort|HTTP 5\d\d/i.test(msg);
@@ -3134,6 +3188,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
   }
 
   buscarBtn.addEventListener('click', () => ejecutarBusqueda());
+  manzanaBtn.addEventListener('click', () => ejecutarBusquedaManzana());
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') ejecutarBusqueda(); });
 
   ejecutarBusqueda(); // búsqueda automática al abrir, con la dirección del clic
@@ -3178,6 +3233,43 @@ async function buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero) {
 // usa el mapa del SII al abrir una unidad desde la búsqueda por dirección, y la
 // única que trae el avalúo de cada departamento, bodega o estacionamiento.
 const predioNacionalCache = {};
+// Todas las unidades de una manzana (copropiedades de casas con direcciones distintas): el SII
+// no busca por manzana, así que se piden los roles uno por uno (manzana-1, -2, …), DE A UNO y
+// con un segundo entre consultas (más rápido, el SII bloquea por "consultas recurrentes").
+// Se detiene tras 15 roles seguidos que no existen (30 si aún no aparece ninguno), a los 200
+// roles, al cancelar, o en cuanto el SII responde 429 (límite). Los 90001… no se piden.
+async function buscarManzanaCompleta(comunaCodigo, manzana, onProgreso, cancelado) {
+  const PAUSA_MS = 1000, MAX_ROL = 200;
+  const unidades = [];
+  let ultimoEncontrado = 0, limitado = false;
+  const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+  for (let p = 1; p <= MAX_ROL && !cancelado(); p++) {
+    const t0 = Date.now();
+    let d = null;
+    for (let intento = 0; intento < 2; intento++) {
+      try {
+        d = await obtenerPredioNacional(comunaCodigo, manzana, p);
+        break;
+      } catch (err) {
+        const msg = String((err && err.message) || err);
+        if (/no devolvió datos/.test(msg)) break; // ese rol no existe
+        if (/429/.test(msg)) { limitado = true; break; }
+        if (intento === 0) await espera(3000); else throw err;
+      }
+    }
+    if (limitado) break;
+    if (d) {
+      ultimoEncontrado = p;
+      unidades.push({ ...d, rol: manzana + '-' + p, manzana: Number(manzana), predio: p });
+    }
+    onProgreso(p, unidades.length);
+    if (p - ultimoEncontrado >= (ultimoEncontrado ? 15 : 30)) break;
+    await espera(Math.max(0, PAUSA_MS - (Date.now() - t0)));
+  }
+  const tope = !limitado && !cancelado() && MAX_ROL - ultimoEncontrado < 15 && ultimoEncontrado > 0;
+  return { unidades, limitado, tope };
+}
+
 async function obtenerPredioNacional(comunaCodigo, manzana, predio) {
   const clave = comunaCodigo + ':' + manzana + '-' + predio;
   if (predioNacionalCache[clave]) return predioNacionalCache[clave];
