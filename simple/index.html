@@ -603,6 +603,37 @@
     border-color:var(--clay);
   }
   .unit-buttons button.primary:hover{ background:var(--clay-dark); }
+  /* ---- Plano esquemático del edificio (unidades por piso) ---- */
+  .vista-tabs{ display:flex; gap:0; margin:0 0 0.7rem; border:1.5px solid var(--moss); border-radius:4px; overflow:hidden; width:max-content; }
+  .vista-tabs button{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:0.75rem; font-weight:600;
+    padding:0.35rem 0.8rem; border:none; background:#fff; color:var(--moss-dark); cursor:pointer; }
+  .vista-tabs button + button{ border-left:1.5px solid var(--moss); }
+  .vista-tabs button[aria-pressed="true"]{ background:var(--moss); color:#fff; }
+  .plano{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:0.72rem; }
+  .plano-leyenda{ display:flex; flex-wrap:wrap; gap:0.3rem 0.8rem; margin-bottom:0.6rem; color:#5a6873; }
+  .plano-leyenda span{ display:inline-flex; align-items:center; gap:0.3rem; }
+  .plano-leyenda i{ width:0.8rem; height:0.8rem; border-radius:2px; display:inline-block; border:1px solid rgba(0,0,0,0.15); }
+  .plano-torres{ display:flex; flex-wrap:wrap; gap:1rem; align-items:flex-end; }
+  .plano-torre{ flex:1 1 220px; min-width:0; }
+  .plano-torre h4{ margin:0 0 0.3rem; font-size:0.78rem; color:var(--moss-dark); }
+  .plano-edificio{ border:2px solid var(--moss-dark); border-bottom:none; border-radius:4px 4px 0 0; background:#fbfcfd; }
+  .plano-piso{ display:flex; align-items:stretch; border-bottom:1px solid var(--line); }
+  .plano-piso:last-child{ border-bottom:none; }
+  .plano-num{ flex:0 0 3.4rem; display:flex; align-items:center; justify-content:center; color:#5a6873; font-weight:600;
+    background:#eef2f5; border-right:1px solid var(--line); font-size:0.68rem; text-align:center; line-height:1.1; padding:2px; }
+  .plano-unidades{ flex:1; display:flex; flex-wrap:wrap; gap:3px; padding:3px; }
+  .plano-u{ min-width:2.4rem; padding:0.28rem 0.25rem; border-radius:2px; border:1px solid rgba(0,0,0,0.18); cursor:pointer;
+    font:inherit; font-size:0.68rem; font-weight:600; color:#1f2a33; text-align:center; line-height:1.1; }
+  .plano-u:hover, .plano-u:focus-visible{ outline:2px solid var(--clay); outline-offset:1px; }
+  .plano-u.elegida{ outline:2px solid #a3402b; outline-offset:1px; }
+  .t-depto{ background:#cfe0ee; } .t-oficina{ background:#d9d3ec; } .t-local{ background:#f3dcc0; }
+  .t-casa{ background:#d6e8cf; } .t-bodega{ background:#e2ddd3; } .t-estac{ background:#d5d9de; } .t-otro{ background:#f1f1f1; }
+  .plano-suelo{ height:6px; background:repeating-linear-gradient(90deg,#5d6b74 0 8px,#8b9aa1 8px 16px); margin:0 -0.3rem; border-radius:2px; }
+  .plano-suelo-txt{ text-align:center; color:#5a6873; margin:0.15rem 0 0.35rem; font-size:0.66rem; letter-spacing:0.04em; text-transform:uppercase; }
+  .plano-sub{ border:2px dashed #8b9aa1; border-radius:0 0 4px 4px; background:#f6f7f8; }
+  .plano-sub .plano-num{ background:#e9ecef; }
+  .plano-nota{ color:#5a6873; margin-top:0.6rem; line-height:1.35; }
+  ul.unit-list li.resaltada{ background:#fff6e5; }
   .modal-filter{
     margin-bottom:0.9rem;
   }
@@ -2346,6 +2377,166 @@ function separarCalleYNumero(texto) {
   return { calle: m[1].trim(), numero: m[2].trim() };
 }
 
+// ---- Plano esquemático del edificio ----
+// Con la dirección de cada unidad que entrega el SII ("HUERFANOS 1160 DP 504",
+// "... BX 12", "... EST 3 TO B") se deduce el tipo, el número, la torre y el piso, y se
+// dibuja un esquema: pisos de arriba abajo con sus unidades, el nivel de la calle y, bajo
+// él, bodegas y estacionamientos. No es un plano real: dentro de cada piso las unidades
+// van en orden de número, no en su posición física.
+const TIPOS_UNIDAD = [
+  { tipo: 'depto', nombre: 'Departamento', re: /\b(?:DP|DPTO|DEPTO|DEP|DEPARTAMENTO)\.?\s*(-?\d+[A-Z]?)/ },
+  { tipo: 'oficina', nombre: 'Oficina', re: /\b(?:OF|OFIC|OFICINA)\.?\s*(-?\d+[A-Z]?)/ },
+  { tipo: 'local', nombre: 'Local', re: /\b(?:LC|LOC|LOCAL)\.?\s*(-?\d+[A-Z]?)/ },
+  { tipo: 'bodega', nombre: 'Bodega', re: /\b(?:BX|BOX|BOD|BODEGA|BG)\.?\s*(-?\d+[A-Z]?)/ },
+  { tipo: 'estac', nombre: 'Estacionamiento', re: /\b(?:EST|ESTAC|ESTACIONAMIENTO|ES|E)\.?\s*(-?\d+[A-Z]?)/ },
+  { tipo: 'casa', nombre: 'Casa', re: /\b(?:CS|CASA)\.?\s*(-?\d+[A-Z]?)/ }
+];
+const NOMBRE_TIPO = { depto: 'Departamentos', oficina: 'Oficinas', local: 'Locales', casa: 'Casas', bodega: 'Bodegas', estac: 'Estacionamientos', otro: 'Otras unidades' };
+
+function clasificarUnidad(u) {
+  const dir = String(u.direccion || '').toUpperCase().replace(/\s+/g, ' ').trim();
+  const base = direccionBase(dir);
+  const resto = dir.startsWith(base) ? dir.slice(base.length) : dir;
+  let tipo = 'otro', numero = '';
+  for (const t of TIPOS_UNIDAD) {
+    const m = resto.match(t.re);
+    if (m) { tipo = t.tipo; numero = m[1]; break; }
+  }
+  // Sin marca en la dirección: se intenta con el destino ("Bodega y almacenaje", "Estacionamiento"…)
+  if (tipo === 'otro') {
+    const d = String(pick(u, ['destinoDescripcion', 'destino', 'DESTINO', 'destinoPredio']) || '').toUpperCase();
+    if (/BODEGA/.test(d)) tipo = 'bodega';
+    else if (/ESTACION/.test(d)) tipo = 'estac';
+    else if (/OFICINA/.test(d)) tipo = 'oficina';
+    else if (/COMERCIO|LOCAL/.test(d)) tipo = 'local';
+    else if (/HABITAC/.test(d)) tipo = 'depto';
+    const n = resto.match(/(-?\d+[A-Z]?)\s*$/);
+    if (n) numero = n[1];
+  }
+  const torreM = resto.match(/\b(?:TO|TORRE|TR|BL|BLOCK|BLOQUE|BLQ|ED|EDIF|EDIFICIO)\.?\s+([A-Z0-9]{1,3})\b/);
+  const torre = torreM ? torreM[1] : '';
+  let piso = null;
+  const pisoM = resto.match(/\bPISO\s*(-?\d+)/);
+  const subM = resto.match(/\b(?:SUBTERRANEO|SUBSUELO|SS|SUB|NIVEL)\s*-?(\d+)/);
+  const nEnt = parseInt(numero, 10);
+  if (pisoM) piso = parseInt(pisoM[1], 10);
+  else if (tipo === 'bodega' || tipo === 'estac') piso = subM ? -parseInt(subM[1], 10) : null;
+  else if (!isNaN(nEnt) && Math.abs(nEnt) >= 100) piso = Math.trunc(nEnt / 100);
+  else if (tipo === 'local') piso = 1;
+  return { tipo, numero, torre, piso, n: isNaN(nEnt) ? Infinity : nEnt };
+}
+
+function construirPlanoEdificio(unidades, alElegir) {
+  const items = unidades.map((u) => ({ u, ...clasificarUnidad(u) }));
+  const cont = document.createElement('div');
+  cont.className = 'plano';
+  const ordenNum = (a, b) => (a.n - b.n) || String(a.numero).localeCompare(String(b.numero));
+
+  // Leyenda con cuántas hay de cada tipo
+  const leyenda = document.createElement('div');
+  leyenda.className = 'plano-leyenda';
+  Object.keys(NOMBRE_TIPO).forEach((t) => {
+    const n = items.filter((x) => x.tipo === t).length;
+    if (!n) return;
+    const sp = document.createElement('span');
+    sp.innerHTML = `<i class="t-${t}"></i>${NOMBRE_TIPO[t]}: ${n}`;
+    leyenda.appendChild(sp);
+  });
+  cont.appendChild(leyenda);
+
+  const boton = (x) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'plano-u t-' + x.tipo;
+    b.textContent = x.numero || '?';
+    const rol = x.u.rol || `${x.u.manzana}-${x.u.predio}`;
+    b.title = `${rol} · ${x.u.direccion || ''}`;
+    b.onclick = () => {
+      cont.querySelectorAll('.plano-u.elegida').forEach((e) => e.classList.remove('elegida'));
+      b.classList.add('elegida');
+      alElegir(String(rol));
+    };
+    return b;
+  };
+  const fila = (etiqueta, lista) => {
+    const f = document.createElement('div');
+    f.className = 'plano-piso';
+    const num = document.createElement('div');
+    num.className = 'plano-num';
+    num.textContent = etiqueta;
+    const us = document.createElement('div');
+    us.className = 'plano-unidades';
+    lista.slice().sort(ordenNum).forEach((x) => us.appendChild(boton(x)));
+    f.append(num, us);
+    return f;
+  };
+
+  // Una columna por torre (si la dirección la indica)
+  const torres = [...new Set(items.map((x) => x.torre))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+  const cajaTorres = document.createElement('div');
+  cajaTorres.className = 'plano-torres';
+  torres.forEach((torre) => {
+    const deTorre = items.filter((x) => x.torre === torre);
+    const arriba = deTorre.filter((x) => x.tipo !== 'bodega' && x.tipo !== 'estac' && x.piso !== null && x.piso > 0);
+    const sinPiso = deTorre.filter((x) => x.tipo !== 'bodega' && x.tipo !== 'estac' && (x.piso === null || x.piso <= 0));
+    const abajo = deTorre.filter((x) => x.tipo === 'bodega' || x.tipo === 'estac');
+    const col = document.createElement('div');
+    col.className = 'plano-torre';
+    if (torres.length > 1 || torre) {
+      const h = document.createElement('h4');
+      h.textContent = torre ? 'Torre ' + torre : 'Sin torre indicada';
+      col.appendChild(h);
+    }
+    if (arriba.length) {
+      const ed = document.createElement('div');
+      ed.className = 'plano-edificio';
+      const pisos = [...new Set(arriba.map((x) => x.piso))].sort((a, b) => b - a);
+      pisos.forEach((p) => ed.appendChild(fila('Piso ' + p, arriba.filter((x) => x.piso === p))));
+      col.appendChild(ed);
+    }
+    if (sinPiso.length) {
+      const ed = document.createElement('div');
+      ed.className = 'plano-edificio';
+      ['depto', 'oficina', 'local', 'casa', 'otro'].forEach((t) => {
+        const l = sinPiso.filter((x) => x.tipo === t);
+        if (l.length) ed.appendChild(fila({ depto: 'Deptos', oficina: 'Ofic.', local: 'Locales', casa: 'Casas', otro: 'Otras' }[t], l));
+      });
+      col.appendChild(ed);
+    }
+    const suelo = document.createElement('div');
+    suelo.className = 'plano-suelo';
+    col.appendChild(suelo);
+    const st = document.createElement('div');
+    st.className = 'plano-suelo-txt';
+    st.textContent = 'Nivel de la calle';
+    col.appendChild(st);
+    if (abajo.length) {
+      const sub = document.createElement('div');
+      sub.className = 'plano-sub';
+      // Por subterráneo si se conoce; si no, una fila para bodegas y otra para estacionamientos
+      const niveles = [...new Set(abajo.map((x) => x.piso))].sort((a, b) => (b ?? -99) - (a ?? -99));
+      niveles.forEach((nv) => {
+        ['bodega', 'estac'].forEach((t) => {
+          const l = abajo.filter((x) => x.piso === nv && x.tipo === t);
+          if (!l.length) return;
+          const et = (t === 'bodega' ? 'Bodegas' : 'Estac.') + (nv !== null ? ' ' + nv : '');
+          sub.appendChild(fila(et, l));
+        });
+      });
+      col.appendChild(sub);
+    }
+    cajaTorres.appendChild(col);
+  });
+  cont.appendChild(cajaTorres);
+
+  const nota = document.createElement('p');
+  nota.className = 'plano-nota';
+  nota.textContent = 'Esquema deducido de la dirección de cada unidad en el SII (el piso sale del número: el 504 es del piso 5). '
+    + 'No muestra la posición real de las unidades dentro del piso. Toca una unidad para ver su rol y avalúo.';
+  cont.appendChild(nota);
+  return { el: cont, conPiso: items.filter((x) => x.piso !== null || x.tipo === 'bodega' || x.tipo === 'estac').length / Math.max(1, items.length) };
+}
+
 async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, manzana) {
   document.getElementById('modal-title').textContent = 'Unidades en esta dirección';
   const body = document.getElementById('modal-body');
@@ -2449,6 +2640,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
       const { manzana: mz, propiedad: pr } = splitRol(String(rolCompleto));
 
       const li = document.createElement('li');
+      li.dataset.rol = String(rolCompleto);
 
       // --- Encabezado: rol + dirección ---
       const header = document.createElement('div');
@@ -2507,6 +2699,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
         }
       };
       btns.appendChild(verBtn);
+      li._abrir = () => { if (!details.classList.contains('visible')) verBtn.click(); };
 
       const tgrBtn = document.createElement('button');
       tgrBtn.type = 'button';
@@ -2539,12 +2732,41 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
     });
 
     resultsEl.innerHTML = '';
-    resultsEl.appendChild(ul);
+    // Dos vistas: lista y plano esquemático del edificio. Al tocar una unidad del plano se
+    // pasa a la lista, abierta en esa unidad.
+    const tabs = document.createElement('div');
+    tabs.className = 'vista-tabs';
+    tabs.setAttribute('role', 'group');
+    const tabPlano = document.createElement('button');
+    tabPlano.type = 'button';
+    tabPlano.textContent = 'Plano del edificio';
+    const tabLista = document.createElement('button');
+    tabLista.type = 'button';
+    tabLista.textContent = 'Lista';
+    tabs.append(tabLista, tabPlano);
+    const plano = construirPlanoEdificio(ordenadas, (rol) => {
+      mostrar('lista');
+      const li = [...ul.children].find((x) => x.dataset.rol === rol);
+      if (!li) return;
+      ul.querySelectorAll('li.resaltada').forEach((x) => x.classList.remove('resaltada'));
+      li.classList.add('resaltada');
+      if (li._abrir) li._abrir();
+      li.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
     const nota = document.createElement('p');
     nota.className = 'modal-loading';
     nota.style.marginTop = '0.6rem';
     nota.textContent = `${ordenadas.length} unidad(es) encontrada(s).`;
-    resultsEl.appendChild(nota);
+    function mostrar(v) {
+      plano.el.hidden = v !== 'plano';
+      ul.hidden = v !== 'lista';
+      tabPlano.setAttribute('aria-pressed', String(v === 'plano'));
+      tabLista.setAttribute('aria-pressed', String(v === 'lista'));
+    }
+    tabPlano.onclick = () => mostrar('plano');
+    tabLista.onclick = () => mostrar('lista');
+    resultsEl.append(tabs, ul, plano.el, nota);
+    mostrar('lista'); // primero la lista; el plano, con su botón
   }
 
   buscarBtn.addEventListener('click', () => ejecutarBusqueda());
