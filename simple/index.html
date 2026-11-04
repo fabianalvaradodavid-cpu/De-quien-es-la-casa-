@@ -2708,80 +2708,55 @@ function agruparEdificios(items) {
     valores.filter(Boolean).forEach((v) => { c[v] = (c[v] || 0) + 1; });
     return (Object.entries(c).sort((a, b) => b[1] - a[1])[0] || [''])[0];
   };
+  // UN edificio por número de calle: lo que viene después ("DP A", "DP B", "V FREI",
+  // "EDIFICIO JAPON", "2A ETAPA"…) no separa edificios. Las letras y etapas, si casi todas
+  // las unidades las traen, se muestran como columnas (torres) dentro del mismo plano.
   const edificios = [];
   Object.keys(porCalle).sort((a, b) => a.localeCompare(b, 'es', { numeric: true })).forEach((clave) => {
     const lista = porCalle[clave];
     const calle = (masRepetido(lista.map((x) => x.calle)) + ' ' + (lista[0].numCalle || '')).trim();
-    const conLetra = lista.filter((x) => x.letra).length;
-    const usarLetra = conLetra >= lista.length * 0.5;
-    // Sin letras: por etapa ("2A ETAPA") o por nombre (edificio o condominio), si hay más de
-    // uno. Un nombre abreviado ("ALAMEDA OF") es el mismo que el completo ("ALAMEDA OFICINAS").
     const nombres = [...new Set(lista.map((x) => x.nombre).filter(Boolean))].sort((a, b) => b.length - a.length);
     const canon = {};
-    // misma cantidad de palabras y cada una igual o abreviada ("ALAMEDA OF" = "ALAMEDA OFICINAS"),
-    // pero "OCEANIC I" ≠ "OCEANIC II" (números romanos)
-    const igualNombre = mismoNombre;
-    nombres.forEach((n) => { canon[n] = nombres.find((m) => igualNombre(m, n)) || n; });
+    nombres.forEach((n) => { canon[n] = nombres.find((m) => mismoNombre(m, n)) || n; });
     lista.forEach((x) => { if (x.nombre) x.nombre = canon[x.nombre]; });
-    let nNombres = new Set(lista.map((x) => x.nombre).filter(Boolean)).size;
-    // Sin nombres con "EDIFICIO": nombres sueltos al final, si hay al menos dos que pesan
-    // (10 % de las unidades cada uno y 60 % entre todos); así "EL OLIVO", "EL CEDRO"… separan
-    // torres, pero un "U V PROVIDENCIA" en unas pocas unidades no
-    if (nNombres <= 1 && !usarLetra) {
-      // "TAMARUGO EL TAMARUGO" = "EL TAMARUGO": mismas palabras (sin contar las repetidas)
-      const clave = (t) => [...new Set(t.split(' ').filter((w) => !SOBRAN_CALLE.has(w)))].sort().join(' ');
-      lista.forEach((x) => { if (x.libre) x.libre = clave(x.libre) && x.libre; });
-      const porClave = {};
-      lista.forEach((x) => { if (x.libre) { const k = clave(x.libre); if (!porClave[k] || x.libre.length < porClave[k].length) porClave[k] = x.libre; } });
-      lista.forEach((x) => { if (x.libre) x.libre = porClave[clave(x.libre)]; });
-      const c = {};
-      lista.forEach((x) => { if (x.libre) c[x.libre] = (c[x.libre] || 0) + 1; });
-      const fuertes = Object.entries(c).filter(([, n]) => n >= lista.length * 0.1);
-      if (fuertes.length >= 2 && fuertes.reduce((a, [, n]) => a + n, 0) >= lista.length * 0.6) {
-        const ok = new Set(fuertes.map(([k]) => k));
-        lista.forEach((x) => { x.nombre = ok.has(x.libre) ? x.libre : ''; });
-        nNombres = ok.size;
-      }
-    }
-    const hayEtapas = lista.some((x) => x.etapa);
-    const claveNombre = (x) => (x.etapa ? 'Etapa ' + x.etapa : (nNombres > 1 ? (x.nombre || '') : ''));
-    const usarNombre = !usarLetra && (hayEtapas || nNombres > 1) && new Set(lista.map(claveNombre)).size > 1;
-    const grupos = {};
-    lista.forEach((x) => {
-      const k = usarLetra ? (x.letra || '') : usarNombre ? claveNombre(x) : '';
-      (grupos[k] = grupos[k] || []).push(x);
-    });
-    // Unidades sin letra pero con nombre ("EDIFICIO ASTU", abreviado): al edificio de ese nombre
-    unirPorRoles(grupos);
-    if (usarLetra && grupos['']) {
+    const conLetra = lista.filter((x) => x.letra).length;
+    let porLetra = false;
+    if (conLetra >= lista.length * 0.5) {
+      // Unidades sin letra pero con el nombre de una de las letras: van con esa letra
       const nombreDe = {};
-      Object.keys(grupos).filter(Boolean).forEach((k) => { nombreDe[k] = masRepetido(grupos[k].map((x) => x.nombre)); });
-      grupos[''] = grupos[''].filter((x) => {
-        const k = x.nombre && Object.keys(nombreDe).find((l) => nombreDe[l] && (nombreDe[l].startsWith(x.nombre) || x.nombre.startsWith(nombreDe[l]) || mismoNombre(nombreDe[l], x.nombre)));
-        if (!k) return true;
-        grupos[k].push(x);
-        return false;
+      [...new Set(lista.map((x) => x.letra).filter(Boolean))].forEach((l) => {
+        nombreDe[l] = masRepetido(lista.filter((x) => x.letra === l).map((x) => x.nombre));
       });
-      if (!grupos[''].length) delete grupos[''];
+      lista.forEach((x) => {
+        if (!x.letra && x.nombre) {
+          const l = Object.keys(nombreDe).find((k) => nombreDe[k] && (nombreDe[k].startsWith(x.nombre) || x.nombre.startsWith(nombreDe[k]) || mismoNombre(nombreDe[k], x.nombre)));
+          if (l) x.letra = l;
+        }
+      });
+      // Columna por letra, con su nombre si lo tiene ("A · Edificio Andalucia")
+      const titL = (t) => t.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()).replace(/\b[IVX]+\b/gi, (r) => r.toUpperCase());
+      const etiqueta = {};
+      Object.keys(nombreDe).forEach((l) => {
+        const nom = masRepetido(lista.filter((x) => x.letra === l).map((x) => x.nombre));
+        etiqueta[l] = nom ? l + ' · Edificio ' + titL(nom) : l;
+      });
+      lista.forEach((x) => { if (!x.torre && x.letra) x.torre = etiqueta[x.letra] || x.letra; });
+      porLetra = true;
+    } else if (lista.filter((x) => x.etapa).length >= lista.length * 0.5) {
+      lista.forEach((x) => { if (!x.torre && x.etapa) x.torre = 'Etapa ' + x.etapa; });
     }
-    Object.keys(grupos).sort((a, b) => a.localeCompare(b, 'es', { numeric: true })).forEach((k) => {
-      const g = grupos[k];
-      const nombres = {};
-      g.forEach((x) => { if (x.nombre) nombres[x.nombre] = (nombres[x.nombre] || 0) + 1; });
-      const nombre = Object.entries(nombres).sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)[0];
-      const tit = (t) => t.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()).replace(/\b[IVX]+\b/gi, (r) => r.toUpperCase());
-      let titulo = calle;
-      if (nombre) {
-        const cond = g.filter((x) => x.nombre === nombre[0] && x.esCondominio).length > g.filter((x) => x.nombre === nombre[0]).length / 2;
-        titulo += ' · ' + (cond ? 'Condominio ' : 'Edificio ') + tit(nombre[0]);
-      }
-      if (usarLetra && k) titulo += ' (' + k + ')';
-      else if (usarLetra && !k) titulo += ' (sin letra)';
-      else if (usarNombre && k.startsWith('Etapa ')) titulo += ' · ' + k.replace('Etapa ', '') + 'ª etapa';
-      else if (usarNombre && !k) titulo += ' · unidades sin edificio indicado';
-      pisosDeDosCifras(g);
-      edificios.push({ titulo, items: g });
-    });
+    // Nombre en el título solo si lo trae una buena parte de las unidades
+    const cuenta = {};
+    lista.forEach((x) => { if (x.nombre) cuenta[x.nombre] = (cuenta[x.nombre] || 0) + 1; });
+    const tops = Object.entries(cuenta).filter(([, n]) => n >= lista.length * (porLetra ? 0.7 : 0.3)).sort((a, b) => b[1] - a[1]);
+    const tit = (t) => t.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()).replace(/\b[IVX]+\b/gi, (r) => r.toUpperCase());
+    let titulo = calle;
+    if (tops.length === 1) {
+      const cond = lista.filter((x) => x.nombre === tops[0][0] && x.esCondominio).length > tops[0][1] / 2;
+      titulo += ' · ' + (cond ? 'Condominio ' : 'Edificio ') + tit(tops[0][0]);
+    }
+    pisosDeDosCifras(lista);
+    edificios.push({ titulo, items: lista });
   });
   // Entre edificios: solo una unidad SIN número de calle reconocible ("TORO MAZOTTE76") puede
   // pasar al edificio cuyos roles la rodean. Unidades con otro número de calle son siempre
@@ -2867,7 +2842,7 @@ function construirPlanoEdificio(unidades, alElegir) {
     col.className = 'plano-torre';
     if (torres.length > 1 || torre) {
       const h = document.createElement('h4');
-      h.textContent = torre ? 'Torre ' + torre : 'Sin torre indicada';
+      h.textContent = torre ? (/^(Etapa|Edif)/.test(torre) ? torre : 'Torre ' + torre.replace(' · Edificio ', ' · ')) : 'Sin torre indicada';
       col.appendChild(h);
     }
     if (arriba.length) {
