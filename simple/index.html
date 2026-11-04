@@ -2457,7 +2457,9 @@ function partirDireccion(dir) {
   if (!deCalle.length) return { calle: dir, numero: '', resto: '' };
   // (también si le sigue otro número: "GRAL BULNES 123 24" es el 24 del 123)
   const sigue = (k) => limpio(t[k + 1]);
-  const i = deCalle.find((k) => !sigue(k) || RE_SIGLA_SIGUIENTE.test(sigue(k)) || /^\d+[A-Z]?$/.test(sigue(k))) ?? deCalle[0];
+  let i = deCalle.find((k) => !sigue(k) || RE_SIGLA_SIGUIENTE.test(sigue(k)) || /^\d+[A-Z]?$/.test(sigue(k))) ?? deCalle[0];
+  // "PTE 7189 RESULTANTE 1", "1450 LOTE 3": el número de lote no es el de la calle
+  if (i !== deCalle[0] && /^(RESULTANTE|RES|LOTE|LT|SITIO|ST|PARCELA|PC|HIJUELA|RESTO)$/.test(limpio(t[i - 1]))) i = deCalle[0];
   // Si la unidad viene antes del número de calle, pasa al resto
   const j = t.findIndex((tok, k) => k < i && SIGLAS_LARGAS.has(limpio(tok)) && /^\d/.test(t[k + 1] || ''));
   const fin = j > 0 ? j : i;
@@ -2474,7 +2476,10 @@ function partirDireccion(dir) {
 }
 
 function clasificarUnidad(u) {
-  const dir = String(u.direccion || '').toUpperCase().replace(/\s+/g, ' ').trim();
+  // Número pegado a la calle ("TORO MAZOTTE76", "PTE.7189RESULTANTE"): se separa, para que
+  // la unidad quede con su número de calle
+  const dir = String(u.direccion || '').toUpperCase().replace(/\s+/g, ' ').trim()
+    .replace(/([A-ZÑ]{3,}\.?)(\d)/g, '$1 $2').replace(/(\d)([A-ZÑ]{3,})/g, '$1 $2');
   const partes = partirDireccion(dir);
   const resto = partes.resto;
   let tipo = '', numero = '', letra = '';
@@ -2559,6 +2564,25 @@ function palabrasCalle(c) {
   return String(c || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[.,]/g, ' ')
     .split(/\s+/).filter(Boolean).map((w) => ABREV_CALLE[w] || w).filter((w) => !SOBRAN_CALLE.has(w));
 }
+// Errores de tipeo del SII ("ELEUTERO" por "ELEUTERIO", "MAZOTE" por "MAZOTTE"): palabras
+// largas que difieren en una letra (dos si tienen 8 o más)
+function distanciaLetras(a, b) {
+  const d = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = d[0]; d[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const t = d[j];
+      d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = t;
+    }
+  }
+  return d[b.length];
+}
+function casiIgual(o, w) {
+  const corta = Math.min(o.length, w.length), larga = Math.max(o.length, w.length);
+  if (corta < 5 || o[0] !== w[0]) return false;
+  return distanciaLetras(o, w) <= (larga >= 8 ? 2 : 1);
+}
 function mismaCalle(a, b) {
   if (a === b) return true;
   const A = palabrasCalle(a), B = palabrasCalle(b);
@@ -2568,7 +2592,7 @@ function mismaCalle(a, b) {
     for (const ch of w) if (ch === o[i]) i++;
     return i === o.length;
   };
-  const calza = (w, otras) => otras.some((o) => o === w || abrevia(o, w) || (o.length >= 3 && (w.startsWith(o) || o.startsWith(w))) ||
+  const calza = (w, otras) => otras.some((o) => o === w || abrevia(o, w) || casiIgual(o, w) || (o.length >= 3 && (w.startsWith(o) || o.startsWith(w))) ||
     (Math.abs(o.length - w.length) <= 2 && (w.includes(o) || o.includes(w)) && Math.min(o.length, w.length) >= 4) ||
     (o.length <= 2 && o[0] === w[0]));
   // Títulos que a veces se omiten ("GRAL BULNES" = "BULNES") no obligan
@@ -2645,6 +2669,33 @@ function agruparEdificios(items) {
     if (!v.calles.includes(x.calle)) v.calles.push(x.calle);
     (porCalle[v.clave] = porCalle[v.clave] || []).push(x);
   });
+  // Mismo número de calle aunque el nombre venga muy mal escrito: si los roles de ambas
+  // variantes son de la misma manzana y van seguidos o intercalados, es el mismo edificio
+  // ("524-58 ELEUTERO RAMIREZ 1070 DP 504" junto a "524-57 … ELEUTERIO RAMIREZ 1070 …")
+  const rangoDe = (lista) => {
+    const rs = lista.map((x) => String((x.u && x.u.rol) || '').split('-')).map((r) => ({ m: r[0], p: parseInt(r[1], 10) }))
+      .filter((r) => r.m && isFinite(r.p) && r.p < 90000);
+    const ms = new Set(rs.map((r) => r.m));
+    return rs.length && ms.size === 1 ? { m: rs[0].m, min: Math.min(...rs.map((r) => r.p)), max: Math.max(...rs.map((r) => r.p)) } : null;
+  };
+  let unio = true;
+  while (unio) {
+    unio = false;
+    for (const a of variantes) {
+      if (!porCalle[a.clave] || !a.num) continue;
+      for (const b of variantes) {
+        if (b === a || !porCalle[b.clave] || b.num !== a.num) continue;
+        const ra = rangoDe(porCalle[a.clave]), rb = rangoDe(porCalle[b.clave]);
+        if (!ra || !rb || ra.m !== rb.m) continue;
+        const hueco = Math.max(ra.min, rb.min) - Math.min(ra.max, rb.max); // ≤ 0: se intercalan
+        if (hueco > 3) continue;
+        porCalle[a.clave].push(...porCalle[b.clave]);
+        delete porCalle[b.clave];
+        b.calles.forEach((c) => { if (!a.calles.includes(c)) a.calles.push(c); });
+        unio = true;
+      }
+    }
+  }
   const masRepetido = (valores) => {
     const c = {};
     valores.filter(Boolean).forEach((v) => { c[v] = (c[v] || 0) + 1; });
