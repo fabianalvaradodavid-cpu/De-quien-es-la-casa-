@@ -2494,7 +2494,11 @@ function clasificarUnidad(u) {
   const edifNum = resto.match(/\bEDIF(?:ICIO)?\.?\s*(\d{1,2})\b/) || resto.match(/\bEDIF\.?\s*([IVX]{1,4})\b/) ||
     resto.match(/\bEDIF([IVX]{1,4})\b/); // "EDIF. 3", "EDIF III", "EDIFIII DPTO 44" (edificio III)
   if (!letra && edifNum) letra = 'Edif. ' + edifNum[1];
+  const tipoSigla = tipo;
   tipo = tipoPorDestino(pick(u, ['destinoDescripcion', 'destino', 'DESTINO', 'destinoPredio'])) || tipo || 'otro';
+  // Habitacional sin sigla de depto ni número de unidad ("LOS ALIAGA 403", "LOS ALIAGA 411 C"):
+  // es una casa, no un departamento
+  if (tipo === 'depto' && tipoSigla !== 'depto' && !numero) tipo = 'casa';
   // Torre o bloque explícito; si no, la letra que va junto a la sigla ("DP B 1202")
   const torreM = resto.match(/\b(?:TO|TORRE|TR|BL|BLOCK|BLOQUE|BLQ)\.?\s+([A-Z0-9]{1,3})\b/);
   // Nombre del edificio, si viene completo ("EDIFICIO ANDALUCIA"); las abreviaturas
@@ -2754,7 +2758,9 @@ function construirPlanoEdificio(unidades, alElegir) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'plano-u t-' + x.tipo;
-    b.textContent = x.numero || '?';
+    // Sin número (casas "411 C", "585 CASA A"): la letra o el último trozo de la dirección
+    const ult = String(x.u.direccion || '').trim().split(/\s+/).pop() || '';
+    b.textContent = x.numero || (x.tipo === 'casa' && ult.length <= 5 && !/^\d+$/.test(ult) ? ult : '') || (x.tipo === 'casa' ? (x.numCalle || 'Casa') : '•');
     const rol = x.u.rol || `${x.u.manzana}-${x.u.predio}`;
     b.title = `${rol} · ${x.u.direccion || ''}`;
     b.onclick = () => {
@@ -2818,7 +2824,10 @@ function construirPlanoEdificio(unidades, alElegir) {
       ed.className = 'plano-edificio';
       ['depto', 'oficina', 'local', 'casa', 'otro'].forEach((t) => {
         const l = sinPiso.filter((x) => x.tipo === t);
-        if (l.length) ed.appendChild(fila({ depto: 'Deptos', oficina: 'Ofic.', local: 'Locales', casa: 'Casas', otro: 'Otras' }[t], l));
+        if (!l.length) return;
+        const uno = l.length === 1;
+        const et = { depto: uno ? 'Depto' : 'Deptos', oficina: 'Ofic.', local: uno ? 'Local' : 'Locales', casa: uno ? 'Casa' : 'Casas', otro: uno ? 'Unidad' : 'Unidades' }[t];
+        ed.appendChild(fila(et, l));
       });
       col.appendChild(ed);
     }
