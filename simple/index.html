@@ -2461,6 +2461,15 @@ function partirDireccion(dir) {
   // Si la unidad viene antes del número de calle, pasa al resto
   const j = t.findIndex((tok, k) => k < i && SIGLAS_LARGAS.has(limpio(tok)) && /^\d/.test(t[k + 1] || ''));
   const fin = j > 0 ? j : i;
+  // Dos números de calle ("LOS ALIAGA 531 - 557 BD 1", "531 557 BX 74"): unidades comunes de dos
+  // edificios; quedan aparte, con los dos números
+  const sig1 = t[i + 1], sig2 = t[i + 2], sig3 = t[i + 3];
+  if (sig1 === '-' && /^\d+$/.test(sig2 || '')) {
+    return { calle: t.slice(0, fin).join(' '), numero: t[i] + '-' + sig2, resto: t.slice(fin, i).concat(t.slice(i + 3)).join(' ') };
+  }
+  if (/^\d+$/.test(sig1 || '') && sig2 && SIGLAS_LARGAS.has(limpio(sig2)) && /^\d/.test(sig3 || '') && sig1.length >= 2 && Math.abs(parseInt(sig1, 10) - parseInt(t[i], 10)) < 200) {
+    return { calle: t.slice(0, fin).join(' '), numero: t[i] + '-' + sig1, resto: t.slice(fin, i).concat(t.slice(i + 2)).join(' ') };
+  }
   return { calle: t.slice(0, fin).join(' '), numero: t[i], resto: t.slice(fin, i).concat(t.slice(i + 1)).join(' ') };
 }
 
