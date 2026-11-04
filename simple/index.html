@@ -2407,7 +2407,7 @@ const SIGLAS_UNIDAD = [
   { tipo: 'oficina', re: 'OF|OFIC|OFICINA|O' },
   { tipo: 'local', re: 'LC|LOC|LOCAL' },
   { tipo: 'bodega', re: 'BD|BOD|BODEGA|BG|BO|B' },
-  { tipo: 'estac', re: 'BX|BOX|EST|ESTAC|ESTACIONAM|ESTACIONAMIENTO|BIC|BICI|ES|E' },
+  { tipo: 'estac', re: 'BXOF|BX|BOX|EST|ESTAC|ESTACIONAM|ESTACIONAMIENTO|BIC|BICI|ES|E' },
   { tipo: 'casa', re: 'CS|CASA' }
 ];
 // [letra] SIGLA [letra] NÚMERO: "DP B 1202", "A DP 501", "BX- 12", "DP 1202"
@@ -2457,7 +2457,14 @@ function partirDireccion(dir) {
   if (!deCalle.length) return { calle: dir, numero: '', resto: '' };
   // (también si le sigue otro número: "GRAL BULNES 123 24" es el 24 del 123)
   const sigue = (k) => limpio(t[k + 1]);
-  let i = deCalle.find((k) => !sigue(k) || RE_SIGLA_SIGUIENTE.test(sigue(k)) || /^\d+[A-Z]?$/.test(sigue(k))) ?? deCalle[0];
+  // El número de calle es el PRIMERO después del nombre ("SAN DIEGO 313 BXOF 6" es el 313,
+  // aunque "BXOF" no sea una sigla conocida). Solo se salta un número corto seguido de una
+  // palabra cuando después viene otro número: es parte del nombre ("AV 1 NORTE 555",
+  // "CALLE 5 ORIENTE 1234"), y también "10 OTE", "2 PONIENTE"…
+  const parteDelNombre = (k, pos) => pos < deCalle.length - 1 && sigue(k) && /^[A-ZÑ]{3,}$/.test(sigue(k)) &&
+    !RE_SIGLA_SIGUIENTE.test(sigue(k)) && !SIGLAS_LARGAS.has(sigue(k)) &&
+    (t[k].length <= 2 || /^(NORTE|SUR|ORIENTE|PONIENTE|OTE|PTE)$/.test(sigue(k)));
+  let i = deCalle.find((k, pos) => !parteDelNombre(k, pos)) ?? deCalle[0];
   // "PTE 7189 RESULTANTE 1", "1450 LOTE 3": el número de lote no es el de la calle
   if (i !== deCalle[0] && /^(RESULTANTE|RES|LOTE|LT|SITIO|ST|PARCELA|PC|HIJUELA|RESTO)$/.test(limpio(t[i - 1]))) i = deCalle[0];
   // Si la unidad viene antes del número de calle, pasa al resto
