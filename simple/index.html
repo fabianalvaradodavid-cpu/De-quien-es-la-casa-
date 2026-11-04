@@ -2413,7 +2413,7 @@ const SIGLAS_UNIDAD = [
 // [letra] SIGLA [letra] NÚMERO: "DP B 1202", "A DP 501", "BX- 12", "DP 1202"
 // (las siglas más largas primero, para que "DPTO" no se lea como "DP"; "BXE 32" = box E 32)
 const SIGLAS_ORDEN = SIGLAS_UNIDAD.flatMap((x) => x.re.split('|')).sort((a, b) => b.length - a.length).join('|');
-const RE_UNIDAD = new RegExp('(?:^|\\s)(?:-?([A-Z])\\s+)?(' + SIGLAS_ORDEN + ')([A-Z])?[.\\-]?\\s*(?:([A-Z])-?\\s*-?\\s+)?(-?\\d+[A-Z]?)\\b', 'g');
+const RE_UNIDAD = new RegExp('(?:^|\\s)(?:-?([A-Z])\\s+)?(' + SIGLAS_ORDEN + ')([A-Z])?[.\\-]?\\s*(?:([A-Z]{1,2})-?\\s*-?\\s+)?(-?\\d+[A-Z]?)\\b', 'g');
 // La primera sigla válida: una sigla de una letra no lleva otra letra pegada ("ED. 3" no es "E" + "D")
 function buscarUnidad(texto) {
   for (const m of texto.matchAll(RE_UNIDAD)) {
@@ -2564,6 +2564,46 @@ function mismaCalle(a, b) {
   return largas(A).every((w) => calza(w, B)) && largas(B).every((w) => calza(w, A)) && (largas(A).length + largas(B).length > 0);
 }
 
+// ¿Dos maneras de escribir el mismo nombre de edificio? "NVO CENTRO" = "NUEVO CENTRO",
+// "ALAMEDA OF" = "ALAMEDA OFICINAS", "ASTU" = "ASTURIAS"; pero "OCEANIC I" ≠ "OCEANIC II".
+// Misma cantidad de palabras (sin "DE", "EL"…) y cada una igual, cortada o abreviada.
+function abreviaPalabra(o, w) {
+  if (o === w) return true;
+  if (/^[IVX]+$/.test(o) || /^[IVX]+$/.test(w)) return false;
+  if (o.length > w.length) [o, w] = [w, o];
+  if (o.length >= 2 && w.startsWith(o)) return true;
+  if (o.length > 4 || o[0] !== w[0]) return false; // "NVO" abrevia "NUEVO": inicial y letras en orden
+  let i = 0;
+  for (const ch of w) if (ch === o[i]) i++;
+  return i === o.length;
+}
+function mismoNombre(a, b) {
+  if (a === b) return true;
+  const A = palabrasCalle(a), B = palabrasCalle(b);
+  return A.length > 0 && A.length === B.length && A.every((w, i) => abreviaPalabra(w, B[i]));
+}
+
+// Un grupo chico (pocas unidades) cuyos roles caen entre los de otro grupo de la misma
+// manzana es parte de ese edificio: el SII numera los roles de un edificio seguidos
+// ("262-133 … ED NVO CENTRO" entre "262-132" y "262-135 … EDIF NUEVO CENTRO").
+function unirPorRoles(grupos) {
+  const rolDe = (x) => { const r = String((x.u && x.u.rol) || '').split('-'); return { m: r[0], p: parseInt(r[1], 10) }; };
+  const claves = Object.keys(grupos);
+  const rango = {};
+  claves.forEach((k) => {
+    const rs = grupos[k].map(rolDe).filter((r) => r.m && isFinite(r.p) && r.p < 90000);
+    const ms = new Set(rs.map((r) => r.m));
+    if (rs.length && ms.size === 1) rango[k] = { m: rs[0].m, min: Math.min(...rs.map((r) => r.p)), max: Math.max(...rs.map((r) => r.p)), n: grupos[k].length };
+  });
+  claves.forEach((k) => {
+    const g = grupos[k];
+    if (!g || !rango[k] || g.length > 3) return;
+    const destino = claves.find((o) => o !== k && grupos[o] && rango[o] && rango[o].n >= 10 && rango[o].m === rango[k].m &&
+      rango[k].min >= rango[o].min && rango[k].max <= rango[o].max);
+    if (destino) { grupos[destino].push(...g); delete grupos[k]; }
+  });
+}
+
 // En muchos edificios de regiones los deptos van con piso + una cifra: el 21 es el 1 del
 // piso 2, el 93 del piso 9 y el 121 del piso 12. Se reconoce porque casi todos los números
 // tienen 2 cifras y la última nunca es 0 (en una numeración corrida, 1, 2… 60, sí hay ceros).
@@ -2609,12 +2649,7 @@ function agruparEdificios(items) {
     const canon = {};
     // misma cantidad de palabras y cada una igual o abreviada ("ALAMEDA OF" = "ALAMEDA OFICINAS"),
     // pero "OCEANIC I" ≠ "OCEANIC II" (números romanos)
-    const igualNombre = (a, b) => {
-      const A = a.split(' '), B = b.split(' ');
-      if (A.length !== B.length) return false;
-      return A.every((w, i) => w === B[i] || (!/^[IVX]+$/.test(w) && !/^[IVX]+$/.test(B[i]) &&
-        w.length >= 2 && B[i].length >= 2 && (w.startsWith(B[i]) || B[i].startsWith(w))));
-    };
+    const igualNombre = mismoNombre;
     nombres.forEach((n) => { canon[n] = nombres.find((m) => igualNombre(m, n)) || n; });
     lista.forEach((x) => { if (x.nombre) x.nombre = canon[x.nombre]; });
     let nNombres = new Set(lista.map((x) => x.nombre).filter(Boolean)).size;
@@ -2646,11 +2681,12 @@ function agruparEdificios(items) {
       (grupos[k] = grupos[k] || []).push(x);
     });
     // Unidades sin letra pero con nombre ("EDIFICIO ASTU", abreviado): al edificio de ese nombre
+    unirPorRoles(grupos);
     if (usarLetra && grupos['']) {
       const nombreDe = {};
       Object.keys(grupos).filter(Boolean).forEach((k) => { nombreDe[k] = masRepetido(grupos[k].map((x) => x.nombre)); });
       grupos[''] = grupos[''].filter((x) => {
-        const k = x.nombre && Object.keys(nombreDe).find((l) => nombreDe[l] && (nombreDe[l].startsWith(x.nombre) || x.nombre.startsWith(nombreDe[l])));
+        const k = x.nombre && Object.keys(nombreDe).find((l) => nombreDe[l] && (nombreDe[l].startsWith(x.nombre) || x.nombre.startsWith(nombreDe[l]) || mismoNombre(nombreDe[l], x.nombre)));
         if (!k) return true;
         grupos[k].push(x);
         return false;
@@ -2676,7 +2712,12 @@ function agruparEdificios(items) {
       edificios.push({ titulo, items: g });
     });
   });
-  return edificios;
+  // Lo mismo entre edificios: una unidad con la dirección mal escrita ("TORO MAZOTTE76")
+  // queda en el edificio cuyos roles la rodean
+  const porTitulo = {};
+  edificios.forEach((e, i) => { porTitulo[i] = e.items; });
+  unirPorRoles(porTitulo);
+  return edificios.filter((e, i) => porTitulo[i]).map((e, i) => e);
 }
 
 function construirPlanoEdificio(unidades, alElegir) {
