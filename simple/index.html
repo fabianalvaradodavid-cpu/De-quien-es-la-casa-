@@ -613,6 +613,8 @@
   .plano-leyenda{ display:flex; flex-wrap:wrap; gap:0.3rem 0.8rem; margin-bottom:0.6rem; color:#5a6873; }
   .plano-leyenda span{ display:inline-flex; align-items:center; gap:0.3rem; }
   .plano-leyenda i{ width:0.8rem; height:0.8rem; border-radius:2px; display:inline-block; border:1px solid rgba(0,0,0,0.15); }
+  .plano-edif-titulo{ margin:1.1rem 0 0.4rem; padding-top:0.7rem; border-top:1px solid var(--line); font-size:0.85rem; color:var(--moss-dark); }
+  .plano-leyenda + .plano-edif-titulo{ margin-top:0.2rem; padding-top:0; border-top:none; }
   .plano-torres{ display:flex; flex-wrap:wrap; gap:1rem; align-items:flex-end; }
   .plano-torre{ flex:1 1 220px; min-width:0; }
   .plano-torre h4{ margin:0 0 0.3rem; font-size:0.78rem; color:var(--moss-dark); }
@@ -2383,47 +2385,298 @@ function separarCalleYNumero(texto) {
 // dibuja un esquema: pisos de arriba abajo con sus unidades, el nivel de la calle y, bajo
 // él, bodegas y estacionamientos. No es un plano real: dentro de cada piso las unidades
 // van en orden de número, no en su posición física.
-const TIPOS_UNIDAD = [
-  { tipo: 'depto', nombre: 'Departamento', re: /\b(?:DP|DPTO|DEPTO|DEP|DEPARTAMENTO)\.?\s*(-?\d+[A-Z]?)/ },
-  { tipo: 'oficina', nombre: 'Oficina', re: /\b(?:OF|OFIC|OFICINA)\.?\s*(-?\d+[A-Z]?)/ },
-  { tipo: 'local', nombre: 'Local', re: /\b(?:LC|LOC|LOCAL)\.?\s*(-?\d+[A-Z]?)/ },
-  { tipo: 'bodega', nombre: 'Bodega', re: /\b(?:BX|BOX|BOD|BODEGA|BG)\.?\s*(-?\d+[A-Z]?)/ },
-  { tipo: 'estac', nombre: 'Estacionamiento', re: /\b(?:EST|ESTAC|ESTACIONAMIENTO|ES|E)\.?\s*(-?\d+[A-Z]?)/ },
-  { tipo: 'casa', nombre: 'Casa', re: /\b(?:CS|CASA)\.?\s*(-?\d+[A-Z]?)/ }
+// Formatos reales del SII (vistos en Ñuñoa, Santiago y Las Condes):
+//   "FCO DE VILLAGRA 327 DP B 1202 EDIFICIO ANDALUCIA."  → depto 1202 (piso 12) del edificio B
+//   "FCO DE VILLAGRA 327 BX A 215 BDA15 E.AST."          → estacionamiento 215 del edificio A
+//   "AV.APOQUINDO 4501 OF 1201 PISO 12"                  → oficina, piso explícito
+//   "AV.APOQUINDO 4501 BX 34 SB 2"                        → estacionamiento del subterráneo 2
+//   "AV.NUEVA PROVIDENCIA 2155 A DP 501 PISO 5"          → depto 501 de la torre A, piso 5
+//   "PROVIDENCIA 1104 OF 1201 12P", "SANTA ROSA 101 DP 1203 P12" → piso con P
+//   "MIGUEL CLARO 190 BX- 12 BD- 3", "SANTA ISABEL 517 BD 12 BX 30" → bodega/box combinados
+//   "PJ EL PELLIN 604 BL 3 DP 21 CERRO LAS CANTERAS I"   → block 3
+// Regiones: "AVDA DEL MAR 5500 A- 302 EDIFICIO NEOHAUS" (torre A), "HIPOLITO SALAS 89 E 12 B 4"
+// (E/ES estacionamiento, B/BO bodega), "AV ALEMANIA DP 1203 945 PISO 12" (la unidad antes del
+// número de calle), "PJE CALAIS 1550 DP. 31 EDIF. 3" (edificio 3 de un conjunto), "PISO - 1".
+// Una búsqueda trae a veces otras calles con el mismo número ("SAN MARTIN 32" trae
+// SAN ISIDRO 32, SAN FRANCISCO 32…) y la misma calle escrita de varias formas.
+// El tipo sale primero del destino que informa el SII (HABITACIONAL, OFICINA, BODEGA Y
+// ALMACENAJE, ESTACIONAMIENTO, COMERCIO) y, si no viene, de la sigla: DP/D departamento,
+// OF oficina, LC local, BD bodega, BX/EST estacionamiento (BX es "box").
+const SIGLAS_UNIDAD = [
+  { tipo: 'depto', re: 'DP|DPTO|DEPTO|DEP|DEPARTAMENTO|D' },
+  { tipo: 'oficina', re: 'OF|OFIC|OFICINA|O' },
+  { tipo: 'local', re: 'LC|LOC|LOCAL' },
+  { tipo: 'bodega', re: 'BD|BOD|BODEGA|BG|BO|B' },
+  { tipo: 'estac', re: 'BX|BOX|EST|ESTAC|ESTACIONAM|ESTACIONAMIENTO|BIC|BICI|ES|E' },
+  { tipo: 'casa', re: 'CS|CASA' }
 ];
+// [letra] SIGLA [letra] NÚMERO: "DP B 1202", "A DP 501", "BX- 12", "DP 1202"
+// (las siglas más largas primero, para que "DPTO" no se lea como "DP"; "BXE 32" = box E 32)
+const SIGLAS_ORDEN = SIGLAS_UNIDAD.flatMap((x) => x.re.split('|')).sort((a, b) => b.length - a.length).join('|');
+const RE_UNIDAD = new RegExp('(?:^|\\s)(?:-?([A-Z])\\s+)?(' + SIGLAS_ORDEN + ')([A-Z])?[.\\-]?\\s*(?:([A-Z])-?\\s*-?\\s+)?(-?\\d+[A-Z]?)\\b', 'g');
+// La primera sigla válida: una sigla de una letra no lleva otra letra pegada ("ED. 3" no es "E" + "D")
+function buscarUnidad(texto) {
+  for (const m of texto.matchAll(RE_UNIDAD)) {
+    if (m[2].length === 1 && m[3]) continue;
+    return m;
+  }
+  return null;
+}
+const SIGLAS_LARGAS = new Set(SIGLAS_UNIDAD.flatMap((x) => x.re.split('|')).filter((x) => x.length >= 2));
 const NOMBRE_TIPO = { depto: 'Departamentos', oficina: 'Oficinas', local: 'Locales', casa: 'Casas', bodega: 'Bodegas', estac: 'Estacionamientos', otro: 'Otras unidades' };
+
+function tipoPorDestino(destino) {
+  const d = String(destino || '').toUpperCase();
+  if (/ESTACION/.test(d)) return 'estac';
+  if (/BODEGA/.test(d)) return 'bodega';
+  if (/OFICINA/.test(d)) return 'oficina';
+  if (/COMERCIO/.test(d)) return 'local';
+  if (/HABITAC/.test(d)) return 'depto';
+  return '';
+}
+
+// Separa "FCO DE VILLAGRA 327 BD A 103 EDIFICIO ASTURIAS" en calle ("FCO DE VILLAGRA"),
+// número de calle ("327") y el resto (la unidad). El número de calle es el primer número que
+// va después de una palabra (no "4" de "4 ORIENTE" ni "21" de "21 DE MAYO") y al que sigue
+// una sigla de unidad, una letra sola o nada; si ninguno cumple, el primero.
+const RE_SIGLA_SIGUIENTE = new RegExp('^(?:(?:' + SIGLAS_UNIDAD.map((x) => x.re).join('|') + ')[A-Z]?|PISO|PISOS|TO|TORRE|BL|BLOCK|ED|EDIF|EDIFICIO|[A-Z])\\.?$');
+function partirDireccion(dir) {
+  const t = dir.split(' ');
+  const cand = [];
+  let hayLetras = false;
+  t.forEach((tok, i) => {
+    if (/^\d+$/.test(tok)) {
+      const sig = (t[i + 1] || '').replace(/[.,]/g, '');
+      if (hayLetras && sig !== 'DE' && sig !== 'DEL') cand.push(i);
+    } else if (/[A-ZÑ]/.test(tok)) hayLetras = true;
+  });
+  // Un número que va justo después de una sigla es de la unidad, no de la calle
+  // ("AV ALEMANIA DP 1203 945 PISO 12": la calle es AV ALEMANIA 945)
+  const limpio = (tok) => (tok || '').replace(/^[.\-]+|[.\-]+$/g, '');
+  const deCalle = cand.filter((k) => !SIGLAS_LARGAS.has(limpio(t[k - 1])));
+  if (!deCalle.length) return { calle: dir, numero: '', resto: '' };
+  // (también si le sigue otro número: "GRAL BULNES 123 24" es el 24 del 123)
+  const sigue = (k) => limpio(t[k + 1]);
+  const i = deCalle.find((k) => !sigue(k) || RE_SIGLA_SIGUIENTE.test(sigue(k)) || /^\d+[A-Z]?$/.test(sigue(k))) ?? deCalle[0];
+  // Si la unidad viene antes del número de calle, pasa al resto
+  const j = t.findIndex((tok, k) => k < i && SIGLAS_LARGAS.has(limpio(tok)) && /^\d/.test(t[k + 1] || ''));
+  const fin = j > 0 ? j : i;
+  return { calle: t.slice(0, fin).join(' '), numero: t[i], resto: t.slice(fin, i).concat(t.slice(i + 1)).join(' ') };
+}
 
 function clasificarUnidad(u) {
   const dir = String(u.direccion || '').toUpperCase().replace(/\s+/g, ' ').trim();
-  const base = direccionBase(dir);
-  const resto = dir.startsWith(base) ? dir.slice(base.length) : dir;
-  let tipo = 'otro', numero = '';
-  for (const t of TIPOS_UNIDAD) {
-    const m = resto.match(t.re);
-    if (m) { tipo = t.tipo; numero = m[1]; break; }
-  }
-  // Sin marca en la dirección: se intenta con el destino ("Bodega y almacenaje", "Estacionamiento"…)
-  if (tipo === 'otro') {
-    const d = String(pick(u, ['destinoDescripcion', 'destino', 'DESTINO', 'destinoPredio']) || '').toUpperCase();
-    if (/BODEGA/.test(d)) tipo = 'bodega';
-    else if (/ESTACION/.test(d)) tipo = 'estac';
-    else if (/OFICINA/.test(d)) tipo = 'oficina';
-    else if (/COMERCIO|LOCAL/.test(d)) tipo = 'local';
-    else if (/HABITAC/.test(d)) tipo = 'depto';
-    const n = resto.match(/(-?\d+[A-Z]?)\s*$/);
+  const partes = partirDireccion(dir);
+  const resto = partes.resto;
+  let tipo = '', numero = '', letra = '';
+  const m = buscarUnidad(resto);
+  const guion = !m && resto.match(/(?:^|\s)([A-Z])-\s*(\d+[A-Z]?)\b/); // "A- 302": torre A, unidad 302
+  if (guion) { letra = guion[1]; numero = guion[2]; }
+  if (m) {
+    const sigla = SIGLAS_UNIDAD.find((x) => new RegExp('^(?:' + x.re + ')$').test(m[2]));
+    tipo = sigla ? sigla.tipo : '';
+    letra = m[1] || m[3] || m[4] || '';
+    numero = m[5];
+  } else if (!guion) {
+    const n = resto.match(/^(-?\d+[A-Z]?)\b/);
     if (n) numero = n[1];
   }
-  const torreM = resto.match(/\b(?:TO|TORRE|TR|BL|BLOCK|BLOQUE|BLQ|ED|EDIF|EDIFICIO)\.?\s+([A-Z0-9]{1,3})\b/);
-  const torre = torreM ? torreM[1] : '';
-  let piso = null;
-  const pisoM = resto.match(/\bPISO\s*(-?\d+)/);
-  const subM = resto.match(/\b(?:SUBTERRANEO|SUBSUELO|SS|SUB|NIVEL)\s*-?(\d+)/);
+  // "EDIF. 3" en un conjunto de varios edificios: hace de letra
+  const edifNum = resto.match(/\bEDIF(?:ICIO)?\.?\s*(\d{1,2})\b/) || resto.match(/\bEDIF\.?\s*([IVX]{1,4})\b/) ||
+    resto.match(/\bEDIF([IVX]{1,4})\b/); // "EDIF. 3", "EDIF III", "EDIFIII DPTO 44" (edificio III)
+  if (!letra && edifNum) letra = 'Edif. ' + edifNum[1];
+  tipo = tipoPorDestino(pick(u, ['destinoDescripcion', 'destino', 'DESTINO', 'destinoPredio'])) || tipo || 'otro';
+  // Torre o bloque explícito; si no, la letra que va junto a la sigla ("DP B 1202")
+  const torreM = resto.match(/\b(?:TO|TORRE|TR|BL|BLOCK|BLOQUE|BLQ)\.?\s+([A-Z0-9]{1,3})\b/);
+  // Nombre del edificio, si viene completo ("EDIFICIO ANDALUCIA"); las abreviaturas
+  // ("E.ANDA", "E.AST.") no sirven para agrupar, pero la letra sí
+  const nombreM = resto.match(/\b(EDIFICIO|EDIF|ED|CONDOMINIO|CODOMINIO|COND)\.?\s+([A-ZÑÁÉÍÓÚ][A-ZÑÁÉÍÓÚ .'-]{2,}?)\.?\s*$/);
+  const nombre = nombreM ? nombreM[2].trim() : '';
+  const esCondominio = nombreM ? /^CO/.test(nombreM[1]) : false;
+  // Etapa de un conjunto ("2A ETAPA", "ETAPA 3", "SEGUNDA ETAPA"): cada etapa es otro edificio
+  const ORD = { PRIMERA: 1, SEGUNDA: 2, TERCERA: 3, CUARTA: 4, QUINTA: 5 };
+  const etM = resto.match(/\b(\d+)\s*[AªO°]?\s*ETAPA\b/) || resto.match(/\bETAPA\s*(\d+|[A-Z])\b/) || resto.match(/\b(PRIMERA|SEGUNDA|TERCERA|CUARTA|QUINTA)\s+ETAPA\b/);
+  const etapa = etM ? String(ORD[etM[1]] || etM[1]) : '';
+  // Nombre sin prefijo al final ("AV ANGAMOS 0436 DP 12 EL OLIVO", "... OCEANIC II"): lo que
+  // queda después de la unidad, sin pisos, subterráneos, torres, etapas, números ni letras sueltas
+  let libre = '';
+  if (!nombre) {
+    const desde = m ? resto.indexOf(m[0].trim()) + m[0].trim().length : (guion ? resto.indexOf(guion[0].trim()) + guion[0].trim().length : 0);
+    libre = resto.slice(Math.max(0, desde))
+      .replace(/\b(?:PISOS?|P|SB|SS|SUB|SUBT|SUBTERR|SUBTERRANEO|SUBSUELO|NIVEL|TO|TORRE|TR|BL|BLOCK|BLOQUE|BLQ|ETAPA|PRIMER|SEGUNDO|TERCER|PRIMERA|SEGUNDA|TERCERA)\b\.?\s*-?\s*[A-Z0-9]{0,3}\b/g, ' ')
+      .replace(new RegExp('\\b(?:' + SIGLAS_ORDEN + ')\\b[.\\-]?\\s*-?\\s*\\d*', 'g'), ' ')
+      .replace(/[^A-ZÑ ]/g, ' ').split(/\s+/).filter((w) => w.length >= 2 || /^[IVX]$/.test(w)).join(' ').trim();
+    if (!/[A-ZÑ]{3}/.test(libre)) libre = '';
+  }
   const nEnt = parseInt(numero, 10);
-  if (pisoM) piso = parseInt(pisoM[1], 10);
-  else if (tipo === 'bodega' || tipo === 'estac') piso = subM ? -parseInt(subM[1], 10) : null;
+  let piso = null;
+  let pisoM = resto.match(/\bPISOS?\.?\s*(-?)\s*(\d+)\b/);
+  if (pisoM) pisoM = [pisoM[0], pisoM[1] + pisoM[2]];
+  else pisoM = resto.match(/\bP\.?(\d+)\b/) || resto.match(/\bP\.\s+(\d+)\b/) || resto.match(/\b(\d+)\s*P\b/);
+  const ORD_SUB = { PRIMER: 1, SEGUNDO: 2, TERCER: 3, CUARTO: 4 };
+  const subPal = resto.match(/\b(PRIMER|SEGUNDO|TERCER|CUARTO)\s+SUBT/);
+  const subM = resto.match(/\b(?:SB|SS|SUB|SUBT|SUBTERR|SUBTERRANEO|SUBSUELO|NIVEL)\.?\s*-?(\d+)\b/) ||
+    (subPal ? [null, String(ORD_SUB[subPal[1]])] : null);
+  if (tipo === 'bodega' || tipo === 'estac') {
+    if (subM) piso = -parseInt(subM[1], 10);
+    else if (pisoM) piso = parseInt(pisoM[1], 10);
+    // 215 → subterráneo 2 (solo con 3 cifras y hasta el 6º subterráneo: "BD 1104" no es del subterráneo 11)
+    else if (!isNaN(nEnt) && Math.abs(nEnt) >= 100 && Math.abs(nEnt) < 700) piso = -Math.trunc(Math.abs(nEnt) / 100);
+  } else if (pisoM) piso = parseInt(pisoM[1], 10);
   else if (!isNaN(nEnt) && Math.abs(nEnt) >= 100) piso = Math.trunc(nEnt / 100);
   else if (tipo === 'local') piso = 1;
-  return { tipo, numero, torre, piso, n: isNaN(nEnt) ? Infinity : nEnt };
+  const pisoExplicito = !!pisoM;
+  return {
+    tipo, numero, letra, nombre, libre, esCondominio, etapa, piso, pisoExplicito, n: isNaN(nEnt) ? Infinity : nEnt,
+    torre: torreM ? torreM[1] : '',
+    calle: partes.calle, numCalle: partes.numero
+  };
+}
+
+// ¿Dos maneras de escribir la misma calle? "FCO DE VILLAGRA" = "FCO. DE VILLAGRA" = "FO DE
+// VILLAGRA"; "V MACKENNA PTE" = "VICUNA MACKENNA PONIENTE"; "SN FRANCISCO" = "SAN FRANCISCO";
+// pero "PROVIDENCIA" ≠ "NUEVA PROVIDENCIA" y "SAN ISIDRO" ≠ "SAN FRANCISCO". Cada palabra
+// larga de una debe estar en la otra (igual, una empieza con la otra, o la otra la abrevia
+// con su inicial); las palabras cortas (iniciales, "DE", "AV") no obligan.
+const ABREV_CALLE = { SN: 'SAN', STA: 'SANTA', STO: 'SANTO', FCO: 'FRANCISCO', GRAL: 'GENERAL', PDTE: 'PRESIDENTE',
+  PTE: 'PONIENTE', OTE: 'ORIENTE', NVA: 'NUEVA', NVO: 'NUEVO', ALTE: 'ALMIRANTE', LIB: 'LIBERTADOR', MONS: 'MONSENOR', CAP: 'CAPITAN' };
+const TITULOS_CALLE = new Set(['GENERAL', 'PRESIDENTE', 'CORONEL', 'ALMIRANTE', 'CAPITAN', 'TENIENTE', 'DOCTOR', 'PADRE', 'OBISPO', 'MONSENOR', 'SARGENTO', 'COMANDANTE', 'MARISCAL', 'INGENIERO', 'PROFESOR']);
+const SOBRAN_CALLE = new Set(['AV', 'AVDA', 'AVENIDA', 'PJ', 'PJE', 'PASAJE', 'CALLE', 'DE', 'DEL', 'LA', 'LAS', 'LOS', 'EL', 'Y']);
+function palabrasCalle(c) {
+  return String(c || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[.,]/g, ' ')
+    .split(/\s+/).filter(Boolean).map((w) => ABREV_CALLE[w] || w).filter((w) => !SOBRAN_CALLE.has(w));
+}
+function mismaCalle(a, b) {
+  if (a === b) return true;
+  const A = palabrasCalle(a), B = palabrasCalle(b);
+  const abrevia = (o, w) => { // "BDO" abrevia "BERNARDO": misma inicial y sus letras en orden
+    if (o.length > 4 || o.length >= w.length || o[0] !== w[0]) return false;
+    let i = 0;
+    for (const ch of w) if (ch === o[i]) i++;
+    return i === o.length;
+  };
+  const calza = (w, otras) => otras.some((o) => o === w || abrevia(o, w) || (o.length >= 3 && (w.startsWith(o) || o.startsWith(w))) ||
+    (Math.abs(o.length - w.length) <= 2 && (w.includes(o) || o.includes(w)) && Math.min(o.length, w.length) >= 4) ||
+    (o.length <= 2 && o[0] === w[0]));
+  // Títulos que a veces se omiten ("GRAL BULNES" = "BULNES") no obligan
+  const largas = (L) => L.filter((w) => w.length >= 4 && !TITULOS_CALLE.has(w));
+  if (!largas(A).length && !largas(B).length) return A.join(' ') === B.join(' ') && A.length > 0; // "AVDA.DEL MAR" = "AV DEL MAR"
+  return largas(A).every((w) => calza(w, B)) && largas(B).every((w) => calza(w, A)) && (largas(A).length + largas(B).length > 0);
+}
+
+// En muchos edificios de regiones los deptos van con piso + una cifra: el 21 es el 1 del
+// piso 2, el 93 del piso 9 y el 121 del piso 12. Se reconoce porque casi todos los números
+// tienen 2 cifras y la última nunca es 0 (en una numeración corrida, 1, 2… 60, sí hay ceros).
+function pisosDeDosCifras(g) {
+  const deptos = g.filter((x) => (x.tipo === 'depto' || x.tipo === 'oficina') && !x.pisoExplicito && isFinite(x.n) && x.n >= 10);
+  if (deptos.length < 6) return;
+  const dos = deptos.filter((x) => x.n < 100);
+  const ceros = dos.filter((x) => x.n % 10 === 0).length;
+  const maxFinal = Math.max(...dos.map((x) => x.n % 10));
+  if (dos.length > deptos.length / 2 && ceros <= dos.length * 0.05 && maxFinal <= 8) {
+    deptos.forEach((x) => { x.piso = Math.trunc(x.n / 10); });
+  }
+}
+
+// Edificios del resultado: uno por número de calle (la calle puede venir escrita de varias
+// formas: "FCO DE VILLAGRA", "FCO. DE VILLAGRA"; se usa la más repetida) y, dentro, uno por letra
+// ("DP A …", "DP B …") o, si no hay letras, por nombre completo de edificio. El nombre
+// que se muestra es el más repetido entre sus unidades.
+function agruparEdificios(items) {
+  // Mismo número y calle "equivalente" (ver mismaCalle) = mismo edificio
+  const porCalle = {};
+  const variantes = []; // { num, calles: [..], clave }
+  items.forEach((x) => {
+    let v = variantes.find((w) => w.num === x.numCalle && w.calles.some((c) => mismaCalle(c, x.calle)));
+    if (!v) { v = { num: x.numCalle, calles: [], clave: x.numCalle + '|' + variantes.length }; variantes.push(v); }
+    if (!v.calles.includes(x.calle)) v.calles.push(x.calle);
+    (porCalle[v.clave] = porCalle[v.clave] || []).push(x);
+  });
+  const masRepetido = (valores) => {
+    const c = {};
+    valores.filter(Boolean).forEach((v) => { c[v] = (c[v] || 0) + 1; });
+    return (Object.entries(c).sort((a, b) => b[1] - a[1])[0] || [''])[0];
+  };
+  const edificios = [];
+  Object.keys(porCalle).sort((a, b) => a.localeCompare(b, 'es', { numeric: true })).forEach((clave) => {
+    const lista = porCalle[clave];
+    const calle = (masRepetido(lista.map((x) => x.calle)) + ' ' + (lista[0].numCalle || '')).trim();
+    const conLetra = lista.filter((x) => x.letra).length;
+    const usarLetra = conLetra >= lista.length * 0.5;
+    // Sin letras: por etapa ("2A ETAPA") o por nombre (edificio o condominio), si hay más de
+    // uno. Un nombre abreviado ("ALAMEDA OF") es el mismo que el completo ("ALAMEDA OFICINAS").
+    const nombres = [...new Set(lista.map((x) => x.nombre).filter(Boolean))].sort((a, b) => b.length - a.length);
+    const canon = {};
+    // misma cantidad de palabras y cada una igual o abreviada ("ALAMEDA OF" = "ALAMEDA OFICINAS"),
+    // pero "OCEANIC I" ≠ "OCEANIC II" (números romanos)
+    const igualNombre = (a, b) => {
+      const A = a.split(' '), B = b.split(' ');
+      if (A.length !== B.length) return false;
+      return A.every((w, i) => w === B[i] || (!/^[IVX]+$/.test(w) && !/^[IVX]+$/.test(B[i]) &&
+        w.length >= 2 && B[i].length >= 2 && (w.startsWith(B[i]) || B[i].startsWith(w))));
+    };
+    nombres.forEach((n) => { canon[n] = nombres.find((m) => igualNombre(m, n)) || n; });
+    lista.forEach((x) => { if (x.nombre) x.nombre = canon[x.nombre]; });
+    let nNombres = new Set(lista.map((x) => x.nombre).filter(Boolean)).size;
+    // Sin nombres con "EDIFICIO": nombres sueltos al final, si hay al menos dos que pesan
+    // (10 % de las unidades cada uno y 60 % entre todos); así "EL OLIVO", "EL CEDRO"… separan
+    // torres, pero un "U V PROVIDENCIA" en unas pocas unidades no
+    if (nNombres <= 1 && !usarLetra) {
+      // "TAMARUGO EL TAMARUGO" = "EL TAMARUGO": mismas palabras (sin contar las repetidas)
+      const clave = (t) => [...new Set(t.split(' ').filter((w) => !SOBRAN_CALLE.has(w)))].sort().join(' ');
+      lista.forEach((x) => { if (x.libre) x.libre = clave(x.libre) && x.libre; });
+      const porClave = {};
+      lista.forEach((x) => { if (x.libre) { const k = clave(x.libre); if (!porClave[k] || x.libre.length < porClave[k].length) porClave[k] = x.libre; } });
+      lista.forEach((x) => { if (x.libre) x.libre = porClave[clave(x.libre)]; });
+      const c = {};
+      lista.forEach((x) => { if (x.libre) c[x.libre] = (c[x.libre] || 0) + 1; });
+      const fuertes = Object.entries(c).filter(([, n]) => n >= lista.length * 0.1);
+      if (fuertes.length >= 2 && fuertes.reduce((a, [, n]) => a + n, 0) >= lista.length * 0.6) {
+        const ok = new Set(fuertes.map(([k]) => k));
+        lista.forEach((x) => { x.nombre = ok.has(x.libre) ? x.libre : ''; });
+        nNombres = ok.size;
+      }
+    }
+    const hayEtapas = lista.some((x) => x.etapa);
+    const claveNombre = (x) => (x.etapa ? 'Etapa ' + x.etapa : (nNombres > 1 ? (x.nombre || '') : ''));
+    const usarNombre = !usarLetra && (hayEtapas || nNombres > 1) && new Set(lista.map(claveNombre)).size > 1;
+    const grupos = {};
+    lista.forEach((x) => {
+      const k = usarLetra ? (x.letra || '') : usarNombre ? claveNombre(x) : '';
+      (grupos[k] = grupos[k] || []).push(x);
+    });
+    // Unidades sin letra pero con nombre ("EDIFICIO ASTU", abreviado): al edificio de ese nombre
+    if (usarLetra && grupos['']) {
+      const nombreDe = {};
+      Object.keys(grupos).filter(Boolean).forEach((k) => { nombreDe[k] = masRepetido(grupos[k].map((x) => x.nombre)); });
+      grupos[''] = grupos[''].filter((x) => {
+        const k = x.nombre && Object.keys(nombreDe).find((l) => nombreDe[l] && (nombreDe[l].startsWith(x.nombre) || x.nombre.startsWith(nombreDe[l])));
+        if (!k) return true;
+        grupos[k].push(x);
+        return false;
+      });
+      if (!grupos[''].length) delete grupos[''];
+    }
+    Object.keys(grupos).sort((a, b) => a.localeCompare(b, 'es', { numeric: true })).forEach((k) => {
+      const g = grupos[k];
+      const nombres = {};
+      g.forEach((x) => { if (x.nombre) nombres[x.nombre] = (nombres[x.nombre] || 0) + 1; });
+      const nombre = Object.entries(nombres).sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)[0];
+      const tit = (t) => t.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()).replace(/\b[IVX]+\b/gi, (r) => r.toUpperCase());
+      let titulo = calle;
+      if (nombre) {
+        const cond = g.filter((x) => x.nombre === nombre[0] && x.esCondominio).length > g.filter((x) => x.nombre === nombre[0]).length / 2;
+        titulo += ' · ' + (cond ? 'Condominio ' : 'Edificio ') + tit(nombre[0]);
+      }
+      if (usarLetra && k) titulo += ' (' + k + ')';
+      else if (usarLetra && !k) titulo += ' (sin letra)';
+      else if (usarNombre && k.startsWith('Etapa ')) titulo += ' · ' + k.replace('Etapa ', '') + 'ª etapa';
+      else if (usarNombre && !k) titulo += ' · unidades sin edificio indicado';
+      pisosDeDosCifras(g);
+      edificios.push({ titulo, items: g });
+    });
+  });
+  return edificios;
 }
 
 function construirPlanoEdificio(unidades, alElegir) {
@@ -2471,12 +2724,25 @@ function construirPlanoEdificio(unidades, alElegir) {
     return f;
   };
 
-  // Una columna por torre (si la dirección la indica)
-  const torres = [...new Set(items.map((x) => x.torre))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+  // Un plano por edificio (ver agruparEdificios) y, dentro, una columna por torre
+  const edificios = agruparEdificios(items);
+  edificios.forEach((edif) => {
+  const deEdificio = edif.items;
+  if (edificios.length > 1 || /Edificio/.test(edif.titulo)) {
+    const h = document.createElement('h3');
+    h.className = 'plano-edif-titulo';
+    h.textContent = edif.titulo + ' · ' + deEdificio.length + (deEdificio.length === 1 ? ' unidad' : ' unidades');
+    cont.appendChild(h);
+  }
+  const conTorre = [...new Set(deEdificio.map((x) => x.torre).filter(Boolean))];
+  if (conTorre.length === 1 && deEdificio.filter((x) => x.torre).length >= deEdificio.length / 2) {
+    deEdificio.forEach((x) => { if (!x.torre) x.torre = conTorre[0]; });
+  }
+  const torres = [...new Set(deEdificio.map((x) => x.torre))].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
   const cajaTorres = document.createElement('div');
   cajaTorres.className = 'plano-torres';
   torres.forEach((torre) => {
-    const deTorre = items.filter((x) => x.torre === torre);
+    const deTorre = deEdificio.filter((x) => x.torre === torre);
     const arriba = deTorre.filter((x) => x.tipo !== 'bodega' && x.tipo !== 'estac' && x.piso !== null && x.piso > 0);
     const sinPiso = deTorre.filter((x) => x.tipo !== 'bodega' && x.tipo !== 'estac' && (x.piso === null || x.piso <= 0));
     const abajo = deTorre.filter((x) => x.tipo === 'bodega' || x.tipo === 'estac');
@@ -2519,7 +2785,7 @@ function construirPlanoEdificio(unidades, alElegir) {
         ['bodega', 'estac'].forEach((t) => {
           const l = abajo.filter((x) => x.piso === nv && x.tipo === t);
           if (!l.length) return;
-          const et = (t === 'bodega' ? 'Bodegas' : 'Estac.') + (nv !== null ? ' ' + nv : '');
+          const et = (t === 'bodega' ? 'Bodegas' : 'Estac.') + (nv !== null ? (nv < 0 ? ' subt. ' + (-nv) : ' piso ' + nv) : '');
           sub.appendChild(fila(et, l));
         });
       });
@@ -2528,11 +2794,14 @@ function construirPlanoEdificio(unidades, alElegir) {
     cajaTorres.appendChild(col);
   });
   cont.appendChild(cajaTorres);
+  });
 
   const nota = document.createElement('p');
   nota.className = 'plano-nota';
-  nota.textContent = 'Esquema deducido de la dirección de cada unidad en el SII (el piso sale del número: el 504 es del piso 5). '
-    + 'No muestra la posición real de las unidades dentro del piso. Toca una unidad para ver su rol y avalúo.';
+  nota.textContent = 'Esquema deducido de la dirección de cada unidad en el SII: el piso sale del número (el 1202 es del piso 12) '
+    + 'y el subterráneo de bodegas y estacionamientos, del número o de la sigla SB (el 215 queda en el subterráneo 2, '
+    + 'una estimación). Las letras (DP A, DP B…) y los nombres separan edificios. No muestra la posición real de las '
+    + 'unidades dentro del piso. Toca una unidad para ver su rol y avalúo.';
   cont.appendChild(nota);
   return { el: cont, conPiso: items.filter((x) => x.piso !== null || x.tipo === 'bodega' || x.tipo === 'estac').length / Math.max(1, items.length) };
 }
