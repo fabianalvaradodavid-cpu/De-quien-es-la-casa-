@@ -2374,6 +2374,7 @@ function direccionBase(direccion) {
 // cortando en el último grupo de dígitos.
 function separarCalleYNumero(texto) {
   const t = (texto || '').trim();
+  if (/^\d+$/.test(t)) return { calle: '', numero: t }; // solo la numeración
   const m = t.match(/^(.*?)\s+(\d+)\s*$/);
   if (!m) return { calle: t, numero: '' };
   return { calle: m[1].trim(), numero: m[2].trim() };
@@ -2423,7 +2424,8 @@ function buscarUnidad(texto) {
   return null;
 }
 const SIGLAS_LARGAS = new Set(SIGLAS_UNIDAD.flatMap((x) => x.re.split('|')).filter((x) => x.length >= 2));
-const NOMBRE_TIPO = { depto: 'Departamentos', oficina: 'Oficinas', local: 'Locales', casa: 'Casas', bodega: 'Bodegas', estac: 'Estacionamientos', otro: 'Otras unidades' };
+// Nombres según el destino del SII (no se distingue casa de departamento: ambos son habitacional)
+const NOMBRE_TIPO = { depto: 'Habitacional', oficina: 'Oficina', local: 'Comercio', bodega: 'Bodega', estac: 'Estacionamiento', otro: 'Otro destino' };
 
 function tipoPorDestino(destino) {
   const d = String(destino || '').toUpperCase();
@@ -2508,9 +2510,8 @@ function clasificarUnidad(u) {
   if (!letra && edifNum) letra = 'Edif. ' + edifNum[1];
   const tipoSigla = tipo;
   tipo = tipoPorDestino(pick(u, ['destinoDescripcion', 'destino', 'DESTINO', 'destinoPredio'])) || tipo || 'otro';
-  // Habitacional sin sigla de depto ni número de unidad ("LOS ALIAGA 403", "LOS ALIAGA 411 C"):
-  // es una casa, no un departamento
-  if (tipo === 'depto' && tipoSigla !== 'depto' && !numero) tipo = 'casa';
+  // Sin destino del SII, "CASA" también es habitacional (no se distingue casa de departamento)
+  if (tipo === 'casa') tipo = 'depto';
   // Torre o bloque explícito; si no, la letra que va junto a la sigla ("DP B 1202")
   const torreM = resto.match(/\b(?:TO|TORRE|TR|BL|BLOCK|BLOQUE|BLQ)\.?\s+([A-Z0-9]{1,3})\b/);
   // Nombre del edificio, si viene completo ("EDIFICIO ANDALUCIA"); las abreviaturas
@@ -2778,13 +2779,22 @@ function construirPlanoEdificio(unidades, alElegir) {
   // Leyenda con cuántas hay de cada tipo
   const leyenda = document.createElement('div');
   leyenda.className = 'plano-leyenda';
-  Object.keys(NOMBRE_TIPO).forEach((t) => {
-    const n = items.filter((x) => x.tipo === t).length;
-    if (!n) return;
-    const sp = document.createElement('span');
-    sp.innerHTML = `<i class="t-${t}"></i>${NOMBRE_TIPO[t]}: ${n}`;
-    leyenda.appendChild(sp);
+  // Cuántas hay de cada destino, con el nombre que da el SII ("HABITACIONAL", "BODEGA Y ALMACENAJE"…)
+  const tituloDestino = (t) => t.toLowerCase().replace(/^\S/, (c) => c.toUpperCase());
+  const porDestino = new Map();
+  items.forEach((x) => {
+    const d = String(pick(x.u, ['destinoDescripcion', 'destino', 'DESTINO', 'destinoPredio']) || '').trim();
+    const nombre = d ? tituloDestino(d) : NOMBRE_TIPO[x.tipo];
+    const k = x.tipo + '|' + nombre;
+    porDestino.set(k, (porDestino.get(k) || 0) + 1);
   });
+  [...porDestino.entries()].sort((a, b) => Object.keys(NOMBRE_TIPO).indexOf(a[0].split('|')[0]) - Object.keys(NOMBRE_TIPO).indexOf(b[0].split('|')[0]))
+    .forEach(([k, n]) => {
+      const [t, nombre] = k.split('|');
+      const sp = document.createElement('span');
+      sp.innerHTML = `<i class="t-${t}"></i>${escapeHtml(nombre)}: ${n}`;
+      leyenda.appendChild(sp);
+    });
   cont.appendChild(leyenda);
 
   const boton = (x) => {
@@ -2793,7 +2803,7 @@ function construirPlanoEdificio(unidades, alElegir) {
     b.className = 'plano-u t-' + x.tipo;
     // Sin número (casas "411 C", "585 CASA A"): la letra o el último trozo de la dirección
     const ult = String(x.u.direccion || '').trim().split(/\s+/).pop() || '';
-    b.textContent = x.numero || (x.tipo === 'casa' && ult.length <= 5 && !/^\d+$/.test(ult) ? ult : '') || (x.tipo === 'casa' ? (x.numCalle || 'Casa') : '•');
+    b.textContent = x.numero || (x.tipo === 'depto' && ult.length <= 5 && !/^\d+$/.test(ult) ? ult : '') || (x.tipo === 'depto' ? (x.numCalle || '•') : '•');
     const rol = x.u.rol || `${x.u.manzana}-${x.u.predio}`;
     b.title = `${rol} · ${x.u.direccion || ''}`;
     b.onclick = () => {
@@ -2842,7 +2852,7 @@ function construirPlanoEdificio(unidades, alElegir) {
     col.className = 'plano-torre';
     if (torres.length > 1 || torre) {
       const h = document.createElement('h4');
-      h.textContent = torre ? (/^(Etapa|Edif)/.test(torre) ? torre : 'Torre ' + torre.replace(' · Edificio ', ' · ')) : 'Sin torre indicada';
+      h.textContent = torre ? (/^(Etapa|Edif)/.test(torre) ? torre : torre.replace(' · Edificio ', ' · ')) : 'Sin torre indicada';
       col.appendChild(h);
     }
     if (arriba.length) {
@@ -2855,11 +2865,11 @@ function construirPlanoEdificio(unidades, alElegir) {
     if (sinPiso.length) {
       const ed = document.createElement('div');
       ed.className = 'plano-edificio';
-      ['depto', 'oficina', 'local', 'casa', 'otro'].forEach((t) => {
+      ['depto', 'oficina', 'local', 'otro'].forEach((t) => {
         const l = sinPiso.filter((x) => x.tipo === t);
         if (!l.length) return;
         const uno = l.length === 1;
-        const et = { depto: uno ? 'Depto' : 'Deptos', oficina: 'Ofic.', local: uno ? 'Local' : 'Locales', casa: uno ? 'Casa' : 'Casas', otro: uno ? 'Unidad' : 'Unidades' }[t];
+        const et = { depto: '', oficina: 'Oficina', local: 'Comercio', otro: 'Otro destino' }[t];
         ed.appendChild(fila(et, l));
       });
       col.appendChild(ed);
@@ -2876,7 +2886,7 @@ function construirPlanoEdificio(unidades, alElegir) {
         ['bodega', 'estac'].forEach((t) => {
           const l = abajo.filter((x) => x.piso === nv && x.tipo === t);
           if (!l.length) return;
-          const et = (t === 'bodega' ? 'Bodegas' : 'Estac.') + (nv !== null ? (nv < 0 ? ' subt. ' + (-nv) : ' piso ' + nv) : '');
+          const et = (t === 'bodega' ? 'Bodega' : 'Estacionamiento') + (nv !== null ? (nv < 0 ? ' subt. ' + (-nv) : ' piso ' + nv) : '');
           sub.appendChild(fila(et, l));
         });
       });
@@ -2904,14 +2914,12 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
 
   body.innerHTML = `
     <div class="modal-filter">
-      <label for="filtro-direccion">Calle (el número es opcional)</label>
+      <label for="filtro-direccion">Calle, calles o numeración</label>
       <div style="display:flex; gap:0.5rem;">
-        <input type="text" id="filtro-direccion" autocomplete="off" placeholder="Ej.: Los Aliaga  o  Los Aliaga 531" style="flex:1;">
+        <input type="text" id="filtro-direccion" autocomplete="off" placeholder="Ej.: Los Aliaga 531  ·  Los Aliaga, Ramón Cruz  ·  518" style="flex:1;">
         <button class="primary" id="buscar-direccion-btn" style="white-space:nowrap; padding:0.5rem 0.9rem;">Buscar</button>
       </div>
-      <div class="filter-hint">Busca en el SII las unidades (departamentos, bodegas, estacionamientos) de esa calle que pertenecen a la manzana ${escapeHtml(manzana)}. Si no pones número, se buscan en toda la calle y se muestran solo las de esa manzana.</div>
-      <button type="button" class="secondary" id="buscar-manzana-btn" style="margin-top:0.5rem;">Buscar todas las unidades de esta manzana</button>
-      <div class="filter-hint">Para copropiedades de casas con direcciones distintas: revisa uno por uno los roles de la manzana ${escapeHtml(manzana)}, sin importar la calle ni el número. Va despacio (un rol por segundo) para no saturar al SII.</div>
+      <div class="filter-hint">Busca en el SII las unidades (departamentos, bodegas, estacionamientos) de esa calle, calles o numeración que pertenecen a la manzana ${escapeHtml(manzana)}.</div>
     </div>
     <div id="modal-results"></div>
   `;
@@ -2919,70 +2927,27 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
   const input = document.getElementById('filtro-direccion');
   const resultsEl = document.getElementById('modal-results');
   const buscarBtn = document.getElementById('buscar-direccion-btn');
-  const manzanaBtn = document.getElementById('buscar-manzana-btn');
   input.value = direccionBase(direccionClic);
-  // Cada búsqueda nueva deja obsoleta la anterior (y detiene el recorrido de la copropiedad)
+  // Cada búsqueda nueva deja obsoleta la anterior
   let busquedaActual = 0;
-
-  async function ejecutarBusquedaManzana() {
-    const id = ++busquedaActual;
-    resultsEl.innerHTML = '';
-    const estado = document.createElement('p');
-    estado.className = 'modal-loading';
-    const txt = document.createElement('span');
-    const detener = document.createElement('a');
-    detener.href = '#';
-    detener.textContent = 'Detener';
-    let detenido = false;
-    detener.onclick = (e) => { e.preventDefault(); detenido = true; };
-    estado.append(txt, ' ', detener);
-    resultsEl.appendChild(estado);
-    txt.textContent = `Revisando los roles de la manzana ${manzana}…`;
-    manzanaBtn.disabled = true;
-    try {
-      const r = await buscarManzanaCompleta(comunaCodigo, manzana, (revisados, encontrados, aviso) => {
-        txt.textContent = `Revisando los roles de la manzana ${manzana} (uno por segundo): ${revisados} revisados, ${encontrados} unidades encontradas…` + (aviso ? ' ' + aviso : '');
-      }, () => detenido || id !== busquedaActual);
-      if (id !== busquedaActual) return;
-      if (!r.unidades.length) {
-        resultsEl.innerHTML = r.limitado
-          ? '<p class="modal-error">El SII sigue limitando las consultas después de esperar unos 2 minutos. Intenta más tarde.</p>'
-          : `<p class="modal-error">No se encontraron unidades en la manzana ${escapeHtml(manzana)}.</p>`;
-        return;
-      }
-      renderUnidades(r.unidades);
-      const p = document.createElement('p');
-      p.className = 'modal-loading';
-      p.textContent = r.limitado
-        ? 'El SII limitó las consultas, así que la búsqueda se detuvo: se muestran las unidades encontradas hasta ese momento.'
-        : r.tope
-          ? 'Se revisaron los primeros 200 roles de la manzana (el máximo de esta búsqueda); puede haber más. Para un edificio grande conviene buscar por calle y número.'
-          : detenido
-          ? 'Búsqueda detenida: se muestran las unidades encontradas hasta ese momento.'
-          : `Todas las unidades de la manzana ${manzana}, sin importar la calle ni el número.`;
-      resultsEl.insertBefore(p, resultsEl.firstChild);
-    } catch (err) {
-      if (id !== busquedaActual) return;
-      console.error('Error recorriendo la manzana', err);
-      resultsEl.innerHTML = `<p class="modal-error">No se pudo revisar la manzana (${escapeHtml((err && err.message) || String(err))}). Intenta de nuevo en un momento.</p>`;
-    } finally {
-      manzanaBtn.disabled = false;
-    }
-  }
 
   // Una calle larga sin número (Huérfanos, Providencia…) trae miles de unidades: el SII
   // tarda tanto que la conexión se corta ("Failed to fetch"). Por eso, sin número se usa
   // el número de la dirección del clic (si es la misma calle), y la calle completa solo
   // se busca a propósito con el enlace "Buscar en toda la calle".
+  // Varias calles se separan con coma ("Los Aliaga, Ramón Cruz 518") y se juntan los
+  // resultados; un número solo ("518") busca esa numeración en todas las calles de la comuna.
   async function ejecutarBusqueda(callecompleta) {
-    let { calle, numero } = separarCalleYNumero(input.value);
-    if (!calle) {
-      resultsEl.innerHTML = '<p class="modal-error">Escribe al menos el nombre de la calle, por ejemplo "Los Aliaga" (el número es opcional), o toca «Buscar todas las unidades de esta copropiedad».</p>';
+    const partes = input.value.split(/[,;]|\s+\/\s+/).map((t) => separarCalleYNumero(t)).filter((x) => x.calle || x.numero);
+    if (!partes.length) {
+      resultsEl.innerHTML = '<p class="modal-error">Escribe una calle (por ejemplo "Los Aliaga" o "Los Aliaga 531"), varias calles separadas por coma, o solo un número.</p>';
       return;
     }
+    if (partes.length > 1) return ejecutarVarias(partes);
+    let { calle, numero } = partes[0];
     const id = ++busquedaActual;
     const base = separarCalleYNumero(direccionBase(direccionClic));
-    const numeroClic = base.numero && normNombre(base.calle) === normNombre(calle) ? base.numero : '';
+    const numeroClic = calle && base.numero && normNombre(base.calle) === normNombre(calle) ? base.numero : '';
     let nota = '';
     if (!numero && numeroClic && callecompleta !== true) {
       numero = numeroClic;
@@ -3009,7 +2974,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
       }
       if (id !== busquedaActual) return;
       renderUnidades(unidades);
-      if (numero && !separarCalleYNumero(input.value).numero) {
+      if (calle && numero && !partes[0].numero) {
         const p = document.createElement('p');
         p.className = 'modal-loading';
         p.textContent = nota;
@@ -3028,9 +2993,38 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
       console.error('Error buscando por dirección', err);
       const msg = (err && err.message) ? err.message : String(err);
       const red = /fetch|network|load failed|abort|HTTP 5\d\d/i.test(msg);
-      resultsEl.innerHTML = !numero && red
+      resultsEl.innerHTML = /429/.test(msg)
+        ? '<p class="modal-error">El SII está limitando las consultas por un rato (demasiadas consultas seguidas). Intenta de nuevo más tarde.</p>'
+        : !numero && red
         ? `<p class="modal-error">La búsqueda en toda la calle no alcanzó a llegar: la calle es muy larga para buscarla completa. Escribe también el número del edificio (por ejemplo, ${escapeHtml(calle)} 1160) y vuelve a buscar.</p>`
         : `<p class="modal-error">No se pudo consultar (${escapeHtml(msg)}). Puede ser la conexión o el SII; intenta de nuevo en un momento.</p>`;
+    }
+  }
+
+  // Varias calles o numeraciones: una consulta por cada una (de a una), sin repetir roles
+  async function ejecutarVarias(partes) {
+    const id = ++busquedaActual;
+    const porRol = new Map();
+    const fallidas = [];
+    for (let i = 0; i < partes.length; i++) {
+      const { calle, numero } = partes[i];
+      const nombre = [calle, numero].filter(Boolean).join(' ');
+      resultsEl.innerHTML = `<p class="modal-loading">Buscando ${escapeHtml(nombre)} (${i + 1} de ${partes.length})…</p>`;
+      try {
+        const us = await buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero);
+        us.forEach((u) => porRol.set(String(u.rol || `${u.manzana}-${u.predio}`), u));
+      } catch (err) {
+        console.warn('Falló la búsqueda de', nombre, err);
+        fallidas.push(nombre);
+      }
+      if (id !== busquedaActual) return;
+    }
+    renderUnidades([...porRol.values()]);
+    if (fallidas.length) {
+      const p = document.createElement('p');
+      p.className = 'modal-error';
+      p.textContent = 'No se pudo consultar: ' + fallidas.join(', ') + ' (si es una calle larga sin número, agrega el número).';
+      resultsEl.insertBefore(p, resultsEl.firstChild);
     }
   }
 
@@ -3108,7 +3102,9 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
           if (d && d.destinoDescripcion) details.querySelector('.unit-destino').textContent = d.destinoDescripcion;
         } catch (err) {
           console.error('getPredioNacional', err);
-          avaluoEl.textContent = 'No se pudo consultar (' + (err.message || err) + ')';
+          avaluoEl.textContent = /429/.test(String(err && err.message))
+            ? 'El SII está limitando las consultas por un rato; vuelve a abrir «Ver» más tarde'
+            : 'No se pudo consultar (' + (err.message || err) + ')';
           avaluoPedido = false; // permite reintentar cerrando y abriendo "Ver"
         }
       };
@@ -3184,7 +3180,6 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
   }
 
   buscarBtn.addEventListener('click', () => ejecutarBusqueda());
-  manzanaBtn.addEventListener('click', () => ejecutarBusquedaManzana());
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') ejecutarBusqueda(); });
 
   ejecutarBusqueda(); // búsqueda automática al abrir, con la dirección del clic
@@ -3229,56 +3224,6 @@ async function buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero) {
 // usa el mapa del SII al abrir una unidad desde la búsqueda por dirección, y la
 // única que trae el avalúo de cada departamento, bodega o estacionamiento.
 const predioNacionalCache = {};
-// Todas las unidades de una manzana (copropiedades de casas con direcciones distintas): el SII
-// no busca por manzana, así que se piden los roles uno por uno (manzana-1, -2, …), DE A UNO y
-// con un segundo entre consultas (más rápido, el SII bloquea por "consultas recurrentes").
-// Se detiene tras 15 roles seguidos que no existen (30 si aún no aparece ninguno), a los 200
-// roles, al cancelar, o en cuanto el SII responde 429 (límite). Los 90001… no se piden.
-async function buscarManzanaCompleta(comunaCodigo, manzana, onProgreso, cancelado) {
-  const PAUSA_MS = 1000, MAX_ROL = 200;
-  const unidades = [];
-  let ultimoEncontrado = 0, limitado = false;
-  const espera = (ms) => new Promise((r) => setTimeout(r, ms));
-  for (let p = 1; p <= MAX_ROL && !cancelado(); p++) {
-    const t0 = Date.now();
-    let d = null;
-    // Si el SII pide esperar (429) se reintenta tras 10 s, 20 s, 40 s y 60 s (unos 2 minutos
-    // en total) antes de rendirse; otros errores de red, una vez tras 3 s
-    const PAUSAS_429 = [10, 20, 40, 60];
-    let n429 = 0, nRed = 0;
-    while (!cancelado()) {
-      try {
-        d = await obtenerPredioNacional(comunaCodigo, manzana, p);
-        break;
-      } catch (err) {
-        const msg = String((err && err.message) || err);
-        if (/no devolvió datos/.test(msg)) break; // ese rol no existe
-        if (/429/.test(msg)) {
-          if (n429 >= PAUSAS_429.length) { limitado = true; break; }
-          for (let seg = PAUSAS_429[n429]; seg > 0 && !cancelado(); seg--) {
-            onProgreso(p - 1, unidades.length, `El SII pidió esperar; se reintenta en ${seg} s…`);
-            await espera(1000);
-          }
-          n429++;
-          continue;
-        }
-        if (nRed++ === 0) { await espera(3000); continue; }
-        throw err;
-      }
-    }
-    if (limitado) break;
-    if (d) {
-      ultimoEncontrado = p;
-      unidades.push({ ...d, rol: manzana + '-' + p, manzana: Number(manzana), predio: p });
-    }
-    onProgreso(p, unidades.length);
-    if (p - ultimoEncontrado >= (ultimoEncontrado ? 15 : 30)) break;
-    await espera(Math.max(0, PAUSA_MS - (Date.now() - t0)));
-  }
-  const tope = !limitado && !cancelado() && MAX_ROL - ultimoEncontrado < 15 && ultimoEncontrado > 0;
-  return { unidades, limitado, tope };
-}
-
 async function obtenerPredioNacional(comunaCodigo, manzana, predio) {
   const clave = comunaCodigo + ':' + manzana + '-' + predio;
   if (predioNacionalCache[clave]) return predioNacionalCache[clave];
