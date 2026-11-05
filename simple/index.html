@@ -636,6 +636,7 @@
   .plano-sub .plano-num{ background:#e9ecef; }
   .plano-nota{ color:#5a6873; margin-top:0.6rem; line-height:1.35; }
   ul.unit-list li.resaltada{ background:#fff6e5; }
+  .volver-plano{ display:block; margin:0 0 0.5rem; padding:0.4rem 0.75rem !important; font-size:0.85rem !important; }
   .modal-filter{
     margin-bottom:0.9rem;
   }
@@ -2865,13 +2866,15 @@ function construirPlanoEdificio(unidades, alElegir) {
     if (sinPiso.length) {
       const ed = document.createElement('div');
       ed.className = 'plano-edificio';
-      ['depto', 'oficina', 'local', 'otro'].forEach((t) => {
-        const l = sinPiso.filter((x) => x.tipo === t);
-        if (!l.length) return;
-        const uno = l.length === 1;
-        const et = { depto: '', oficina: 'Oficina', local: 'Comercio', otro: 'Otro destino' }[t];
-        ed.appendChild(fila(et, l));
-      });
+      // Habitacional sin nombre; el resto, una fila por destino del SII ("Educacion y cultura")
+      const hab = sinPiso.filter((x) => x.tipo === 'depto');
+      if (hab.length) ed.appendChild(fila('', hab));
+      const destinoDe = (x) => {
+        const d = String(pick(x.u, ['destinoDescripcion', 'destino', 'DESTINO', 'destinoPredio']) || '').trim();
+        return d ? tituloDestino(d) : NOMBRE_TIPO[x.tipo];
+      };
+      const otros = sinPiso.filter((x) => x.tipo !== 'depto');
+      [...new Set(otros.map(destinoDe))].forEach((d) => ed.appendChild(fila(d, otros.filter((x) => destinoDe(x) === d))));
       col.appendChild(ed);
     }
     const suelo = document.createElement('div');
@@ -3161,6 +3164,19 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
       ul.querySelectorAll('li.resaltada').forEach((x) => x.classList.remove('resaltada'));
       li.classList.add('resaltada');
       if (li._abrir) li._abrir();
+      // Atajo para volver al plano, en la misma unidad, sin subir toda la lista
+      ul.querySelectorAll('.volver-plano').forEach((x) => x.remove());
+      const volver = document.createElement('button');
+      volver.type = 'button';
+      volver.className = 'secondary volver-plano';
+      volver.textContent = '← Volver al plano';
+      volver.onclick = () => {
+        volver.remove();
+        mostrar('plano');
+        const b = plano.el.querySelector('.plano-u.elegida');
+        (b || tabs).scrollIntoView({ block: 'center', behavior: 'smooth' });
+      };
+      li.insertBefore(volver, li.firstChild);
       li.scrollIntoView({ block: 'center', behavior: 'smooth' });
     });
     const nota = document.createElement('p');
