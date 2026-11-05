@@ -2849,7 +2849,7 @@ function construirPlanoEdificio(unidades, alElegir) {
       const ed = document.createElement('div');
       ed.className = 'plano-edificio';
       const pisos = [...new Set(arriba.map((x) => x.piso))].sort((a, b) => b - a);
-      pisos.forEach((p) => ed.appendChild(fila('Piso ' + p, arriba.filter((x) => x.piso === p))));
+      pisos.forEach((p) => ed.appendChild(fila(String(p), arriba.filter((x) => x.piso === p))));
       col.appendChild(ed);
     }
     if (sinPiso.length) {
@@ -2867,10 +2867,6 @@ function construirPlanoEdificio(unidades, alElegir) {
     const suelo = document.createElement('div');
     suelo.className = 'plano-suelo';
     col.appendChild(suelo);
-    const st = document.createElement('div');
-    st.className = 'plano-suelo-txt';
-    st.textContent = 'Nivel de la calle';
-    col.appendChild(st);
     if (abajo.length) {
       const sub = document.createElement('div');
       sub.className = 'plano-sub';
@@ -3157,7 +3153,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
     tabs.setAttribute('role', 'group');
     const tabPlano = document.createElement('button');
     tabPlano.type = 'button';
-    tabPlano.textContent = 'Plano del edificio';
+    tabPlano.textContent = 'Plano de la copropiedad';
     const tabLista = document.createElement('button');
     tabLista.type = 'button';
     tabLista.textContent = 'Lista';
