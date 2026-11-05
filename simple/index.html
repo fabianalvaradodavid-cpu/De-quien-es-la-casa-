@@ -861,7 +861,7 @@
       <div class="actions">
         <button class="primary" id="copy-manzana-btn">Copiar rol manzana y abrir trámite TGR</button>
         <button class="secondary" id="copy-propiedad-btn">Copiar rol predio</button>
-        <button class="secondary" id="ver-unidades-btn" style="display:none;">Buscar todas las unidades de este edificio</button>
+        <button class="secondary" id="ver-unidades-btn" style="display:none;">Buscar todas las unidades de esta copropiedad</button>
         <div class="copied" id="copied-msg"></div>
       </div>
     </div>
@@ -2914,7 +2914,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
         <button class="primary" id="buscar-direccion-btn" style="white-space:nowrap; padding:0.5rem 0.9rem;">Buscar</button>
       </div>
       <div class="filter-hint">Busca en el SII las unidades (departamentos, bodegas, estacionamientos) de esa calle que pertenecen a la manzana ${escapeHtml(manzana)}. Si no pones número, se buscan en toda la calle y se muestran solo las de esa manzana.</div>
-      <button type="button" id="buscar-manzana-btn" style="margin-top:0.5rem; padding:0.45rem 0.9rem;">Buscar todas las unidades de esta copropiedad</button>
+      <button type="button" class="secondary" id="buscar-manzana-btn" style="margin-top:0.5rem;">Buscar todas las unidades de esta manzana</button>
       <div class="filter-hint">Para copropiedades de casas con direcciones distintas: revisa uno por uno los roles de la manzana ${escapeHtml(manzana)}, sin importar la calle ni el número. Va despacio (un rol por segundo) para no saturar al SII.</div>
     </div>
     <div id="modal-results"></div>
@@ -2944,13 +2944,13 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
     txt.textContent = `Revisando los roles de la manzana ${manzana}…`;
     manzanaBtn.disabled = true;
     try {
-      const r = await buscarManzanaCompleta(comunaCodigo, manzana, (revisados, encontrados) => {
-        txt.textContent = `Revisando los roles de la manzana ${manzana} (uno por segundo): ${revisados} revisados, ${encontrados} unidades encontradas…`;
+      const r = await buscarManzanaCompleta(comunaCodigo, manzana, (revisados, encontrados, aviso) => {
+        txt.textContent = `Revisando los roles de la manzana ${manzana} (uno por segundo): ${revisados} revisados, ${encontrados} unidades encontradas…` + (aviso ? ' ' + aviso : '');
       }, () => detenido || id !== busquedaActual);
       if (id !== busquedaActual) return;
       if (!r.unidades.length) {
         resultsEl.innerHTML = r.limitado
-          ? '<p class="modal-error">El SII limitó las consultas por un rato. Intenta más tarde.</p>'
+          ? '<p class="modal-error">El SII sigue limitando las consultas después de esperar unos 2 minutos. Intenta más tarde.</p>'
           : `<p class="modal-error">No se encontraron unidades en la manzana ${escapeHtml(manzana)}.</p>`;
         return;
       }
@@ -3246,15 +3246,28 @@ async function buscarManzanaCompleta(comunaCodigo, manzana, onProgreso, cancelad
   for (let p = 1; p <= MAX_ROL && !cancelado(); p++) {
     const t0 = Date.now();
     let d = null;
-    for (let intento = 0; intento < 2; intento++) {
+    // Si el SII pide esperar (429) se reintenta tras 10 s, 20 s, 40 s y 60 s (unos 2 minutos
+    // en total) antes de rendirse; otros errores de red, una vez tras 3 s
+    const PAUSAS_429 = [10, 20, 40, 60];
+    let n429 = 0, nRed = 0;
+    while (!cancelado()) {
       try {
         d = await obtenerPredioNacional(comunaCodigo, manzana, p);
         break;
       } catch (err) {
         const msg = String((err && err.message) || err);
         if (/no devolvió datos/.test(msg)) break; // ese rol no existe
-        if (/429/.test(msg)) { limitado = true; break; }
-        if (intento === 0) await espera(3000); else throw err;
+        if (/429/.test(msg)) {
+          if (n429 >= PAUSAS_429.length) { limitado = true; break; }
+          for (let seg = PAUSAS_429[n429]; seg > 0 && !cancelado(); seg--) {
+            onProgreso(p - 1, unidades.length, `El SII pidió esperar; se reintenta en ${seg} s…`);
+            await espera(1000);
+          }
+          n429++;
+          continue;
+        }
+        if (nRed++ === 0) { await espera(3000); continue; }
+        throw err;
       }
     }
     if (limitado) break;
