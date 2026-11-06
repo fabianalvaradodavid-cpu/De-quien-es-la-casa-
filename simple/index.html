@@ -2906,7 +2906,7 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
         const rol = String(x.u.rol || `${x.u.manzana}-${x.u.predio}`);
         const { manzana: mz, propiedad: pr } = splitRol(rol);
         const pausas = [10, 20, 40];
-        let n429 = 0, listo = false;
+        let n429 = 0, nOtros = 0, listo = false;
         while (!listo && !detenerAv) {
           try {
             // Siempre al menos 1 s entre una consulta al SII y la siguiente
@@ -2931,8 +2931,15 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
               mostrarEstado('El SII está limitando las consultas: se dejaron de pedir avalúos. Intenta más tarde.', false);
               break;
             }
-            // Otro error (o el SII no tiene datos de esa unidad): se marca y se sigue
-            ponerAvaluo(x, 0);
+            // Otro error (pasajero del SII o de la red): se reintenta una vez tras 3 s; si
+            // sigue, la unidad queda con "?" (no "s/a", que es solo cuando el SII informa
+            // avalúo 0) y se puede volver a pedir
+            if (nOtros++ === 0) { await espera(3000); continue; }
+            console.warn('Avalúo de', rol, err);
+            x.enCola = false;
+            const sp = x.btn && x.btn.querySelector('.u-av');
+            if (sp) { sp.classList.remove('pend'); sp.textContent = '?'; }
+            if (x.btn) x.btn.title = x.btn.title.replace(/ · Avalúo.*$/, '') + ' · Avalúo: no se pudo consultar (toca la unidad para reintentar)';
             listo = true;
           }
         }
@@ -3118,13 +3125,18 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
       ? 'Para ver los avalúos en el plano, toca «Avalúos» en cada piso: el SII los entrega de a uno, y pedirlos todos juntos podría bloquear las consultas.'
       : 'Los avalúos se consultan solos al SII, de a uno por segundo.');
   cont.appendChild(nota);
+  // Cuando "Ver" de la lista consigue un avalúo, también se escribe en el plano
+  const ponerAvaluoRol = (rol, v) => {
+    const x = items.find((it) => String(it.u.rol || `${it.u.manzana}-${it.u.predio}`) === String(rol));
+    if (x) ponerAvaluo(x, v);
+  };
   let avaluosAutomaticos = false;
   const alMostrar = () => {
     if (avaluosAutomaticos || muchas) return;
     avaluosAutomaticos = true;
     pedirAvaluos(items);
   };
-  return { el: cont, alMostrar, conPiso: items.filter((x) => x.piso !== null || x.tipo === 'bodega' || x.tipo === 'estac').length / Math.max(1, items.length) };
+  return { el: cont, alMostrar, ponerAvaluoRol, conPiso: items.filter((x) => x.piso !== null || x.tipo === 'bodega' || x.tipo === 'estac').length / Math.max(1, items.length) };
 }
 
 async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, manzana) {
@@ -3335,6 +3347,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
           const d = await obtenerPredioNacional(comunaCodigo, mz, pr);
           const valor = d && Number(d.valorTotal);
           avaluoEl.textContent = valor > 0 ? formatCLP(valor) : 'El SII no informa avalúo para esta unidad';
+          if (typeof plano !== 'undefined' && plano.ponerAvaluoRol) plano.ponerAvaluoRol(rolCompleto, valor || 0);
           if (d && d.destinoDescripcion) details.querySelector('.unit-destino').textContent = d.destinoDescripcion;
         } catch (err) {
           console.error('getPredioNacional', err);
