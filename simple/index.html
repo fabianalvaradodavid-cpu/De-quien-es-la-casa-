@@ -634,9 +634,19 @@
     background:#fff; color:var(--moss-dark); border:1px solid var(--moss); align-self:center; }
   .plano-av-btn:disabled{ opacity:0.45; cursor:default; }
   .plano-av-estado{ margin:0 0 0.4rem; color:#5a6873; font-size:0.72rem; }
-  /* Cuadrados de avalúo: área proporcional al avalúo; el mayor del plano mide 24 px */
-  .plano-cuadros{ display:inline-flex; align-items:flex-end; gap:0; align-self:center; margin-left:4px; min-height:4px; }
-  .plano-cuadros i{ display:block; background:#4a7896; border:1px solid #fff; box-sizing:border-box; transition:width .25s, height .25s; }
+  /* Cuadrados de avalúo: área proporcional al avalúo; el mayor de cada dirección mide 44 px */
+  .plano-cuadros{ display:inline-flex; flex-wrap:nowrap; align-items:flex-end; gap:0; align-self:center; margin-left:4px; min-height:4px; }
+  .plano-cuadros.envolver{ flex-wrap:wrap; max-width:100%; }
+  /* El plano nunca muestra barra horizontal: la ventana se ensancha (ver ajustarAnchoModal) */
+  .modal-body{ overflow-x:hidden; }
+  .modal{ transition:max-width .2s; }
+  .plano-cuadros i{ position:relative; display:block; background:#4a7896; border:1px solid #fff; box-sizing:border-box;
+    transition:width .25s, height .25s; font-style:normal; }
+  /* El número va centrado en el cuadrado; si no cabe, sobresale (oscuro, con halo blanco) */
+  .plano-cuadros i b{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); font-weight:600; line-height:1;
+    white-space:nowrap; color:#fff; pointer-events:none; }
+  .plano-cuadros i.chico b{ color:#1f2a33; text-shadow:0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff; z-index:1; }
+  .plano-cuadros-nota{ color:#5a6873; font-size:0.7rem; margin:0.35rem 0 0; line-height:1.3; }
   .t-depto{ background:#cfe0ee; } .t-oficina{ background:#d9d3ec; } .t-local{ background:#f3dcc0; }
   .t-casa{ background:#d6e8cf; } .t-bodega{ background:#e2ddd3; } .t-estac{ background:#d5d9de; } .t-otro{ background:#f1f1f1; }
   .plano-suelo{ height:6px; background:repeating-linear-gradient(90deg,#5d6b74 0 8px,#8b9aa1 8px 16px); margin:0 -0.3rem; border-radius:2px; }
@@ -2420,6 +2430,8 @@ modalOverlay.addEventListener('click', (e) => {
 
 function cerrarModalUnidades() {
   modalOverlay.classList.remove('visible');
+  const m = modalOverlay.querySelector('.modal');
+  if (m) m.style.maxWidth = ''; // vuelve a su ancho normal
 }
 
 // A partir de una dirección de unidad ("AV OHIGGINS 1650 DP 205 EDIF LEBLON")
@@ -2883,23 +2895,70 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
   // Fila de cuadrados de cada piso: uno por unidad con avalúo, de área proporcional al
   // avalúo; el mayor avalúo mostrado en todo el plano es el cuadrado más grande. Cada vez
   // que llega un avalúo (de este u otro piso) se redibujan todos con esa referencia.
-  const LADO_MAX = 24;
+  const LADO_MAX = 44;
   const filasCuadros = [];
+  const notaCuadros = document.createElement('p');
+  notaCuadros.className = 'plano-cuadros-nota';
+  notaCuadros.hidden = true;
+  notaCuadros.textContent = 'Cuadrados azules: uno por unidad con avalúo consultado, en orden de numeración y con su '
+    + 'número. El área de cada cuadrado es proporcional al avalúo; el más grande es el mayor avalúo consultado en esa '
+    + 'dirección (cada dirección del plano tiene su propia escala), y se redibujan al consultar otros pisos. En los '
+    + 'cuadrados muy chicos el número sobresale.';
   let redibujoPendiente = false;
+  // Si una fila de cuadrados no cabe, la ventana se ensancha lo necesario (hasta el ancho
+  // de la pantalla); si ni así cabe, los cuadrados pasan a otra línea.
+  // Se calcula cuánto mide cada fila de cuadrados completa (suma de los lados) y cuánto
+  // espacio tiene en su piso; si a alguna le falta, la ventana se ensancha esa diferencia.
+  const ajustarAnchoModal = (vuelta = 0) => {
+    const modal = cont.closest('.modal');
+    if (!modal || cont.hidden || !cont.isConnected) return;
+    const maximo = window.innerWidth - 32;
+    let falta = 0;
+    cont.querySelectorAll('.plano-cuadros').forEach((caja) => {
+      const natural = [...caja.children].reduce((a, c) => a + (parseFloat(c.style.width) || 0), 0) + 6;
+      const fila = caja.parentElement;
+      const disponible = fila.clientWidth - 8; // menos el relleno de la fila
+      falta = Math.max(falta, natural - disponible);
+    });
+    const ancho = modal.offsetWidth;
+    const llegoAlMaximo = ancho >= maximo - 1;
+    // Si ni con todo el ancho de la pantalla cabe, los cuadrados pasan a otra línea
+    cont.querySelectorAll('.plano-cuadros').forEach((c) => c.classList.toggle('envolver', falta > 0 && llegoAlMaximo));
+    if (falta > 0 && !llegoAlMaximo) {
+      modal.style.maxWidth = Math.min(maximo, ancho + falta + 4) + 'px';
+      // Al ensancharse, los botones de las unidades se reacomodan: se vuelve a medir
+      if (vuelta < 3) requestAnimationFrame(() => ajustarAnchoModal(vuelta + 1));
+    }
+  };
   const redibujarCuadros = () => {
     if (redibujoPendiente) return;
     redibujoPendiente = true;
     requestAnimationFrame(() => {
       redibujoPendiente = false;
-      const max = Math.max(0, ...items.map((x) => (x.avaluo > 0 ? x.avaluo : 0)));
+      requestAnimationFrame(() => ajustarAnchoModal(0));
+      // El mayor avalúo de CADA dirección (edificio) es su cuadrado más grande
+      const maxPorEdif = {};
+      items.forEach((x) => { if (x.avaluo > 0) maxPorEdif[x.edif] = Math.max(maxPorEdif[x.edif] || 0, x.avaluo); });
+      notaCuadros.hidden = !Object.keys(maxPorEdif).length;
       filasCuadros.forEach(({ caja, lista }) => {
         caja.textContent = '';
-        if (!max) return;
+        // En orden de numeración, igual que los botones de las unidades
         lista.slice().sort(ordenNum).forEach((x) => {
-          if (!(x.avaluo > 0)) return;
-          const lado = Math.max(3, Math.round(LADO_MAX * Math.sqrt(x.avaluo / max)));
+          const max = maxPorEdif[x.edif];
+          if (!(x.avaluo > 0) || !max) return;
+          // Siempre proporcional (sin tamaño mínimo): área = avalúo
+          const lado = Math.max(1, LADO_MAX * Math.sqrt(x.avaluo / max));
           const c = document.createElement('i');
-          c.style.width = c.style.height = lado + 'px';
+          c.style.width = c.style.height = lado.toFixed(1) + 'px';
+          // El número de la unidad: del tamaño que quepa, pero nunca menor que 8 px; si el
+          // cuadrado es más chico, el número sobresale
+          const texto = String(x.numero || '•');
+          const b = document.createElement('b');
+          b.textContent = texto;
+          const fuente = Math.max(8, Math.min(11, Math.floor((lado - 3) / (texto.length * 0.62))));
+          b.style.fontSize = fuente + 'px';
+          if (texto.length * fuente * 0.62 > lado - 2 || fuente > lado - 2) c.classList.add('chico');
+          c.appendChild(b);
           c.title = (x.numero || x.u.direccion || '') + ' · ' + formatCLP(x.avaluo);
           caja.appendChild(c);
         });
@@ -3080,8 +3139,9 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
 
   // Un plano por edificio (ver agruparEdificios) y, dentro, una columna por torre
   const edificios = agruparEdificios(items);
-  edificios.forEach((edif) => {
+  edificios.forEach((edif, iEdif) => {
   const deEdificio = edif.items;
+  deEdificio.forEach((x) => { x.edif = iEdif; }); // cada dirección escala sus cuadrados aparte
   if (edificios.length > 1 || /Edificio/.test(edif.titulo)) {
     const h = document.createElement('h3');
     h.className = 'plano-edif-titulo';
@@ -3160,6 +3220,7 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
     + (muchas
       ? 'Para ver los avalúos en el plano, toca «Avalúos» en cada piso: el SII los entrega de a uno, y pedirlos todos juntos podría bloquear las consultas.'
       : 'Los avalúos se consultan solos al SII, de a uno por segundo.');
+  cont.appendChild(notaCuadros);
   cont.appendChild(nota);
   // Cuando "Ver" de la lista consigue un avalúo, también se escribe en el plano
   const ponerAvaluoRol = (rol, v) => {
@@ -3168,6 +3229,7 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
   };
   let avaluosAutomaticos = false;
   const alMostrar = () => {
+    requestAnimationFrame(() => ajustarAnchoModal(0));
     if (avaluosAutomaticos || muchas) return;
     avaluosAutomaticos = true;
     pedirAvaluos(items);
@@ -3533,6 +3595,8 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
     nota.textContent = `${ordenadas.length} unidad(es) encontrada(s).`;
     function mostrar(v) {
       vistaActual = v;
+      const modalEl = resultsEl.closest('.modal');
+      if (modalEl && v !== 'plano') modalEl.style.maxWidth = '';
       plano.el.hidden = v !== 'plano';
       if (v === 'plano' && plano.alMostrar) plano.alMostrar();
       ul.hidden = v !== 'lista';
