@@ -1603,24 +1603,44 @@ async function consultarPuntoEnMapa(latlng) {
     for (const c of candidatas.slice(0, 3)) {
       // Una comuna del geojson puede corresponder a varias "comunas" del SII
       // (Santiago → Santiago, Santiago Oeste, Santiago Sur). Se consultan todas
-      // en paralelo y gana la que devuelva un rol en ese punto.
+      // en paralelo y gana la primera que devuelva un rol en ese punto: apenas una
+      // lo encuentra se muestra, y las otras dejan de consultar (antes se esperaba a
+      // que las zonas equivocadas terminaran sus 13 reintentos alrededor del punto).
       const codigos = SUBCOMUNAS_SII[c.codigo] || [c.codigo];
       setStatus('Consultando rol en ' + c.nombre + '…');
 
-      const respuestas = await Promise.all(codigos.map(async (codigo) => {
-        try {
-          const cfg = await obtenerServiciosComuna(codigo);
-          if (!cfg) return { vacio: true };
-          const r = await consultarRolConReintentos(latlng, cfg.layer, cfg.servicios);
-          if (!r) return { vacio: true };
-          r.comunaCodigo = codigo;
-          r.comunaNombre = nombreSiiPorCodigo[codigo] || c.nombre;
-          return { r };
-        } catch (err) {
-          console.error(err);
-          return { error: err };
-        }
-      }));
+      let encontrado = false;
+      const cancelado = () => encontrado || seq !== clickSeq;
+      const respuestas = await new Promise((resolver) => {
+        const lista = new Array(codigos.length);
+        let pendientes = codigos.length;
+        codigos.forEach(async (codigo, i) => {
+          let resp;
+          try {
+            const cfg = await obtenerServiciosComuna(codigo);
+            if (!cfg) resp = { vacio: true };
+            else {
+              const r = await consultarRolConReintentos(latlng, cfg.layer, cfg.servicios, cancelado);
+              if (!r) resp = { vacio: true };
+              else {
+                r.comunaCodigo = codigo;
+                r.comunaNombre = nombreSiiPorCodigo[codigo] || c.nombre;
+                resp = { r };
+              }
+            }
+          } catch (err) {
+            console.error(err);
+            resp = { error: err };
+          }
+          lista[i] = resp;
+          if (resp.r && resp.r.rol && !encontrado) {
+            encontrado = true;
+            resolver([resp]); // la primera con rol gana; no se espera a las demás
+          } else if (--pendientes === 0) {
+            resolver(lista);
+          }
+        });
+      });
       if (seq !== clickSeq) return;
 
       const conError = respuestas.filter((x) => x.error);
@@ -1657,7 +1677,7 @@ map.on('click', (e) => consultarPuntoEnMapa(e.latlng));
 // donde el pixel consultado cae sobre la línea divisoria), reintenta consultando
 // unos pocos píxeles alrededor del punto original hasta encontrar un resultado
 // con rol, o hasta agotar los intentos.
-async function consultarRolConReintentos(latlng, layerName, todosLosServicios) {
+async function consultarRolConReintentos(latlng, layerName, todosLosServicios, cancelado = () => false) {
   const offsets = [
     [0, 0],
     [4, 0], [-4, 0], [0, 4], [0, -4],
@@ -1672,6 +1692,7 @@ async function consultarRolConReintentos(latlng, layerName, todosLosServicios) {
   let ultimoConPredio = null;
 
   for (const [dx, dy] of offsets) {
+    if (cancelado()) return null; // otra zona ya encontró el rol, o hubo otro clic
     const clickInfo = {
       x: basePoint.x + dx,
       y: basePoint.y + dy,
