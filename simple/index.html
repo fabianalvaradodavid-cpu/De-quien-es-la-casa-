@@ -628,6 +628,12 @@
     font:inherit; font-size:0.68rem; font-weight:600; color:#1f2a33; text-align:center; line-height:1.1; }
   .plano-u:hover, .plano-u:focus-visible{ outline:2px solid var(--clay); outline-offset:1px; }
   .plano-u.elegida{ outline:2px solid #a3402b; outline-offset:1px; }
+  .plano-u .u-av{ display:block; font-size:0.58rem; font-weight:500; color:#2f3c45; margin-top:1px; white-space:nowrap; }
+  .plano-u .u-av.pend{ color:#8a959d; }
+  .plano-av-btn{ font:inherit; font-size:0.62rem; font-weight:600; padding:0.2rem 0.4rem; border-radius:2px; cursor:pointer;
+    background:#fff; color:var(--moss-dark); border:1px solid var(--moss); align-self:center; }
+  .plano-av-btn:disabled{ opacity:0.45; cursor:default; }
+  .plano-av-estado{ margin:0 0 0.4rem; color:#5a6873; font-size:0.72rem; }
   .t-depto{ background:#cfe0ee; } .t-oficina{ background:#d9d3ec; } .t-local{ background:#f3dcc0; }
   .t-casa{ background:#d6e8cf; } .t-bodega{ background:#e2ddd3; } .t-estac{ background:#d5d9de; } .t-otro{ background:#f1f1f1; }
   .plano-suelo{ height:6px; background:repeating-linear-gradient(90deg,#5d6b74 0 8px,#8b9aa1 8px 16px); margin:0 -0.3rem; border-radius:2px; }
@@ -1758,17 +1764,69 @@ function setStatus(msg, isError) {
 }
 
 // ---- Google Street View en el último punto consultado ----
-// Abre la vista de calle más cercana a ese punto (Google elige la panorámica disponible
-// más próxima). Sirve también cuando el punto no tiene rol, por ejemplo en una calle.
+// Abre la vista de calle en ese punto. Sirve también cuando el punto no tiene rol, por
+// ejemplo en una calle. Si ahí no hay imágenes, busca la panorámica más cercana (cada vez
+// más lejos: 50 m, 150 m, 400 m, 1 km, 3 km) y la abre mirando hacia el punto marcado.
+// Para eso usa los metadatos de Street View de Google, que son gratis (no gastan cupo) pero
+// piden una clave: créala en Google Cloud, activa "Street View Static API", restríngela a
+// este sitio (fabianalvaradodavid-cpu.github.io) y pégala aquí. Sin clave, el botón abre
+// Street View en el punto, como antes.
+const GOOGLE_STREETVIEW_KEY = '';
 let puntoStreetView = null;
 function mostrarBotonStreetView(latlng) {
   puntoStreetView = latlng;
   document.getElementById('street-view').hidden = !latlng;
 }
-document.getElementById('street-view-btn').addEventListener('click', () => {
+function rumboHacia(desde, hasta) {
+  const rad = Math.PI / 180;
+  const y = Math.sin((hasta.lng - desde.lng) * rad) * Math.cos(hasta.lat * rad);
+  const x = Math.cos(desde.lat * rad) * Math.sin(hasta.lat * rad) -
+    Math.sin(desde.lat * rad) * Math.cos(hasta.lat * rad) * Math.cos((hasta.lng - desde.lng) * rad);
+  return (Math.atan2(y, x) / rad + 360) % 360;
+}
+function distanciaM(a, b) {
+  const rad = Math.PI / 180, R = 6371000;
+  const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+// La panorámica más cercana con imágenes, o null si no hay ninguna a menos de 3 km
+async function panoramicaCercana(punto) {
+  const p = punto.lat.toFixed(6) + ',' + punto.lng.toFixed(6);
+  for (const radio of [50, 150, 400, 1000, 3000]) {
+    const url = 'https://maps.googleapis.com/maps/api/streetview/metadata?location=' + p +
+      '&radius=' + radio + '&source=outdoor&key=' + encodeURIComponent(GOOGLE_STREETVIEW_KEY);
+    const r = await fetch(url).then((x) => x.json());
+    if (r.status === 'OK' && r.pano_id && r.location) return { pano: r.pano_id, lat: r.location.lat, lng: r.location.lng };
+    if (r.status !== 'ZERO_RESULTS' && r.status !== 'NOT_FOUND') throw new Error(r.status + (r.error_message ? ': ' + r.error_message : ''));
+  }
+  return null;
+}
+document.getElementById('street-view-btn').addEventListener('click', async () => {
   if (!puntoStreetView) return;
-  const p = puntoStreetView.lat.toFixed(6) + ',' + puntoStreetView.lng.toFixed(6);
-  window.open('https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + p, '_blank', 'noopener');
+  const punto = puntoStreetView;
+  const p = punto.lat.toFixed(6) + ',' + punto.lng.toFixed(6);
+  const enElPunto = 'https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=' + p;
+  if (!GOOGLE_STREETVIEW_KEY) { window.open(enElPunto, '_blank', 'noopener'); return; }
+  // La pestaña se abre ya (si no, el navegador la bloquea por abrirse después de esperar)
+  const w = window.open('', '_blank');
+  if (w) { w.opener = null; w.document.title = 'Buscando Street View…'; w.document.body.textContent = 'Buscando la vista de calle más cercana…'; }
+  let destino = enElPunto;
+  try {
+    const pano = await panoramicaCercana(punto);
+    if (pano) {
+      const rumbo = distanciaM(pano, punto) > 5 ? Math.round(rumboHacia(pano, punto)) : 0;
+      destino = 'https://www.google.com/maps/@?api=1&map_action=pano&pano=' + encodeURIComponent(pano.pano) +
+        '&viewpoint=' + pano.lat.toFixed(6) + ',' + pano.lng.toFixed(6) + (rumbo ? '&heading=' + rumbo : '');
+      const d = Math.round(distanciaM(pano, punto));
+      if (d > 30) showCopiedMsg('No hay imágenes justo en el punto: se abre la vista de calle más cercana, a unos ' + d + ' m, mirando hacia el punto.');
+    } else {
+      showCopiedMsg('Google no tiene vista de calle a menos de 3 km de este punto.');
+    }
+  } catch (err) {
+    console.warn('Metadatos de Street View', err);
+  }
+  if (w) w.location.href = destino; else window.open(destino, '_blank', 'noopener');
 });
 
 function hideResult() {
@@ -2771,10 +2829,116 @@ function agruparEdificios(items) {
   return edificios.filter((e, i) => porTitulo[i]);
 }
 
-function construirPlanoEdificio(unidades, alElegir) {
+// Copropiedades de hasta este número de unidades: los avalúos se piden solos al abrir el
+// plano. En las más grandes, con el botón "Avalúos" de cada piso o fila.
+const AVALUOS_AUTOMATICOS_HASTA = 30;
+
+// "$85,3 M" para mostrar bajo el número de la unidad
+function avaluoCorto(v) {
+  if (!(v > 0)) return '';
+  if (v >= 1e9) return '$' + (v / 1e9).toLocaleString('es-CL', { maximumFractionDigits: 2 }) + ' mil M';
+  return '$' + (v / 1e6).toLocaleString('es-CL', { maximumFractionDigits: v < 1e8 ? 1 : 0 }) + ' M';
+}
+
+function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
   const items = unidades.map((u) => ({ u, ...clasificarUnidad(u) }));
   const cont = document.createElement('div');
   cont.className = 'plano';
+  const muchas = items.length > AVALUOS_AUTOMATICOS_HASTA;
+
+  // ---- Avalúos: el SII los da unidad por unidad (getPredioNacional), así que se piden
+  // DE A UNO y con un segundo entre consultas, para no saturarlo. Si el SII pide esperar
+  // (429), se espera 10 s, 20 s y 40 s; si sigue, se deja de pedir y se avisa. ----
+  const estadoAv = document.createElement('p');
+  estadoAv.className = 'plano-av-estado';
+  estadoAv.hidden = true;
+  const cola = [];
+  let trabajando = false, detenerAv = false, hechos = 0, totalPedidos = 0, ultimaConsulta = 0;
+  const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+  const ponerAvaluo = (x, v) => {
+    x.avaluo = v;
+    const sp = x.btn && x.btn.querySelector('.u-av');
+    if (!sp) return;
+    sp.classList.remove('pend');
+    sp.textContent = v > 0 ? avaluoCorto(v) : 's/a';
+    x.btn.title = x.btn.title.replace(/ · Avalúo.*$/, '') + ' · Avalúo ' + (v > 0 ? formatCLP(v) : 'no informado');
+  };
+  const mostrarEstado = (texto, conDetener) => {
+    estadoAv.hidden = false;
+    estadoAv.textContent = texto;
+    if (conDetener) {
+      const a = document.createElement('a');
+      a.href = '#';
+      a.textContent = 'Detener';
+      a.onclick = (e) => { e.preventDefault(); detenerAv = true; };
+      estadoAv.append(' ', a);
+    }
+  };
+  async function trabajar() {
+    if (trabajando) return;
+    trabajando = true;
+    try {
+      while (cola.length && !detenerAv) {
+        if (!cont.isConnected && hechos > 0) break; // se cerró o se hizo otra búsqueda
+        const x = cola.shift();
+        mostrarEstado(`Consultando avalúos al SII (uno por segundo): ${hechos} de ${totalPedidos}…`, true);
+        const rol = String(x.u.rol || `${x.u.manzana}-${x.u.predio}`);
+        const { manzana: mz, propiedad: pr } = splitRol(rol);
+        const pausas = [10, 20, 40];
+        let n429 = 0, listo = false;
+        while (!listo && !detenerAv) {
+          try {
+            // Siempre al menos 1 s entre una consulta al SII y la siguiente
+            await espera(Math.max(0, 1000 - (Date.now() - ultimaConsulta)));
+            ultimaConsulta = Date.now();
+            const d = await obtenerPredioNacional(comunaCodigo || String(x.u.comuna || ''), mz, pr);
+            ponerAvaluo(x, Number(d && d.valorTotal) || 0);
+            listo = true;
+          } catch (err) {
+            const msg = String((err && err.message) || err);
+            if (/429/.test(msg) && n429 < pausas.length) {
+              for (let seg = pausas[n429]; seg > 0 && !detenerAv; seg--) {
+                mostrarEstado(`El SII pidió esperar; se reintenta en ${seg} s…`, true);
+                await espera(1000);
+              }
+              n429++;
+              continue;
+            }
+            if (/429/.test(msg)) {
+              detenerAv = true;
+              cola.unshift(x);
+              mostrarEstado('El SII está limitando las consultas: se dejaron de pedir avalúos. Intenta más tarde.', false);
+              break;
+            }
+            // Otro error (o el SII no tiene datos de esa unidad): se marca y se sigue
+            ponerAvaluo(x, 0);
+            listo = true;
+          }
+        }
+        if (listo) hechos++;
+      }
+    } finally {
+      trabajando = false;
+      // Lo que quedó sin pedir vuelve a quedar disponible para su botón
+      cola.forEach((x) => { x.enCola = false; const sp = x.btn && x.btn.querySelector('.u-av'); if (sp && sp.classList.contains('pend')) sp.textContent = ''; });
+      if (!cola.length && !detenerAv) mostrarEstado(`Avalúos consultados: ${hechos}.`, false);
+      else if (detenerAv && !/limitando/.test(estadoAv.textContent)) mostrarEstado(`Consulta de avalúos detenida (${hechos} de ${totalPedidos}).`, false);
+      cola.length = 0;
+      detenerAv = false;
+      cont.querySelectorAll('.plano-av-btn').forEach((b) => { b.disabled = !b._lista.some((x) => x.avaluo === undefined); });
+    }
+  }
+  const pedirAvaluos = (lista) => {
+    const nuevas = lista.filter((x) => x.avaluo === undefined && !x.enCola);
+    nuevas.forEach((x) => {
+      x.enCola = true;
+      const sp = x.btn && x.btn.querySelector('.u-av');
+      if (sp) { sp.classList.add('pend'); sp.textContent = '…'; }
+    });
+    cola.push(...nuevas);
+    totalPedidos += nuevas.length;
+    trabajar();
+  };
   const ordenNum = (a, b) => (a.n - b.n) || String(a.numero).localeCompare(String(b.numero));
 
   // Leyenda con cuántas hay de cada tipo
@@ -2797,6 +2961,7 @@ function construirPlanoEdificio(unidades, alElegir) {
       leyenda.appendChild(sp);
     });
   cont.appendChild(leyenda);
+  cont.appendChild(estadoAv);
 
   const boton = (x) => {
     const b = document.createElement('button');
@@ -2804,9 +2969,20 @@ function construirPlanoEdificio(unidades, alElegir) {
     b.className = 'plano-u t-' + x.tipo;
     // Sin número (casas "411 C", "585 CASA A"): la letra o el último trozo de la dirección
     const ult = String(x.u.direccion || '').trim().split(/\s+/).pop() || '';
-    b.textContent = x.numero || (x.tipo === 'depto' && ult.length <= 5 && !/^\d+$/.test(ult) ? ult : '') || (x.tipo === 'depto' ? (x.numCalle || '•') : '•');
+    const num = document.createElement('span');
+    num.textContent = x.numero || (x.tipo === 'depto' && ult.length <= 5 && !/^\d+$/.test(ult) ? ult : '') || (x.tipo === 'depto' ? (x.numCalle || '•') : '•');
+    const av = document.createElement('span');
+    av.className = 'u-av';
+    b.append(num, av);
+    x.btn = b;
     const rol = x.u.rol || `${x.u.manzana}-${x.u.predio}`;
     b.title = `${rol} · ${x.u.direccion || ''}`;
+    // Si la búsqueda ya trajo el avalúo (o se consultó antes), se muestra de una vez
+    const { manzana: mzB, propiedad: prB } = splitRol(String(rol));
+    const enCache = predioNacionalCache[(comunaCodigo || x.u.comuna) + ':' + mzB + '-' + prB];
+    const yaVino = Number(buscarAvaluo(x.u)) > 0 ? Number(buscarAvaluo(x.u))
+      : (enCache && Number(enCache.valorTotal) > 0 ? Number(enCache.valorTotal) : undefined);
+    if (yaVino) setTimeout(() => ponerAvaluo(x, yaVino));
     b.onclick = () => {
       cont.querySelectorAll('.plano-u.elegida').forEach((e) => e.classList.remove('elegida'));
       b.classList.add('elegida');
@@ -2823,6 +2999,17 @@ function construirPlanoEdificio(unidades, alElegir) {
     const us = document.createElement('div');
     us.className = 'plano-unidades';
     lista.slice().sort(ordenNum).forEach((x) => us.appendChild(boton(x)));
+    // En las copropiedades grandes, los avalúos se piden por piso o fila
+    if (muchas) {
+      const bt = document.createElement('button');
+      bt.type = 'button';
+      bt.className = 'plano-av-btn';
+      bt.textContent = 'Avalúos';
+      bt.title = 'Consultar al SII el avalúo de las ' + lista.length + ' unidades de esta fila (una por segundo)';
+      bt._lista = lista;
+      bt.onclick = () => { bt.disabled = true; pedirAvaluos(lista); };
+      us.appendChild(bt);
+    }
     f.append(num, us);
     return f;
   };
@@ -2904,10 +3091,19 @@ function construirPlanoEdificio(unidades, alElegir) {
   nota.className = 'plano-nota';
   nota.textContent = 'Esquema deducido de la dirección de cada unidad en el SII: el piso sale del número (el 1202 es del piso 12) '
     + 'y el subterráneo de bodegas y estacionamientos, del número o de la sigla SB (el 215 queda en el subterráneo 2, '
-    + 'una estimación). Las letras (DP A, DP B…) y los nombres separan edificios. No muestra la posición real de las '
-    + 'unidades dentro del piso. Toca una unidad para ver su rol y avalúo.';
+    + 'una estimación). Las letras (DP A, DP B…) se muestran como columnas. No muestra la posición real de las '
+    + 'unidades dentro del piso. Toca una unidad para ver su rol y avalúo. '
+    + (muchas
+      ? 'Para ver los avalúos en el plano, toca «Avalúos» en cada piso: el SII los entrega de a uno, y pedirlos todos juntos podría bloquear las consultas.'
+      : 'Los avalúos se consultan solos al SII, de a uno por segundo.');
   cont.appendChild(nota);
-  return { el: cont, conPiso: items.filter((x) => x.piso !== null || x.tipo === 'bodega' || x.tipo === 'estac').length / Math.max(1, items.length) };
+  let avaluosAutomaticos = false;
+  const alMostrar = () => {
+    if (avaluosAutomaticos || muchas) return;
+    avaluosAutomaticos = true;
+    pedirAvaluos(items);
+  };
+  return { el: cont, alMostrar, conPiso: items.filter((x) => x.piso !== null || x.tipo === 'bodega' || x.tipo === 'estac').length / Math.max(1, items.length) };
 }
 
 async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, manzana) {
@@ -3013,20 +3209,36 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
       const { calle, numero } = partes[i];
       const nombre = [calle, numero].filter(Boolean).join(' ');
       resultsEl.innerHTML = `<p class="modal-loading">Buscando ${escapeHtml(nombre)} (${i + 1} de ${partes.length})…</p>`;
-      try {
-        const us = await buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero);
-        us.forEach((u) => porRol.set(String(u.rol || `${u.manzana}-${u.predio}`), u));
-      } catch (err) {
-        console.warn('Falló la búsqueda de', nombre, err);
-        fallidas.push(nombre);
+      // Una calle larga sin número a veces se corta: se reintenta una vez y, si es la calle
+      // del punto donde hiciste clic, se busca con ese número
+      const base = separarCalleYNumero(direccionBase(direccionClic));
+      const numeroClic = !numero && calle && base.numero && normNombre(base.calle) === normNombre(calle) ? base.numero : '';
+      const intentos = [numero, numero];
+      if (numeroClic) intentos.push(numeroClic);
+      let ok = false;
+      for (let k = 0; k < intentos.length && !ok; k++) {
+        try {
+          if (k > 0) {
+            resultsEl.innerHTML = `<p class="modal-loading">Reintentando ${escapeHtml([calle, intentos[k]].filter(Boolean).join(' '))} (${i + 1} de ${partes.length})…</p>`;
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+          const us = await buscarPorDireccion(comunaCodigo, nombreComuna, calle, intentos[k]);
+          us.forEach((u) => porRol.set(String(u.rol || `${u.manzana}-${u.predio}`), u));
+          ok = true;
+          if (intentos[k] !== numero) fallidas.push(nombre + ' (completa no; se buscó en el número ' + intentos[k] + ')');
+        } catch (err) {
+          console.warn('Falló la búsqueda de', nombre, err);
+        }
+        if (id !== busquedaActual) return;
       }
+      if (!ok) fallidas.push(nombre);
       if (id !== busquedaActual) return;
     }
     renderUnidades([...porRol.values()]);
     if (fallidas.length) {
       const p = document.createElement('p');
       p.className = 'modal-error';
-      p.textContent = 'No se pudo consultar: ' + fallidas.join(', ') + ' (si es una calle larga sin número, agrega el número).';
+      p.textContent = 'No se pudo consultar completa: ' + fallidas.join(', ') + '. El SII no alcanza a entregar una calle tan larga entera; escribe esa calle con el número (por ejemplo, "San Martín 714") para buscarla.';
       resultsEl.insertBefore(p, resultsEl.firstChild);
     }
   }
@@ -3178,13 +3390,14 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
       };
       li.insertBefore(volver, li.firstChild);
       li.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    });
+    }, comunaCodigo);
     const nota = document.createElement('p');
     nota.className = 'modal-loading';
     nota.style.marginTop = '0.6rem';
     nota.textContent = `${ordenadas.length} unidad(es) encontrada(s).`;
     function mostrar(v) {
       plano.el.hidden = v !== 'plano';
+      if (v === 'plano' && plano.alMostrar) plano.alMostrar();
       ul.hidden = v !== 'lista';
       tabPlano.setAttribute('aria-pressed', String(v === 'plano'));
       tabLista.setAttribute('aria-pressed', String(v === 'lista'));
