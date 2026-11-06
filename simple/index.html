@@ -642,6 +642,7 @@
   .plano-sub .plano-num{ background:#e9ecef; }
   .plano-nota{ color:#5a6873; margin-top:0.6rem; line-height:1.35; }
   ul.unit-list li.resaltada{ background:#fff6e5; }
+  .unit-marca{ display:inline-block; margin-left:0.4rem; padding:0 0.3rem; border-radius:2px; background:#fdf1d6; color:#7a5a12; font-size:0.7rem; }
   .volver-plano{ display:block; margin:0 0 0.5rem; padding:0.4rem 0.75rem !important; font-size:0.85rem !important; }
   .modal-filter{
     margin-bottom:0.9rem;
@@ -3220,6 +3221,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
         }
         resultsEl.insertBefore(p, resultsEl.firstChild);
       }
+      completarHuecos(unidades, id);
     } catch (err) {
       if (id !== busquedaActual) return;
       console.error('Error buscando por dirección', err);
@@ -3274,9 +3276,64 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
       p.textContent = 'No se pudo consultar completa: ' + fallidas.join(', ') + '. El SII no alcanza a entregar una calle tan larga entera; escribe esa calle con el número (por ejemplo, "San Martín 714") para buscarla.';
       resultsEl.insertBefore(p, resultsEl.firstChild);
     }
+    completarHuecos([...porRol.values()], id);
   }
 
-  function renderUnidades(todas) {
+  // La búsqueda por dirección del SII a veces se salta unidades que sí existen (p. ej. el
+  // 112-203 de Santiago, HUERFANOS 1514 DP 46, entre el 202 y el 204). Como los roles de un
+  // edificio van seguidos, un hueco chico en medio (1 a 3 roles) indica una unidad que
+  // falta: se piden esos roles uno por uno (uno por segundo, máximo 20) y se agregan,
+  // marcados como "no aparece en la búsqueda del SII".
+  const MAX_HUECOS = 20;
+  async function completarHuecos(todas, id) {
+    const rolDe = (u) => String(u.rol || `${u.manzana}-${u.predio}`);
+    const deManzana = todas.filter((u) => splitRol(rolDe(u)).manzana === String(manzana));
+    const predios = [...new Set(deManzana.map((u) => parseInt(splitRol(rolDe(u)).propiedad, 10)))]
+      .filter((n) => isFinite(n) && n < 90000).sort((a, b) => a - b);
+    const faltan = [];
+    for (let i = 1; i < predios.length && faltan.length < MAX_HUECOS; i++) {
+      const hueco = predios[i] - predios[i - 1] - 1;
+      if (hueco >= 1 && hueco <= 3) for (let p = predios[i - 1] + 1; p < predios[i] && faltan.length < MAX_HUECOS; p++) faltan.push(p);
+    }
+    if (!faltan.length) return;
+    const estado = document.createElement('p');
+    estado.className = 'modal-loading';
+    const tabsEl = resultsEl.querySelector('.vista-tabs');
+    resultsEl.insertBefore(estado, tabsEl || resultsEl.firstChild);
+    const agregadas = [];
+    let ultima = 0, limitado = false;
+    for (let k = 0; k < faltan.length; k++) {
+      if (id !== busquedaActual) return;
+      estado.textContent = `Revisando ${faltan.length === 1 ? 'un rol que falta' : faltan.length + ' roles que faltan'} entre los resultados del SII (${k + 1} de ${faltan.length})…`;
+      await new Promise((r) => setTimeout(r, Math.max(0, 1000 - (Date.now() - ultima))));
+      ultima = Date.now();
+      try {
+        const d = await obtenerPredioNacional(comunaCodigo, manzana, faltan[k]);
+        if (d) agregadas.push({ ...d, rol: manzana + '-' + faltan[k], manzana: Number(manzana), predio: faltan[k], _noEnBusqueda: true });
+      } catch (err) {
+        if (/429/.test(String(err && err.message))) { limitado = true; break; }
+        // "no devolvió datos": ese rol no existe; otro error: se omite
+      }
+    }
+    if (id !== busquedaActual) return;
+    estado.remove();
+    if (!agregadas.length) return;
+    // Se vuelve a dibujar con las unidades agregadas, en la misma vista y con los avisos
+    const avisos = [];
+    for (const n of [...resultsEl.children]) { if (n.classList.contains('vista-tabs')) break; avisos.push(n); }
+    renderUnidades(todas.concat(agregadas), vistaActual);
+    const nuevaTabs = resultsEl.querySelector('.vista-tabs');
+    avisos.forEach((n) => resultsEl.insertBefore(n, nuevaTabs));
+    const p = document.createElement('p');
+    p.className = 'modal-loading';
+    p.textContent = (agregadas.length === 1 ? 'Se agregó 1 unidad que existe' : `Se agregaron ${agregadas.length} unidades que existen`) +
+      ' pero no aparece' + (agregadas.length === 1 ? '' : 'n') + ' en la búsqueda por dirección del SII: ' +
+      agregadas.map((u) => u.rol).join(', ') + '.' + (limitado ? ' (El SII limitó las consultas; puede faltar alguna más.)' : '');
+    resultsEl.insertBefore(p, nuevaTabs);
+  }
+
+  let vistaActual = 'lista';
+  function renderUnidades(todas, vistaInicial = 'lista') {
     // Solo interesan los roles de la misma manzana que el rol clicado
     // (ej.: si el rol es 6510-90001, solo los que empiezan con 6510).
     const unidades = todas.filter((u) => {
@@ -3307,6 +3364,12 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
       const dirEl = document.createElement('span');
       dirEl.className = 'unit-dir';
       dirEl.textContent = u.direccion || 'Sin dirección registrada';
+      if (u._noEnBusqueda) {
+        const marca = document.createElement('span');
+        marca.className = 'unit-marca';
+        marca.textContent = 'no aparece en la búsqueda del SII';
+        dirEl.appendChild(marca);
+      }
       header.appendChild(rolEl);
       header.appendChild(dirEl);
       li.appendChild(header);
@@ -3430,6 +3493,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
     nota.style.marginTop = '0.6rem';
     nota.textContent = `${ordenadas.length} unidad(es) encontrada(s).`;
     function mostrar(v) {
+      vistaActual = v;
       plano.el.hidden = v !== 'plano';
       if (v === 'plano' && plano.alMostrar) plano.alMostrar();
       ul.hidden = v !== 'lista';
@@ -3439,7 +3503,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
     tabPlano.onclick = () => mostrar('plano');
     tabLista.onclick = () => mostrar('lista');
     resultsEl.append(tabs, ul, plano.el, nota);
-    mostrar('lista'); // primero la lista; el plano, con su botón
+    mostrar(vistaInicial); // primero la lista; el plano, con su botón
   }
 
   buscarBtn.addEventListener('click', () => ejecutarBusqueda());
