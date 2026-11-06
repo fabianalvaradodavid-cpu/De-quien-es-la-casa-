@@ -3221,7 +3221,9 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
         }
         resultsEl.insertBefore(p, resultsEl.firstChild);
       }
-      completarHuecos(unidades, id);
+      // Solo en la búsqueda de un edificio (calle y número): sin número, o solo con número, se
+      // mezclan direcciones distintas de la manzana y los saltos de roles son normales
+      if (calle && numero) completarHuecos(unidades, id);
     } catch (err) {
       if (id !== busquedaActual) return;
       console.error('Error buscando por dirección', err);
@@ -3276,14 +3278,16 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
       p.textContent = 'No se pudo consultar completa: ' + fallidas.join(', ') + '. El SII no alcanza a entregar una calle tan larga entera; escribe esa calle con el número (por ejemplo, "San Martín 714") para buscarla.';
       resultsEl.insertBefore(p, resultsEl.firstChild);
     }
-    completarHuecos([...porRol.values()], id);
+    // Igual con varias calles: solo si todas traen número
+    if (partes.every((x) => x.calle && x.numero)) completarHuecos([...porRol.values()], id);
   }
 
   // La búsqueda por dirección del SII a veces se salta unidades que sí existen (p. ej. el
   // 112-203 de Santiago, HUERFANOS 1514 DP 46, entre el 202 y el 204). Como los roles de un
   // edificio van seguidos, un hueco chico en medio (1 a 3 roles) indica una unidad que
   // falta: se piden esos roles uno por uno (uno por segundo, máximo 20) y se agregan,
-  // marcados como "no aparece en la búsqueda del SII".
+  // marcados como "no aparece en la búsqueda del SII". Solo se hace al buscar con calle y
+  // número; sin número (o solo con número) los saltos de roles son otras direcciones.
   const MAX_HUECOS = 20;
   async function completarHuecos(todas, id) {
     const rolDe = (u) => String(u.rol || `${u.manzana}-${u.predio}`);
