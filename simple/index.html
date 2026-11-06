@@ -634,6 +634,9 @@
     background:#fff; color:var(--moss-dark); border:1px solid var(--moss); align-self:center; }
   .plano-av-btn:disabled{ opacity:0.45; cursor:default; }
   .plano-av-estado{ margin:0 0 0.4rem; color:#5a6873; font-size:0.72rem; }
+  /* Cuadrados de avalúo: área proporcional al avalúo; el mayor del plano mide 24 px */
+  .plano-cuadros{ display:inline-flex; align-items:flex-end; gap:0; align-self:center; margin-left:4px; min-height:4px; }
+  .plano-cuadros i{ display:block; background:#4a7896; border:1px solid #fff; box-sizing:border-box; transition:width .25s, height .25s; }
   .t-depto{ background:#cfe0ee; } .t-oficina{ background:#d9d3ec; } .t-local{ background:#f3dcc0; }
   .t-casa{ background:#d6e8cf; } .t-bodega{ background:#e2ddd3; } .t-estac{ background:#d5d9de; } .t-otro{ background:#f1f1f1; }
   .plano-suelo{ height:6px; background:repeating-linear-gradient(90deg,#5d6b74 0 8px,#8b9aa1 8px 16px); margin:0 -0.3rem; border-radius:2px; }
@@ -2877,8 +2880,35 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
   const cola = [];
   let trabajando = false, detenerAv = false, hechos = 0, totalPedidos = 0, ultimaConsulta = 0;
   const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Fila de cuadrados de cada piso: uno por unidad con avalúo, de área proporcional al
+  // avalúo; el mayor avalúo mostrado en todo el plano es el cuadrado más grande. Cada vez
+  // que llega un avalúo (de este u otro piso) se redibujan todos con esa referencia.
+  const LADO_MAX = 24;
+  const filasCuadros = [];
+  let redibujoPendiente = false;
+  const redibujarCuadros = () => {
+    if (redibujoPendiente) return;
+    redibujoPendiente = true;
+    requestAnimationFrame(() => {
+      redibujoPendiente = false;
+      const max = Math.max(0, ...items.map((x) => (x.avaluo > 0 ? x.avaluo : 0)));
+      filasCuadros.forEach(({ caja, lista }) => {
+        caja.textContent = '';
+        if (!max) return;
+        lista.slice().sort(ordenNum).forEach((x) => {
+          if (!(x.avaluo > 0)) return;
+          const lado = Math.max(3, Math.round(LADO_MAX * Math.sqrt(x.avaluo / max)));
+          const c = document.createElement('i');
+          c.style.width = c.style.height = lado + 'px';
+          c.title = (x.numero || x.u.direccion || '') + ' · ' + formatCLP(x.avaluo);
+          caja.appendChild(c);
+        });
+      });
+    });
+  };
   const ponerAvaluo = (x, v) => {
     x.avaluo = v;
+    redibujarCuadros();
     const sp = x.btn && x.btn.querySelector('.u-av');
     if (!sp) return;
     sp.classList.remove('pend');
@@ -3039,6 +3069,11 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
       bt.onclick = () => { bt.disabled = true; pedirAvaluos(lista); };
       us.appendChild(bt);
     }
+    // Al lado (o al final de la fila, si no hay botón), los cuadrados de avalúo
+    const caja = document.createElement('span');
+    caja.className = 'plano-cuadros';
+    us.appendChild(caja);
+    filasCuadros.push({ caja, lista });
     f.append(num, us);
     return f;
   };
