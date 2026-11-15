@@ -2462,8 +2462,67 @@ document.getElementById('toggle-avaluos').addEventListener('change', (e) => {
   if (!e.target.checked) quitarEtiquetasAvaluo();
 });
 
+// ---- Catastro del SII por comuna (archivos propios del sitio, carpeta "catastro") ----
+// Preparados a partir del "Detalle catastral" que el SII publica cada semestre: por rol traen
+// avalúo, material, calidad y año de la construcción principal, m² construidos y el rol del
+// bien común. Con ellos el avalúo aparece al instante y sin consultar al SII. Si la comuna
+// no tiene archivo, todo sigue funcionando como antes (consultando al SII).
+const MATERIAL_SII = { A: 'Acero', B: 'Hormigón armado', C: 'Albañilería', E: 'Madera', F: 'Adobe', G: 'Perfiles metálicos',
+  K: 'Prefabricado', L: 'Madera laminada', GA: 'Galpón de acero', GB: 'Galpón de hormigón armado', GC: 'Galpón de albañilería',
+  GE: 'Galpón de madera', GL: 'Galpón de madera laminada', GF: 'Galpón de adobe', OA: 'Obra civil de acero',
+  OB: 'Obra civil de hormigón armado', OE: 'Obra civil de madera', SA: 'Silo de acero', SB: 'Silo de hormigón armado',
+  EA: 'Estanque de acero', EB: 'Estanque de hormigón armado', M: 'Marquesina', P: 'Pavimento', W: 'Piscina',
+  TA: 'Techumbre apoyada de acero', TE: 'Techumbre apoyada de madera', TL: 'Techumbre apoyada de madera laminada' };
+const catastroCache = {}; // código de comuna → promesa de { periodo, m } o null
+const catastroListo = {}; // código de comuna → datos ya cargados (o null)
+function cargarCatastro(comuna) {
+  comuna = String(comuna || '');
+  if (!comuna) return Promise.resolve(null);
+  if (!catastroCache[comuna]) {
+    catastroCache[comuna] = fetch('../catastro/' + comuna + '.json')
+      .then((r) => (r.ok ? r.json() : null)).catch(() => null)
+      .then((d) => { catastroListo[comuna] = d && d.m ? d : null; return catastroListo[comuna]; });
+  }
+  return catastroCache[comuna];
+}
+// Datos de un rol si el catastro de su comuna ya está cargado: { avaluo, material, calidad, ano, m2, lineas, bienComun, periodo }
+function datoCatastro(comuna, rol) {
+  const d = catastroListo[String(comuna || '')];
+  if (!d) return null;
+  const { manzana, propiedad } = splitRol(String(rol || ''));
+  const r = d.m[String(parseInt(manzana, 10))] && d.m[String(parseInt(manzana, 10))][String(parseInt(propiedad, 10))];
+  if (!r) return null;
+  return { avaluo: r[0], material: r[1], calidad: r[2], ano: r[3], m2: r[4], lineas: r[5], bienComun: r[6] || 0, periodo: d.periodo };
+}
+// Filas [etiqueta, valor] para mostrar: material, calidad, año y m²
+function filasCatastro(c) {
+  if (!c) return [];
+  const sem = String(c.periodo || '').split('-');
+  const filas = [];
+  if (c.material) filas.push(['Material', (MATERIAL_SII[c.material] || c.material) + (c.lineas > 1 ? ' (construcción principal de ' + c.lineas + ')' : '')]);
+  if (c.calidad) filas.push(['Calidad', c.calidad + ' (escala SII: 1 la mejor, 5 la más baja)']);
+  if (c.ano) filas.push(['Año', String(c.ano)]);
+  if (c.m2) filas.push(['Construido', c.m2.toLocaleString('es-CL') + ' m²']);
+  if (filas.length && sem[0]) filas.push(['Fuente', 'Catastro SII, ' + (sem[1] === '1' ? '1.er' : '2.º') + ' semestre ' + sem[0]]);
+  return filas;
+}
+
 function showResult(data) {
   document.getElementById('rol-value').textContent = data.rol || '—';
+  // Material, calidad, año y m² desde el catastro de la comuna (si el sitio lo tiene)
+  if (data.comunaCodigo && data.rol) {
+    cargarCatastro(data.comunaCodigo).then(() => {
+      if (document.getElementById('rol-value').textContent !== String(data.rol)) return; // ya se consultó otro punto
+      const det = document.getElementById('details');
+      det.querySelectorAll('.fila-catastro').forEach((e) => e.remove());
+      filasCatastro(datoCatastro(data.comunaCodigo, data.rol)).forEach(([et, v]) => {
+        const row = document.createElement('div');
+        row.className = 'fila-catastro';
+        row.innerHTML = `<dt>${escapeHtml(et)}</dt><dd>${escapeHtml(v)}</dd>`;
+        det.appendChild(row);
+      });
+    });
+  }
 
   if (data.comunaCodigo) {
     agregarCapaDeslindes(data.comunaCodigo);
@@ -3419,6 +3478,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
   input.value = direccionBase(direccionClic);
   // Cada búsqueda nueva deja obsoleta la anterior
   let busquedaActual = 0;
+  const catastroDeLaComuna = cargarCatastro(comunaCodigo); // se espera antes de mostrar resultados
 
   // Una calle larga sin número (Huérfanos, Providencia…) trae miles de unidades: el SII
   // tarda tanto que la conexión se corta ("Failed to fetch"). Por eso, sin número se usa
@@ -3461,6 +3521,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
         numero = numeroClic;
         unidades = await buscarPorDireccion(comunaCodigo, nombreComuna, calle, numero);
       }
+      await catastroDeLaComuna;
       if (id !== busquedaActual) return;
       renderUnidades(unidades);
       if (calle && numero && !partes[0].numero) {
@@ -3527,6 +3588,8 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
       if (!ok) fallidas.push(nombre);
       if (id !== busquedaActual) return;
     }
+    await catastroDeLaComuna;
+    if (id !== busquedaActual) return;
     renderUnidades([...porRol.values()]);
     if (fallidas.length) {
       const p = document.createElement('p');
@@ -3636,6 +3699,9 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
 
       // --- Detalles ocultos (se muestran con "Ver") ---
       const destino = pick(u, ['destinoDescripcion', 'destino', 'DESTINO', 'destinoPredio']);
+      // Con el catastro de la comuna, el avalúo viene de ahí (sin consultar al SII)
+      const cat = datoCatastro(comunaCodigo, rolCompleto);
+      if (cat && cat.avaluo > 0 && !(Number(u.valorTotal) > 0)) u.valorTotal = cat.avaluo;
       const avaluoRaw = buscarAvaluo(u);
       // Un avalúo 0 es el SII diciendo "no lo incluí en esta respuesta", no un valor real
       const avaluoNum = avaluoRaw !== undefined ? Number(avaluoRaw) : undefined;
@@ -3646,6 +3712,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
       details.innerHTML = `
         <div><span>Destino:</span><span class="unit-destino">${escapeHtml(destino || '—')}</span></div>
         <div><span>Avalúo total:</span><span class="unit-avaluo">${escapeHtml(formatCLP(avaluo) || '—')}</span></div>
+        ${filasCatastro(cat).map(([et, v]) => `<div><span>${escapeHtml(et)}:</span><span>${escapeHtml(v)}</span></div>`).join('')}
       `;
       li.appendChild(details);
       // La búsqueda por dirección no trae el avalúo de cada unidad: se pide aparte
