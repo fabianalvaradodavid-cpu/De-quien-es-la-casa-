@@ -334,6 +334,13 @@
     border-top:1px dashed var(--line);
   }
   .deslindes-list:empty{ display:none; }
+  .color-row{ display:flex; flex-wrap:wrap; align-items:center; gap:0.3rem; margin:0.3rem 0 0.2rem 1.6rem; font-size:0.75rem; color:#5a6873; }
+  .color-row-titulo{ flex-basis:100%; }
+  #deslindes-colores{ display:inline-flex; gap:3px; }
+  #deslindes-colores button{ width:1.15rem; height:1.15rem; padding:0; border-radius:50%; border:1px solid #7b8791; cursor:pointer; }
+  #deslindes-colores button[aria-pressed="true"]{ outline:2px solid var(--clay); outline-offset:1px; }
+  #deslindes-color-auto{ font:inherit; font-size:0.72rem; padding:0.15rem 0.45rem; border-radius:3px; border:1px solid var(--moss); background:#fff; color:var(--moss-dark); cursor:pointer; }
+  #deslindes-color-msg{ flex-basis:100%; font-size:0.7rem; }
   .deslindes-list li{
     display:flex;
     align-items:center;
@@ -778,9 +785,12 @@
     <feComponentTransfer in="SourceGraphic" result="relleno">
       <feFuncA id="filtro-deslindes-relleno" type="linear" slope="0.85"/>
     </feComponentTransfer>
+    <!-- 6. Las líneas toman el color elegido (negro por omisión) -->
+    <feFlood id="filtro-deslindes-color" flood-color="#000000" result="colorLinea"/>
+    <feComposite in="colorLinea" in2="lineasGruesas" operator="in" result="lineasColor"/>
     <feMerge>
       <feMergeNode in="relleno"/>
-      <feMergeNode in="lineasGruesas"/>
+      <feMergeNode in="lineasColor"/>
     </feMerge>
   </filter>
 </svg>
@@ -827,6 +837,12 @@
       <div class="opacity-row" id="deslindes-opacity-row" style="display:none;">
         <label for="deslindes-opacity">Relleno</label>
         <input type="range" id="deslindes-opacity" min="0" max="1" step="0.05" value="0.85">
+      </div>
+      <div class="color-row" id="deslindes-color-row" style="display:none;">
+        <span class="color-row-titulo">Color de líneas</span>
+        <span id="deslindes-colores"></span>
+        <button type="button" id="deslindes-color-auto" title="Analiza el mapa de fondo que se está viendo y elige el color que más se distingue">Más contrastante</button>
+        <span id="deslindes-color-msg"></span>
       </div>
       <ul class="deslindes-list" id="deslindes-list"></ul>
       <label class="layer-toggle">
@@ -2073,6 +2089,93 @@ function actualizarFiltroDeslindes(opacidad) {
   document.getElementById('filtro-deslindes-relleno').setAttribute('slope', opacidad);
 }
 
+// ---- Color de las líneas de los deslindes ----
+// Se elige a mano entre varios colores, o con "Más contrastante": se leen las imágenes del
+// mapa de fondo que se están viendo y se elige el color que más se distingue de ellas.
+const COLORES_DESLINDES = [
+  ['#000000', 'negro'], ['#ffffff', 'blanco'], ['#ffe600', 'amarillo'], ['#ff2d2d', 'rojo'],
+  ['#ff00e6', 'magenta'], ['#00e5ff', 'celeste'], ['#39ff14', 'verde'], ['#ff8a00', 'naranjo']
+];
+function ponerColorDeslindes(hex, guardar = true) {
+  document.getElementById('filtro-deslindes-color').setAttribute('flood-color', hex);
+  document.querySelectorAll('#deslindes-colores button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.color === hex)));
+  if (guardar) { try { localStorage.setItem('deslindes-color', hex); } catch (e) { /* nada */ } }
+}
+(function iniciarColoresDeslindes() {
+  const caja = document.getElementById('deslindes-colores');
+  COLORES_DESLINDES.forEach(([hex, nombre]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.color = hex;
+    b.style.background = hex;
+    b.title = nombre;
+    b.setAttribute('aria-label', 'Líneas en ' + nombre);
+    b.onclick = () => { ponerColorDeslindes(hex); document.getElementById('deslindes-color-msg').textContent = ''; };
+    caja.appendChild(b);
+  });
+  let inicial = '#000000';
+  try { inicial = localStorage.getItem('deslindes-color') || inicial; } catch (e) { /* nada */ }
+  ponerColorDeslindes(COLORES_DESLINDES.some(([h]) => h === inicial) ? inicial : '#000000', false);
+})();
+// sRGB → CIELAB, para medir diferencias de color como las percibe el ojo
+function rgbALab(r, g, b) {
+  const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const R = lin(r), G = lin(g), B = lin(b);
+  const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const x = f((0.4124 * R + 0.3576 * G + 0.1805 * B) / 0.95047), y = f(0.2126 * R + 0.7152 * G + 0.0722 * B),
+    z = f((0.0193 * R + 0.1192 * G + 0.9505 * B) / 1.08883);
+  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+}
+// Píxeles (en Lab) de las imágenes de fondo visibles: se vuelven a pedir con permiso de
+// lectura (CORS), que los mapas de Esri y OpenStreetMap entregan
+async function muestrasDelFondo() {
+  const vista = map.getContainer().getBoundingClientRect();
+  const imgs = [...map.getPane('tilePane').querySelectorAll('img.leaflet-tile')].filter((im) => {
+    if (!/arcgisonline|arcgis\.com|openstreetmap|cartocdn|openfreemap/.test(im.src) || /Reference\//.test(im.src)) return false;
+    const r = im.getBoundingClientRect();
+    return r.width > 0 && r.right > vista.left && r.left < vista.right && r.bottom > vista.top && r.top < vista.bottom;
+  }).slice(0, 8);
+  const lab = [];
+  const lienzo = document.createElement('canvas');
+  lienzo.width = lienzo.height = 32;
+  const ctx = lienzo.getContext('2d', { willReadFrequently: true });
+  await Promise.all(imgs.map(async (im) => {
+    try {
+      const bm = await createImageBitmap(await (await fetch(im.src, { mode: 'cors' })).blob());
+      ctx.drawImage(bm, 0, 0, 32, 32);
+      const d = ctx.getImageData(0, 0, 32, 32).data;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) lab.push(rgbALab(d[i], d[i + 1], d[i + 2]));
+    } catch (e) { /* esa imagen no se pudo leer */ }
+  }));
+  return lab;
+}
+// El color cuya diferencia con el fondo es mayor, medida en el 15 % de los píxeles que más
+// se le parecen (así no gana un color que se pierde en una parte de la vista)
+async function colorMasContrastante() {
+  const fondo = await muestrasDelFondo();
+  if (fondo.length < 100) return null;
+  let mejor = null;
+  COLORES_DESLINDES.forEach(([hex, nombre]) => {
+    const c = rgbALab(parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16));
+    const ds = fondo.map((p) => Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2])).sort((a, b) => a - b);
+    const puntaje = ds[Math.floor(ds.length * 0.15)];
+    if (!mejor || puntaje > mejor.puntaje) mejor = { hex, nombre, puntaje };
+  });
+  return mejor;
+}
+document.getElementById('deslindes-color-auto').addEventListener('click', async () => {
+  const msg = document.getElementById('deslindes-color-msg');
+  msg.textContent = 'Analizando el mapa de fondo…';
+  try {
+    const m = await colorMasContrastante();
+    if (!m) { msg.textContent = 'No se pudo leer el mapa de fondo; elige un color a mano.'; return; }
+    ponerColorDeslindes(m.hex);
+    msg.textContent = 'El más contrastante con lo que se ve ahora: ' + m.nombre + '.';
+  } catch (e) {
+    msg.textContent = 'No se pudo analizar el fondo; elige un color a mano.';
+  }
+});
+
 // Deslindes de predios por comuna: se guardan en un diccionario codigo→capa para
 // poder ir "sumando" comunas (varias a la vez) en vez de que cada una reemplace
 // a la anterior, como pasaba antes con una sola variable capaDeslindes.
@@ -2142,6 +2245,7 @@ function agregarCapaDeslindes(codigoComuna) {
 
   const activo = document.getElementById('toggle-deslindes').checked;
   document.getElementById('deslindes-opacity-row').style.display = activo ? 'flex' : 'none';
+  document.getElementById('deslindes-color-row').style.display = activo ? 'flex' : 'none';
   const codigo = codigoComuna || comunaDeslindesActual;
   if (!activo || !codigo || capasDeslindes[codigo]) return;
 
@@ -2214,6 +2318,7 @@ function activarDeslindesAuto() {
   if (chk.checked || deslindesApagadosPorUsuario) return;
   chk.checked = true;
   document.getElementById('deslindes-opacity-row').style.display = 'flex';
+  document.getElementById('deslindes-color-row').style.display = 'flex';
 }
 
 document.getElementById('toggle-deslindes').addEventListener('change', (e) => {
@@ -2224,6 +2329,7 @@ document.getElementById('toggle-deslindes').addEventListener('change', (e) => {
   } else {
     quitarCapasDeslindes();
     document.getElementById('deslindes-opacity-row').style.display = 'none';
+    document.getElementById('deslindes-color-row').style.display = 'none';
   }
 });
 
@@ -2870,6 +2976,33 @@ function agruparEdificios(items) {
 // plano. En las más grandes, con el botón "Avalúos" de cada piso o fila.
 const AVALUOS_AUTOMATICOS_HASTA = 30;
 
+// Avalúos ya consultados: se recuerdan 30 días en este navegador (cambian cada semestre),
+// así al volver a abrir una copropiedad aparecen al instante y sin consultar al SII
+const AVALUOS_KEY = 'avaluos-v1';
+let avaluosLocal = null;
+function leerAvaluosLocal() {
+  if (avaluosLocal) return avaluosLocal;
+  try { avaluosLocal = JSON.parse(localStorage.getItem(AVALUOS_KEY) || '{}') || {}; } catch (e) { avaluosLocal = {}; }
+  return avaluosLocal;
+}
+function avaluoGuardado(comuna, rol) {
+  const e = leerAvaluosLocal()[comuna + ':' + rol];
+  return e && Date.now() - e[1] < 30 * 86400000 ? e[0] : 0;
+}
+let guardadoPendiente = null;
+function guardarAvaluo(comuna, rol, v) {
+  const m = leerAvaluosLocal();
+  m[comuna + ':' + rol] = [v, Date.now()];
+  clearTimeout(guardadoPendiente);
+  guardadoPendiente = setTimeout(() => {
+    try {
+      const claves = Object.keys(m);
+      if (claves.length > 20000) claves.sort((a, b) => m[a][1] - m[b][1]).slice(0, claves.length - 15000).forEach((k) => delete m[k]);
+      localStorage.setItem(AVALUOS_KEY, JSON.stringify(m));
+    } catch (e) { /* sin almacenamiento: no pasa nada */ }
+  }, 500);
+}
+
 // "$85,3 M" para mostrar bajo el número de la unidad
 function avaluoCorto(v) {
   if (!(v > 0)) return '';
@@ -2897,13 +3030,14 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
   // que llega un avalúo (de este u otro piso) se redibujan todos con esa referencia.
   const LADO_MAX = 44;
   const filasCuadros = [];
+  const principalesPorEdif = {};
   const notaCuadros = document.createElement('p');
   notaCuadros.className = 'plano-cuadros-nota';
   notaCuadros.hidden = true;
   notaCuadros.textContent = 'Cuadrados azules: uno por unidad con avalúo consultado, en orden de numeración y con su '
-    + 'número. El área de cada cuadrado es proporcional al avalúo; el más grande es el mayor avalúo consultado en esa '
-    + 'dirección (cada dirección del plano tiene su propia escala, y en ella las bodegas y los estacionamientos '
-    + 'tienen otra aparte de la de departamentos, oficinas y locales), y se redibujan al consultar otros pisos. En los '
+    + 'número. El área de cada cuadrado es proporcional al avalúo; en una copropiedad, el más grande es el mayor avalúo '
+    + 'consultado en esa dirección (con escalas aparte para bodegas y estacionamientos); las casas (direcciones de una '
+    + 'sola unidad) se comparan entre todas las casas del resultado, por ejemplo las de toda la calle. Se redibujan al consultar otros pisos. En los '
     + 'cuadrados muy chicos el número sobresale.';
   let redibujoPendiente = false;
   // Si una fila de cuadrados no cabe, la ventana se ensancha lo necesario (hasta el ancho
@@ -2940,7 +3074,15 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
       // Cada dirección (edificio) tiene su escala, y dentro de ella las bodegas y los
       // estacionamientos tienen una propia (si no, al lado de los departamentos quedan
       // diminutos): el mayor avalúo de cada grupo es su cuadrado más grande
-      const escala = (x) => x.edif + '|' + (x.tipo === 'bodega' || x.tipo === 'estac' ? x.tipo : 'principal');
+      // Las casas (direcciones con una sola unidad, o unidades sin número de depto) comparten
+      // UNA escala entre todas las del resultado: al buscar una calle, el tamaño de cada casa
+      // se compara con el de las demás casas de la calle. Las unidades de una copropiedad
+      // (departamentos) siguen con la escala de su propio edificio.
+      const escala = (x) => {
+        const grupo = x.tipo === 'bodega' || x.tipo === 'estac' ? x.tipo : 'principal';
+        const esCasa = grupo === 'principal' && (principalesPorEdif[x.edif] <= 1 || !x.numero);
+        return (esCasa ? 'casas' : x.edif) + '|' + grupo;
+      };
       const maxPorEdif = {};
       items.forEach((x) => { if (x.avaluo > 0) maxPorEdif[escala(x)] = Math.max(maxPorEdif[escala(x)] || 0, x.avaluo); });
       notaCuadros.hidden = !Object.keys(maxPorEdif).length;
@@ -2956,7 +3098,7 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
           c.style.width = c.style.height = lado.toFixed(1) + 'px';
           // El número de la unidad: del tamaño que quepa, pero nunca menor que 8 px; si el
           // cuadrado es más chico, el número sobresale
-          const texto = String(x.numero || '•');
+          const texto = String(x.numero || x.numCalle || '•'); // las casas, con su número de calle
           const b = document.createElement('b');
           b.textContent = texto;
           const fuente = Math.max(8, Math.min(11, Math.floor((lado - 3) / (texto.length * 0.62))));
@@ -2971,6 +3113,7 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
   };
   const ponerAvaluo = (x, v) => {
     x.avaluo = v;
+    if (v > 0) guardarAvaluo(comunaCodigo || x.u.comuna, String(x.u.rol || `${x.u.manzana}-${x.u.predio}`), v);
     redibujarCuadros();
     const sp = x.btn && x.btn.querySelector('.u-av');
     if (!sp) return;
@@ -2992,20 +3135,25 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
   async function trabajar() {
     if (trabajando) return;
     trabajando = true;
-    try {
+    // El SII tarda unos 3 s en responder cada avalúo. Para no esperar cada respuesta antes de
+    // pedir la siguiente, se lanza una consulta nueva por segundo (el mismo ritmo de antes)
+    // con hasta 3 en curso a la vez: el plano se llena unas 3 veces más rápido.
+    const obrero = async () => {
       while (cola.length && !detenerAv) {
         if (!cont.isConnected && hechos > 0) break; // se cerró o se hizo otra búsqueda
         const x = cola.shift();
-        mostrarEstado(`Consultando avalúos al SII (uno por segundo): ${hechos} de ${totalPedidos}…`, true);
+        mostrarEstado(`Consultando avalúos al SII (uno nuevo por segundo): ${hechos} de ${totalPedidos}…`, true);
         const rol = String(x.u.rol || `${x.u.manzana}-${x.u.predio}`);
         const { manzana: mz, propiedad: pr } = splitRol(rol);
         const pausas = [10, 20, 40];
         let n429 = 0, nOtros = 0, listo = false;
         while (!listo && !detenerAv) {
           try {
-            // Siempre al menos 1 s entre una consulta al SII y la siguiente
-            await espera(Math.max(0, 1000 - (Date.now() - ultimaConsulta)));
-            ultimaConsulta = Date.now();
+            // Siempre al menos 1 s entre el inicio de una consulta al SII y el de la siguiente
+            const turno = Math.max(Date.now(), ultimaConsulta + 1000);
+            ultimaConsulta = turno;
+            await espera(turno - Date.now());
+            if (detenerAv) break;
             const d = await obtenerPredioNacional(comunaCodigo || String(x.u.comuna || ''), mz, pr);
             ponerAvaluo(x, Number(d && d.valorTotal) || 0);
             listo = true;
@@ -3021,6 +3169,7 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
             }
             if (/429/.test(msg)) {
               detenerAv = true;
+              x.enCola = false;
               cola.unshift(x);
               mostrarEstado('El SII está limitando las consultas: se dejaron de pedir avalúos. Intenta más tarde.', false);
               break;
@@ -3038,7 +3187,11 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
           }
         }
         if (listo) hechos++;
+        else { x.enCola = false; const sp = x.btn && x.btn.querySelector('.u-av'); if (sp && sp.classList.contains('pend')) sp.textContent = ''; }
       }
+    };
+    try {
+      await Promise.all([obrero(), obrero(), obrero()]);
     } finally {
       trabajando = false;
       // Lo que quedó sin pedir vuelve a quedar disponible para su botón
@@ -3102,7 +3255,8 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
     // Si la búsqueda ya trajo el avalúo (o se consultó antes), se muestra de una vez
     const { manzana: mzB, propiedad: prB } = splitRol(String(rol));
     const enCache = predioNacionalCache[(comunaCodigo || x.u.comuna) + ':' + mzB + '-' + prB];
-    const yaVino = Number(buscarAvaluo(x.u)) > 0 ? Number(buscarAvaluo(x.u))
+    const guardado = avaluoGuardado(comunaCodigo || x.u.comuna, rol);
+    const yaVino = guardado > 0 ? guardado : Number(buscarAvaluo(x.u)) > 0 ? Number(buscarAvaluo(x.u))
       : (enCache && Number(enCache.valorTotal) > 0 ? Number(enCache.valorTotal) : undefined);
     if (yaVino) setTimeout(() => ponerAvaluo(x, yaVino));
     b.onclick = () => {
@@ -3146,6 +3300,7 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
   edificios.forEach((edif, iEdif) => {
   const deEdificio = edif.items;
   deEdificio.forEach((x) => { x.edif = iEdif; }); // cada dirección escala sus cuadrados aparte
+  principalesPorEdif[iEdif] = deEdificio.filter((x) => x.tipo !== 'bodega' && x.tipo !== 'estac').length;
   if (edificios.length > 1 || /Edificio/.test(edif.titulo)) {
     const h = document.createElement('h3');
     h.className = 'plano-edif-titulo';
