@@ -92,7 +92,23 @@
     user-select:none;
   }
   .rotate-btn:hover{ background:var(--paper); }
+  /* Rosa de los vientos (abajo a la derecha) */
+  .rosa-vientos{ cursor:pointer; display:flex; flex-direction:column; align-items:center; user-select:none;
+    filter:drop-shadow(0 1px 3px rgba(0,0,0,0.45)); }
+  .rosa-vientos .rosa-fondo{ fill:rgba(255,255,255,0.88); stroke:#5a6873; stroke-width:1.2; }
+  .rosa-vientos .rosa-diagonal polygon{ fill:#b9c3ca; }
+  .rosa-vientos .rosa-norte{ fill:#c0392b; }
+  .rosa-vientos .rosa-punta{ fill:#33424d; }
+  .rosa-vientos .rosa-eje{ fill:#fff; stroke:#33424d; stroke-width:1; }
+  .rosa-vientos .rosa-letra{ font:700 9px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; fill:#33424d;
+    text-anchor:middle; dominant-baseline:middle; }
+  .rosa-vientos .rosa-n{ fill:#c0392b; font-size:10px; }
+  .rosa-vientos .rosa-grados{ margin-top:2px; padding:1px 5px; border-radius:3px; background:rgba(255,255,255,0.88);
+    color:#33424d; font:600 10px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; white-space:nowrap; }
+  .rosa-vientos:hover .rosa-fondo{ fill:#fff; }
+  .leaflet-bar a.rotate-btn{ display:flex; line-height:1; } /* leaflet.css pone display:block y line-height:30px a los botones */
   .rotate-arrow{
+    display:inline-block; /* si no, el giro de la flecha no se aplica */
     font-size:1rem;
     transition:transform 0.2s ease;
   }
@@ -818,6 +834,10 @@
         Satelital alternativo (más vertical)
       </label>
       <label class="layer-toggle">
+        <input type="radio" name="mapa-base" value="satelital-mapbox">
+        Satelital Mapbox
+      </label>
+      <label class="layer-toggle">
         <input type="radio" name="mapa-base" value="osm">
         OpenStreetMap
       </label>
@@ -935,7 +955,7 @@ const TGR_URL = "https://tgr.gob.cl/tramites-tgr/certificado-de-deuda-de-contrib
 // ---- Mapa base: satelital + etiquetas (Esri, sin necesidad de API key) ----
 const map = L.map('map', {
   zoomControl: true,
-  boxZoom: false, // Shift+arrastrar lo usa ahora el giro del mapa, no el zoom por recuadro
+  boxZoom: false, // Shift/Ctrl+arrastrar lo usa ahora el giro del mapa, no el zoom por recuadro
   rotate: true,
   rotateControl: false, // se reemplaza por el botón de giro en 90° de más abajo
   touchRotate: true,
@@ -989,6 +1009,21 @@ const teselasSatelitalVertical = L.tileLayer('https://clarity.maptiles.arcgis.co
 });
 const capaSatelitalVertical = L.layerGroup([
   teselasSatelitalVertical,
+  ...capasReferenciaEsri()
+]);
+
+// Satelital de Mapbox: otra fuente de imágenes, para comparar nitidez con Esri. Usa una
+// clave pública de Mapbox (cuenta del sitio); el uso se cobra por imagen pedida sobre el
+// tramo gratuito, por eso no es el fondo por omisión. Sirve también como fondo para el
+// botón "Más contrastante" de los deslindes (las imágenes de Mapbox permiten lectura).
+const MAPBOX_TOKEN = 'pk.eyJ1IjoiZmFiaWFuYWx2YXJhZG9kYXZpZCIsImEiOiJjbXdoenkxemMwNml0Mnpwdmcyd3JxMzd2In0.GQWiq4q8UsduMhfQ8cjpcQ';
+const teselasMapbox = L.tileLayer('https://api.mapbox.com/styles/v1/mapbox/satellite-v9/tiles/256/{z}/{x}/{y}@2x?access_token=' + MAPBOX_TOKEN, {
+  maxZoom: 21,
+  maxNativeZoom: 19,
+  attribution: '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; Maxar'
+});
+const capaSatelitalMapbox = L.layerGroup([
+  teselasMapbox,
   ...capasReferenciaEsri()
 ]);
 
@@ -1069,7 +1104,7 @@ async function prepararLimitesComunales() {
   limitesComunalesListos = true;
 }
 
-const MAPAS_BASE = { satelital: capaSatelital, 'satelital-vertical': capaSatelitalVertical, osm: capaOSM, limites: capaLimitesComunales };
+const MAPAS_BASE = { satelital: capaSatelital, 'satelital-vertical': capaSatelitalVertical, 'satelital-mapbox': capaSatelitalMapbox, osm: capaOSM, limites: capaLimitesComunales };
 let mapaBaseActual = capaSatelital;
 capaSatelital.addTo(map);
 
@@ -1136,7 +1171,8 @@ let rotateLabelEl = null;
 let rotateBtnEl = null;
 
 function sincronizarFlechaRotar(bearing) {
-  if (rotateArrowEl) rotateArrowEl.style.transform = 'rotate(' + (-bearing) + 'deg)';
+  // La flecha apunta al norte real en pantalla (el mismo ángulo que la rosa de los vientos)
+  if (rotateArrowEl) rotateArrowEl.style.transform = 'rotate(' + (typeof anguloNortePantalla === 'function' ? anguloNortePantalla() : -bearing) + 'deg)';
 }
 
 // Actualiza el botón para que quede alineado con la orientación exacta más cercana
@@ -1253,41 +1289,151 @@ map.on('rotate', (e) => {
 });
 map.on('rotateend', () => actualizarBotonRotar(map.getBearing() || 0));
 window.addEventListener('click', (e) => {
-  if (Date.now() - ultimoGiro < 400 && mapContainer.contains(e.target)) {
+  if (Date.now() - ultimoGiro < 400 && mapContainer.contains(e.target) && !e.target.closest('.leaflet-control')) {
     e.stopPropagation();
     e.preventDefault();
   }
 }, true);
 
-// ---- Girar con Shift + arrastrar en PC (a mano, sin depender del plugin) ----
-// En el celular gira el gesto de dos dedos del plugin (touchRotate); en PC el
-// Shift+arrastrar del plugin no funciona con esta versión, así que se hace aquí.
+// ---- Girar en PC como en Google Maps ----
+// Se aprieta (con Ctrl o Shift, o con el botón derecho), se arrastra y el mapa gira
+// siguiendo al cursor alrededor del centro: el punto que se agarró queda bajo el cursor,
+// como si se tomara el papel y se le diera vuelta. Si se agarra muy cerca del centro
+// (donde el ángulo no se puede medir bien), gira por el movimiento horizontal.
+// En el celular gira el gesto de dos dedos del plugin (touchRotate).
 let girando = null;
+let giroConDerecho = false; // para no abrir el menú del botón derecho tras girar
+function centroPantallaMapa() {
+  const r = mapContainer.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
 mapContainer.addEventListener('mousedown', (e) => {
-  if (!e.shiftKey || e.button !== 0) return;
+  const conTecla = e.button === 0 && (e.ctrlKey || e.shiftKey || e.metaKey);
+  const conDerecho = e.button === 2;
+  if (!conTecla && !conDerecho) return;
   if (e.target.closest('#buscador, .leaflet-control, #panel-toggle')) return;
   e.preventDefault();
   e.stopPropagation();
-  girando = { x: e.clientX, y: e.clientY, bearing: map.getBearing() || 0 };
+  const c = centroPantallaMapa();
+  girando = {
+    x: e.clientX, y: e.clientY, bearing: map.getBearing() || 0,
+    angulo: Math.atan2(e.clientY - c.y, e.clientX - c.x),
+    porAngulo: Math.hypot(e.clientX - c.x, e.clientY - c.y) > 40,
+    movido: false, conDerecho
+  };
   map.dragging.disable();
   mapContainer.style.cursor = 'grabbing';
 }, true);
 window.addEventListener('mousemove', (e) => {
   if (!girando) return;
-  const delta = e.clientX - girando.x; // arrastrar a la derecha gira en sentido horario
-  const nuevo = ((girando.bearing + delta * 0.5) % 360 + 360) % 360; // 0.5° por px
+  if (Math.hypot(e.clientX - girando.x, e.clientY - girando.y) > 3) girando.movido = true;
+  let giro; // grados en sentido horario en pantalla
+  if (girando.porAngulo) {
+    const c = centroPantallaMapa();
+    giro = (Math.atan2(e.clientY - c.y, e.clientX - c.x) - girando.angulo) * 180 / Math.PI;
+  } else {
+    giro = (e.clientX - girando.x) * 0.5;
+  }
+  const nuevo = ((girando.bearing + SENTIDO_BEARING * giro) % 360 + 360) % 360;
   map.setBearing(nuevo);
   ultimoGiro = Date.now();
   sincronizarFlechaRotar(nuevo);
+  actualizarRosa();
 });
 window.addEventListener('mouseup', () => {
   if (!girando) return;
   ultimoGiro = Date.now(); // bloquea el clic que el navegador dispara al soltar
+  giroConDerecho = girando.conDerecho && girando.movido;
   girando = null;
   map.dragging.enable();
   mapContainer.style.cursor = '';
   actualizarBotonRotar(map.getBearing() || 0);
 });
+// Tras girar con el botón derecho no se abre el menú contextual (un clic derecho sin
+// arrastrar sí lo abre, como siempre)
+mapContainer.addEventListener('contextmenu', (e) => {
+  if (giroConDerecho) { e.preventDefault(); giroConDerecho = false; }
+}, true);
+
+// Cuánto cambia el "bearing" del plugin por cada grado que el contenido gira en sentido
+// horario en pantalla (+1 o -1). Se mide una vez en vez de suponerlo.
+const SENTIDO_BEARING = (() => {
+  const b0 = map.getBearing() || 0;
+  const c = map.getCenter();
+  const norte = (b) => {
+    map.setBearing(b);
+    const p0 = map.latLngToContainerPoint(c), p1 = map.latLngToContainerPoint(L.latLng(c.lat + 0.001, c.lng));
+    return Math.atan2(p1.y - p0.y, p1.x - p0.x);
+  };
+  const a = norte(0), d = norte(10);
+  map.setBearing(b0);
+  let dif = (d - a) * 180 / Math.PI;
+  if (dif > 180) dif -= 360; if (dif < -180) dif += 360;
+  return dif > 0 ? 1 : -1;
+})();
+
+// ---- Rosa de los vientos ----
+// Muestra hacia dónde está el norte (y los demás puntos cardinales) según el giro del
+// mapa, con los grados. Un clic vuelve a poner el norte arriba.
+const RosaControl = L.Control.extend({
+  options: { position: 'bottomright' },
+  onAdd: function () {
+    const div = L.DomUtil.create('div', 'rosa-vientos leaflet-control');
+    div.title = 'Rosa de los vientos — clic para poner el norte arriba';
+    div.setAttribute('role', 'button');
+    div.setAttribute('aria-label', div.title);
+    div.innerHTML = `
+      <svg viewBox="-50 -50 100 100" width="76" height="76" aria-hidden="true">
+        <circle r="47" class="rosa-fondo"/>
+        <g class="rosa-giro">
+          <g class="rosa-diagonal">
+            <polygon points="0,-30 5,-5 0,0 -5,-5" transform="rotate(45)"/>
+            <polygon points="0,-30 5,-5 0,0 -5,-5" transform="rotate(135)"/>
+            <polygon points="0,-30 5,-5 0,0 -5,-5" transform="rotate(225)"/>
+            <polygon points="0,-30 5,-5 0,0 -5,-5" transform="rotate(315)"/>
+          </g>
+          <polygon class="rosa-norte" points="0,-38 7,-7 0,0 -7,-7"/>
+          <polygon class="rosa-punta" points="0,-38 7,-7 0,0 -7,-7" transform="rotate(90)"/>
+          <polygon class="rosa-punta" points="0,-38 7,-7 0,0 -7,-7" transform="rotate(180)"/>
+          <polygon class="rosa-punta" points="0,-38 7,-7 0,0 -7,-7" transform="rotate(270)"/>
+          <circle r="3.2" class="rosa-eje"/>
+          <text class="rosa-letra rosa-n" y="-40">N</text>
+          <text class="rosa-letra" x="41" y="0">E</text>
+          <text class="rosa-letra" y="41">S</text>
+          <text class="rosa-letra" x="-41" y="0">O</text>
+        </g>
+      </svg>
+      <div class="rosa-grados">0°</div>`;
+    L.DomEvent.disableClickPropagation(div);
+    L.DomEvent.disableScrollPropagation(div);
+    L.DomEvent.on(div, 'click', () => {
+      map.setBearing(0);
+      actualizarBotonRotar(0);
+      actualizarRosa();
+    });
+    return div;
+  },
+});
+map.addControl(new RosaControl());
+// Ángulo en pantalla (grados, horario desde arriba) hacia donde apunta el norte
+function anguloNortePantalla() {
+  const c = map.getCenter();
+  const p0 = map.latLngToContainerPoint(c), p1 = map.latLngToContainerPoint(L.latLng(c.lat + 0.001, c.lng));
+  return (Math.atan2(p1.x - p0.x, -(p1.y - p0.y)) * 180 / Math.PI + 360) % 360;
+}
+function actualizarRosa() {
+  const g = document.querySelector('.rosa-vientos .rosa-giro');
+  if (!g) return;
+  const a = anguloNortePantalla();
+  g.setAttribute('transform', 'rotate(' + a.toFixed(1) + ')');
+  // Grados hacia donde mira la parte de arriba del mapa (rumbo, 0 = norte, 90 = este)
+  const rumbo = Math.round((360 - a) % 360) % 360;
+  const cardinal = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'][Math.round(rumbo / 45) % 8];
+  document.querySelector('.rosa-vientos .rosa-grados').textContent = 'Arriba: ' + cardinal + ' ' + rumbo + '°';
+}
+map.on('rotate', actualizarRosa);
+map.on('rotateend', actualizarRosa);
+actualizarRosa();
 
 let marker = null;
 
@@ -2131,7 +2277,7 @@ function rgbALab(r, g, b) {
 async function muestrasDelFondo() {
   const vista = map.getContainer().getBoundingClientRect();
   const imgs = [...map.getPane('tilePane').querySelectorAll('img.leaflet-tile')].filter((im) => {
-    if (!/arcgisonline|arcgis\.com|openstreetmap|cartocdn|openfreemap/.test(im.src) || /Reference\//.test(im.src)) return false;
+    if (!/arcgisonline|arcgis\.com|openstreetmap|cartocdn|openfreemap|api\.mapbox\.com/.test(im.src) || /Reference\//.test(im.src)) return false;
     const r = im.getBoundingClientRect();
     return r.width > 0 && r.right > vista.left && r.left < vista.right && r.bottom > vista.top && r.top < vista.bottom;
   }).slice(0, 8);
@@ -2492,7 +2638,17 @@ function datoCatastro(comuna, rol) {
   const { manzana, propiedad } = splitRol(String(rol || ''));
   const r = d.m[String(parseInt(manzana, 10))] && d.m[String(parseInt(manzana, 10))][String(parseInt(propiedad, 10))];
   if (!r) return null;
-  return { avaluo: r[0], material: r[1], calidad: r[2], ano: r[3], m2: r[4], lineas: r[5], bienComun: r[6] || 0, periodo: d.periodo };
+  // Archivos nuevos traen el terreno en la posición 6 y el bien común en la 7; los antiguos,
+  // sin terreno, traían el bien común en la 6
+  const conTerreno = Array.isArray(d.campos) && d.campos.includes('terreno');
+  const bienComun = (conTerreno ? r[7] : r[6]) || 0;
+  let terreno = conTerreno ? (r[6] || 0) : null, terrenoComun = false;
+  // Unidad de una copropiedad: su terreno es 0; se muestra el del bien común del edificio
+  if (conTerreno && !terreno && bienComun) {
+    const bc = d.m[String(parseInt(manzana, 10))][String(bienComun)];
+    if (bc && bc[6]) { terreno = bc[6]; terrenoComun = true; }
+  }
+  return { avaluo: r[0], material: r[1], calidad: r[2], ano: r[3], m2: r[4], lineas: r[5], terreno, terrenoComun, bienComun, periodo: d.periodo };
 }
 // Filas [etiqueta, valor] para mostrar: material, calidad, año y m²
 function filasCatastro(c) {
@@ -2503,6 +2659,7 @@ function filasCatastro(c) {
   if (c.calidad) filas.push(['Calidad', c.calidad + ' (escala SII: 1 la mejor, 5 la más baja)']);
   if (c.ano) filas.push(['Año', String(c.ano)]);
   if (c.m2) filas.push(['Construido', c.m2.toLocaleString('es-CL') + ' m²']);
+  if (c.terreno) filas.push(['Terreno', c.terreno.toLocaleString('es-CL') + ' m²' + (c.terrenoComun ? ' (de toda la copropiedad)' : '')]);
   if (filas.length && sem[0]) filas.push(['Fuente', 'Catastro SII, ' + (sem[1] === '1' ? '1.er' : '2.º') + ' semestre ' + sem[0]]);
   return filas;
 }
