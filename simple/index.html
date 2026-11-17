@@ -92,26 +92,6 @@
     user-select:none;
   }
   .rotate-btn:hover{ background:var(--paper); }
-  /* Rosa de los vientos (abajo a la derecha) */
-  .rosa-vientos{ cursor:pointer; display:flex; flex-direction:column; align-items:center; user-select:none;
-    filter:drop-shadow(0 1px 3px rgba(0,0,0,0.45)); }
-  .rosa-vientos .rosa-fondo{ fill:rgba(255,255,255,0.88); stroke:#5a6873; stroke-width:1.2; }
-  .rosa-vientos .rosa-diagonal polygon{ fill:#b9c3ca; }
-  .rosa-vientos .rosa-norte{ fill:#c0392b; }
-  .rosa-vientos .rosa-punta{ fill:#33424d; }
-  .rosa-vientos .rosa-eje{ fill:#fff; stroke:#33424d; stroke-width:1; }
-  .rosa-vientos .rosa-letra{ font:700 9px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; fill:#33424d;
-    text-anchor:middle; dominant-baseline:middle; }
-  .rosa-vientos .rosa-n{ fill:#c0392b; font-size:10px; }
-  .rosa-vientos .rosa-grados{ margin-top:2px; padding:1px 5px; border-radius:3px; background:rgba(255,255,255,0.88);
-    color:#33424d; font:600 10px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; white-space:nowrap; }
-  .rosa-vientos:hover .rosa-fondo{ fill:#fff; }
-  /* En el celular, más chica y sin el texto de grados */
-  @media (max-width:720px){
-    .rosa-vientos svg{ width:36px; height:36px; }
-    .rosa-vientos .rosa-grados{ display:none; }
-    .leaflet-bottom.leaflet-right .rosa-vientos{ margin-right:8px; margin-bottom:6px; }
-  }
   .leaflet-bar a.rotate-btn{ display:flex; line-height:1; } /* leaflet.css pone display:block y line-height:30px a los botones */
   .rotate-arrow{
     display:inline-block; /* si no, el giro de la flecha no se aplica */
@@ -1177,7 +1157,7 @@ let rotateLabelEl = null;
 let rotateBtnEl = null;
 
 function sincronizarFlechaRotar(bearing) {
-  // La flecha apunta al norte real en pantalla (el mismo ángulo que la rosa de los vientos)
+  // La flecha apunta al norte real en pantalla
   if (rotateArrowEl) rotateArrowEl.style.transform = 'rotate(' + (typeof anguloNortePantalla === 'function' ? anguloNortePantalla() : -bearing) + 'deg)';
 }
 
@@ -1344,7 +1324,6 @@ window.addEventListener('mousemove', (e) => {
   map.setBearing(nuevo);
   ultimoGiro = Date.now();
   sincronizarFlechaRotar(nuevo);
-  actualizarRosa();
 });
 window.addEventListener('mouseup', () => {
   if (!girando) return;
@@ -1378,68 +1357,12 @@ const SENTIDO_BEARING = (() => {
   return dif > 0 ? 1 : -1;
 })();
 
-// ---- Rosa de los vientos ----
-// Muestra hacia dónde está el norte (y los demás puntos cardinales) según el giro del
-// mapa, con los grados. Un clic vuelve a poner el norte arriba.
-const RosaControl = L.Control.extend({
-  options: { position: 'bottomright' },
-  onAdd: function () {
-    const div = L.DomUtil.create('div', 'rosa-vientos leaflet-control');
-    div.title = 'Rosa de los vientos — clic para poner el norte arriba';
-    div.setAttribute('role', 'button');
-    div.setAttribute('aria-label', div.title);
-    div.innerHTML = `
-      <svg viewBox="-50 -50 100 100" width="76" height="76" aria-hidden="true">
-        <circle r="47" class="rosa-fondo"/>
-        <g class="rosa-giro">
-          <g class="rosa-diagonal">
-            <polygon points="0,-30 5,-5 0,0 -5,-5" transform="rotate(45)"/>
-            <polygon points="0,-30 5,-5 0,0 -5,-5" transform="rotate(135)"/>
-            <polygon points="0,-30 5,-5 0,0 -5,-5" transform="rotate(225)"/>
-            <polygon points="0,-30 5,-5 0,0 -5,-5" transform="rotate(315)"/>
-          </g>
-          <polygon class="rosa-norte" points="0,-38 7,-7 0,0 -7,-7"/>
-          <polygon class="rosa-punta" points="0,-38 7,-7 0,0 -7,-7" transform="rotate(90)"/>
-          <polygon class="rosa-punta" points="0,-38 7,-7 0,0 -7,-7" transform="rotate(180)"/>
-          <polygon class="rosa-punta" points="0,-38 7,-7 0,0 -7,-7" transform="rotate(270)"/>
-          <circle r="3.2" class="rosa-eje"/>
-          <text class="rosa-letra rosa-n" y="-40">N</text>
-          <text class="rosa-letra" x="41" y="0">E</text>
-          <text class="rosa-letra" y="41">S</text>
-          <text class="rosa-letra" x="-41" y="0">O</text>
-        </g>
-      </svg>
-      <div class="rosa-grados">0°</div>`;
-    L.DomEvent.disableClickPropagation(div);
-    L.DomEvent.disableScrollPropagation(div);
-    L.DomEvent.on(div, 'click', () => {
-      map.setBearing(0);
-      actualizarBotonRotar(0);
-      actualizarRosa();
-    });
-    return div;
-  },
-});
-map.addControl(new RosaControl());
 // Ángulo en pantalla (grados, horario desde arriba) hacia donde apunta el norte
 function anguloNortePantalla() {
   const c = map.getCenter();
   const p0 = map.latLngToContainerPoint(c), p1 = map.latLngToContainerPoint(L.latLng(c.lat + 0.001, c.lng));
   return (Math.atan2(p1.x - p0.x, -(p1.y - p0.y)) * 180 / Math.PI + 360) % 360;
 }
-function actualizarRosa() {
-  const g = document.querySelector('.rosa-vientos .rosa-giro');
-  if (!g) return;
-  const a = anguloNortePantalla();
-  g.setAttribute('transform', 'rotate(' + a.toFixed(1) + ')');
-  // Grados hacia donde mira la parte de arriba del mapa (rumbo, 0 = norte, 90 = este)
-  const rumbo = Math.round((360 - a) % 360) % 360;
-  const cardinal = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'][Math.round(rumbo / 45) % 8];
-  document.querySelector('.rosa-vientos .rosa-grados').textContent = 'Arriba: ' + cardinal + ' ' + rumbo + '°';
-}
-map.on('rotate', actualizarRosa);
-map.on('rotateend', actualizarRosa);
-actualizarRosa();
 
 let marker = null;
 
