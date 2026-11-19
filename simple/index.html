@@ -3203,7 +3203,7 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
   // m² construidos de cada unidad, del catastro del SII (ya cargado antes de mostrar resultados)
   const items = unidades.map((u) => {
     const c = datoCatastro(comunaCodigo || u.comuna, u.rol || `${u.manzana}-${u.predio}`);
-    return { u, ...clasificarUnidad(u), m2: (c && c.m2) || 0 };
+    return { u, ...clasificarUnidad(u), m2: (c && c.m2) || 0, avCat: (c && c.avaluo) || 0 };
   });
   const cont = document.createElement('div');
   cont.className = 'plano';
@@ -3445,7 +3445,8 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
     const enCache = predioNacionalCache[(comunaCodigo || x.u.comuna) + ':' + mzB + '-' + prB];
     const guardado = avaluoGuardado(comunaCodigo || x.u.comuna, rol);
     const yaVino = guardado > 0 ? guardado : Number(buscarAvaluo(x.u)) > 0 ? Number(buscarAvaluo(x.u))
-      : (enCache && Number(enCache.valorTotal) > 0 ? Number(enCache.valorTotal) : undefined);
+      : (enCache && Number(enCache.valorTotal) > 0 ? Number(enCache.valorTotal)
+        : (x.avCat > 0 ? x.avCat : undefined)); // si no, el del catastro del SII (sin consultar)
     if (yaVino) setTimeout(() => ponerAvaluo(x, yaVino));
     b.onclick = () => {
       cont.querySelectorAll('.plano-u.elegida').forEach((e) => e.classList.remove('elegida'));
@@ -3463,17 +3464,6 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
     const us = document.createElement('div');
     us.className = 'plano-unidades';
     lista.slice().sort(ordenNum).forEach((x) => us.appendChild(boton(x)));
-    // En las copropiedades grandes, los avalúos se piden por piso o fila
-    if (muchas) {
-      const bt = document.createElement('button');
-      bt.type = 'button';
-      bt.className = 'plano-av-btn';
-      bt.textContent = 'Avalúos';
-      bt.title = 'Consultar al SII el avalúo de las ' + lista.length + ' unidades de esta fila (una por segundo)';
-      bt._lista = lista;
-      bt.onclick = () => { bt.disabled = true; pedirAvaluos(lista); };
-      us.appendChild(bt);
-    }
     f.append(num, us);
     return f;
   };
@@ -3559,9 +3549,8 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
     + 'y el subterráneo de bodegas y estacionamientos, del número o de la sigla SB (el 215 queda en el subterráneo 2, '
     + 'una estimación). Las letras (DP A, DP B…) se muestran como columnas. No muestra la posición real de las '
     + 'unidades dentro del piso. Toca una unidad para ver su rol y avalúo. '
-    + (muchas
-      ? 'Para ver los avalúos en el plano, toca «Avalúos» en cada piso: el SII los entrega de a uno, y pedirlos todos juntos podría bloquear las consultas.'
-      : 'Los avalúos se consultan solos al SII, de a uno por segundo.');
+    + 'Los avalúos vienen del catastro del SII'
+    + (muchas ? '.' : '; los que falten ahí se consultan solos al SII, de a uno por segundo.');
   cont.appendChild(notaCuadros);
   cont.appendChild(nota);
   redibujarCuadros(); // cuadrados de m²: no dependen de consultas al SII
