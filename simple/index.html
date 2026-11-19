@@ -639,6 +639,21 @@
   .plano-u.elegida{ outline:2px solid #a3402b; outline-offset:1px; }
   .plano-u .u-av{ display:block; font-size:0.58rem; font-weight:500; color:#2f3c45; margin-top:1px; white-space:nowrap; }
   .plano-u .u-av.pend{ color:#8a959d; }
+  /* Cada unidad es UN cuadrado de área proporcional a sus m² construidos (misma escala en todo el
+     plano): número al medio, m² arriba y avalúo abajo. Si el cuadrado es chico, los m² y el avalúo
+     salen por fuera (arriba y abajo) y el número sobresale con halo blanco. */
+  .plano-unidades{ align-items:center; }
+  .plano-unidades.con-chicos{ padding:13px 3px; row-gap:24px; }
+  .plano-u.cuadro{ position:relative; min-width:0; padding:2px 1px; box-sizing:border-box; display:flex; flex-direction:column;
+    align-items:center; justify-content:space-between; overflow:visible; transition:width .2s, height .2s; }
+  .plano-u.cuadro .u-m2, .plano-u.cuadro .u-av{ font-size:0.55rem; font-weight:500; color:#2f3c45; white-space:nowrap; line-height:1.05; margin:0; min-height:0.55rem; }
+  .plano-u.cuadro .u-num{ flex:1; display:flex; align-items:center; justify-content:center; white-space:nowrap; line-height:1; }
+  .plano-u.cuadro.sin-m2{ border-style:dashed; }
+  .plano-u.cuadro.chico{ padding:0; justify-content:center; }
+  .plano-u.cuadro.chico .u-m2, .plano-u.cuadro.chico .u-av{ position:absolute; left:50%; transform:translateX(-50%); }
+  .plano-u.cuadro.chico .u-m2{ bottom:100%; margin-bottom:1px; }
+  .plano-u.cuadro.chico .u-av{ top:100%; margin-top:1px; }
+  .plano-u.cuadro.chico .u-num{ position:absolute; inset:0; font-size:0.6rem; text-shadow:0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff; z-index:1; }
   .plano-av-btn{ font:inherit; font-size:0.62rem; font-weight:600; padding:0.2rem 0.4rem; border-radius:2px; cursor:pointer;
     background:#fff; color:var(--moss-dark); border:1px solid var(--moss); align-self:center; }
   .plano-av-btn:disabled{ opacity:0.45; cursor:default; }
@@ -3205,16 +3220,15 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
   const espera = (ms) => new Promise((r) => setTimeout(r, ms));
   // Fila de cuadrados de cada piso: uno por unidad, de área igual a sus m² construidos
   // (catastro del SII), con una sola escala para todo el plano.
-  const LADO_MAX_M2 = 90;
-  const filasCuadros = [];
+  const LADO_MAX_M2 = 150;
   const principalesPorEdif = {};
   const notaCuadros = document.createElement('p');
   notaCuadros.className = 'plano-cuadros-nota';
   notaCuadros.hidden = true;
-  notaCuadros.textContent = 'Cuadrados azules: uno por unidad, en orden de numeración y con su número. El área de cada '
-    + 'cuadrado es la superficie construida de la unidad según el catastro del SII, con una misma escala para todo el plano '
-    + '(departamentos, casas, bodegas y estacionamientos se pueden comparar entre sí). Las unidades sin superficie '
-    + 'construida en el catastro no tienen cuadrado. En los cuadrados muy chicos el número sobresale.';
+  notaCuadros.textContent = 'Cada unidad es un cuadrado cuya área es su superficie construida según el catastro del SII, '
+    + 'con una misma escala para todo el plano (departamentos, casas, bodegas y estacionamientos se pueden comparar entre '
+    + 'sí). Al medio va el número de la unidad, arriba los m² y abajo el avalúo; en los cuadrados chicos, los m² y el avalúo '
+    + 'quedan por fuera. Las unidades sin superficie en el catastro se muestran con borde punteado y un tamaño fijo.';
   let redibujoPendiente = false;
   // Si una fila de cuadrados no cabe, la ventana se ensancha lo necesario (hasta el ancho
   // de la pantalla); si ni así cabe, los cuadrados pasan a otra línea.
@@ -3225,16 +3239,15 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
     if (!modal || cont.hidden || !cont.isConnected) return;
     const maximo = window.innerWidth - 32;
     let falta = 0;
-    cont.querySelectorAll('.plano-cuadros').forEach((caja) => {
-      const natural = [...caja.children].reduce((a, c) => a + (parseFloat(c.style.width) || 0), 0) + 6;
-      const fila = caja.parentElement;
-      const disponible = fila.clientWidth - 8; // menos el relleno de la fila
-      falta = Math.max(falta, natural - disponible);
+    // Cada piso: suma de los anchos de sus cuadrados (y del botón Avalúos) más los espacios
+    cont.querySelectorAll('.plano-unidades').forEach((fila) => {
+      const hijos = [...fila.children];
+      const natural = hijos.reduce((a, c) => a + c.offsetWidth, 0) + 3 * Math.max(0, hijos.length - 1) + 6;
+      falta = Math.max(falta, natural - fila.clientWidth);
     });
     const ancho = modal.offsetWidth;
     const llegoAlMaximo = ancho >= maximo - 1;
-    // Si ni con todo el ancho de la pantalla cabe, los cuadrados pasan a otra línea
-    cont.querySelectorAll('.plano-cuadros').forEach((c) => c.classList.toggle('envolver', falta > 0 && llegoAlMaximo));
+    // Si ni con todo el ancho de la pantalla cabe, los cuadrados pasan a otra línea (flex-wrap)
     if (falta > 0 && !llegoAlMaximo) {
       modal.style.maxWidth = Math.min(maximo, ancho + falta + 4) + 'px';
       // Al ensancharse, los botones de las unidades se reacomodan: se vuelve a medir
@@ -3254,34 +3267,33 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
       // UNA escala entre todas las del resultado: al buscar una calle, el tamaño de cada casa
       // se compara con el de las demás casas de la calle. Las unidades de una copropiedad
       // (departamentos) siguen con la escala de su propio edificio.
-      // Escala única y real: el lado es proporcional a la raíz de los m² construidos. Por
-      // defecto 3 px por metro (100 m² = 30 px de lado); si la unidad más grande no cabe en
-      // LADO_MAX_M2, se achica la escala de todo el plano por igual.
+      // Escala única y real: el lado de cada unidad es proporcional a la raíz de sus m²
+      // construidos. Por defecto 7 px por metro (49 m² = 49 px de lado); si la unidad más
+      // grande no cabe en LADO_MAX_M2, se achica la escala de todo el plano por igual.
       const maxM2 = items.reduce((a, x) => Math.max(a, x.m2 || 0), 0);
-      const pxPorMetro = maxM2 ? Math.min(3, LADO_MAX_M2 / Math.sqrt(maxM2)) : 0;
+      const pxPorMetro = maxM2 ? Math.min(7, LADO_MAX_M2 / Math.sqrt(maxM2)) : 0;
       notaCuadros.hidden = !maxM2;
-      filasCuadros.forEach(({ caja, lista }) => {
-        caja.textContent = '';
-        // En orden de numeración, igual que los botones de las unidades
-        lista.slice().sort(ordenNum).forEach((x) => {
-          if (!(x.m2 > 0) || !pxPorMetro) return;
-          // Siempre proporcional (sin tamaño mínimo): área = m² construidos
-          const lado = Math.max(1, pxPorMetro * Math.sqrt(x.m2));
-          const c = document.createElement('i');
-          c.style.width = c.style.height = lado.toFixed(1) + 'px';
-          // El número de la unidad: del tamaño que quepa, pero nunca menor que 8 px; si el
-          // cuadrado es más chico, el número sobresale
-          const texto = String(x.numero || x.numCalle || '•'); // las casas, con su número de calle
-          const b = document.createElement('b');
-          b.textContent = texto;
-          const fuente = Math.max(8, Math.min(11, Math.floor((lado - 3) / (texto.length * 0.62))));
-          b.style.fontSize = fuente + 'px';
-          if (texto.length * fuente * 0.62 > lado - 2 || fuente > lado - 2) c.classList.add('chico');
-          c.appendChild(b);
-          c.title = (x.numero || x.u.direccion || '') + ' · ' + x.m2.toLocaleString('es-CL') + ' m² construidos';
-          caja.appendChild(c);
-        });
+      const filasConChicos = new Set();
+      items.forEach((x) => {
+        const b = x.btn;
+        if (!b) return;
+        const lado = x.m2 > 0 && pxPorMetro ? Math.max(6, pxPorMetro * Math.sqrt(x.m2)) : 46;
+        b.style.width = b.style.height = lado.toFixed(1) + 'px';
+        b.classList.toggle('sin-m2', !(x.m2 > 0));
+        const chico = lado < 46;
+        b.classList.toggle('chico', chico);
+        b.style.margin = '';
+        if (chico && b.parentElement) filasConChicos.add(b.parentElement);
+        // Los m² y el avalúo de un cuadrado chico van por fuera: se le da margen a los lados
+        // para que esos textos no se monten sobre los cuadrados vecinos
+        if (chico) {
+          // (estimado por largo del texto: el plano puede estar oculto y no se puede medir)
+          const ancho = Math.max(...[...b.querySelectorAll('.u-m2, .u-av')].map((e) => e.textContent.length * 5));
+          const m = Math.max(0, (ancho - lado) / 2 + 1);
+          if (m) b.style.margin = '0 ' + m.toFixed(1) + 'px';
+        }
       });
+      cont.querySelectorAll('.plano-unidades').forEach((f) => f.classList.toggle('con-chicos', filasConChicos.has(f)));
     });
   };
   const ponerAvaluo = (x, v) => {
@@ -3413,14 +3425,18 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
   const boton = (x) => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'plano-u t-' + x.tipo;
+    b.className = 'plano-u cuadro t-' + x.tipo;
     // Sin número (casas "411 C", "585 CASA A"): la letra o el último trozo de la dirección
     const ult = String(x.u.direccion || '').trim().split(/\s+/).pop() || '';
+    const m2 = document.createElement('span');
+    m2.className = 'u-m2';
+    m2.textContent = x.m2 > 0 ? x.m2.toLocaleString('es-CL') + ' m²' : 's/m²';
     const num = document.createElement('span');
+    num.className = 'u-num';
     num.textContent = x.numero || (x.tipo === 'depto' && ult.length <= 5 && !/^\d+$/.test(ult) ? ult : '') || (x.tipo === 'depto' ? (x.numCalle || '•') : '•');
     const av = document.createElement('span');
     av.className = 'u-av';
-    b.append(num, av);
+    b.append(m2, num, av);
     x.btn = b;
     const rol = x.u.rol || `${x.u.manzana}-${x.u.predio}`;
     b.title = `${rol} · ${x.u.direccion || ''}`;
@@ -3458,11 +3474,6 @@ function construirPlanoEdificio(unidades, alElegir, comunaCodigo) {
       bt.onclick = () => { bt.disabled = true; pedirAvaluos(lista); };
       us.appendChild(bt);
     }
-    // Al lado (o al final de la fila, si no hay botón), los cuadrados de m² construidos
-    const caja = document.createElement('span');
-    caja.className = 'plano-cuadros';
-    us.appendChild(caja);
-    filasCuadros.push({ caja, lista });
     f.append(num, us);
     return f;
   };
