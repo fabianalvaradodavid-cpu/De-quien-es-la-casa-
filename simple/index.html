@@ -681,6 +681,7 @@
   ul.unit-list li.resaltada{ background:#fff6e5; }
   .unit-marca{ display:inline-block; margin-left:0.4rem; padding:0 0.3rem; border-radius:2px; background:#fdf1d6; color:#7a5a12; font-size:0.7rem; }
   .volver-plano{ display:block; margin:0 0 0.5rem; padding:0.4rem 0.75rem !important; font-size:0.85rem !important; }
+  .volver-plano.volver-fijo{ position:sticky; top:0; z-index:5; box-shadow:0 2px 6px rgba(0,0,0,0.15); background:#fff; }
   .modal-filter{
     margin-bottom:0.9rem;
   }
@@ -3914,18 +3915,24 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
       ul.querySelectorAll('li.resaltada').forEach((x) => x.classList.remove('resaltada'));
       li.classList.add('resaltada');
       if (li._abrir) li._abrir();
-      // Atajo para volver al plano, en la misma unidad, sin subir toda la lista
-      ul.querySelectorAll('.volver-plano').forEach((x) => x.remove());
-      const volver = document.createElement('button');
-      volver.type = 'button';
-      volver.className = 'secondary volver-plano';
-      volver.textContent = '← Volver al plano';
-      volver.onclick = () => {
-        volver.remove();
+      // Atajo para volver al plano, en la misma unidad, sin subir toda la lista: queda fijo
+      // arriba de la lista mientras se recorre (y también sobre la unidad elegida)
+      resultsEl.querySelectorAll('.volver-plano').forEach((x) => x.remove());
+      const volverA = () => {
+        resultsEl.querySelectorAll('.volver-plano').forEach((x) => x.remove());
         mostrar('plano');
         const b = plano.el.querySelector('.plano-u.elegida');
         (b || tabs).scrollIntoView({ block: 'center', behavior: 'smooth' });
       };
+      const fijo = document.createElement('button');
+      fijo.type = 'button';
+      fijo.className = 'secondary volver-plano volver-fijo';
+      fijo.textContent = '← Volver al plano';
+      fijo.onclick = volverA;
+      ul.parentNode.insertBefore(fijo, ul);
+      const volver = fijo.cloneNode(true);
+      volver.classList.remove('volver-fijo');
+      volver.onclick = volverA;
       li.insertBefore(volver, li.firstChild);
       li.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }, comunaCodigo);
@@ -3935,6 +3942,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
     nota.textContent = `${ordenadas.length} unidad(es) encontrada(s).`;
     function mostrar(v) {
       vistaActual = v;
+      if (v === 'plano') resultsEl.querySelectorAll('.volver-plano').forEach((x) => x.remove());
       const modalEl = resultsEl.closest('.modal');
       if (modalEl && v !== 'plano') modalEl.style.maxWidth = '';
       plano.el.hidden = v !== 'plano';
