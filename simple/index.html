@@ -2612,17 +2612,21 @@ function datoCatastro(comuna, rol) {
   const { manzana, propiedad } = splitRol(String(rol || ''));
   const r = d.m[String(parseInt(manzana, 10))] && d.m[String(parseInt(manzana, 10))][String(parseInt(propiedad, 10))];
   if (!r) return null;
-  // Archivos nuevos traen el terreno en la posición 6 y el bien común en la 7; los antiguos,
-  // sin terreno, traían el bien común en la 6
-  const conTerreno = Array.isArray(d.campos) && d.campos.includes('terreno');
-  const bienComun = (conTerreno ? r[7] : r[6]) || 0;
-  let terreno = conTerreno ? (r[6] || 0) : null, terrenoComun = false;
+  // Las posiciones se leen de d.campos (los archivos más nuevos agregan el destino antes del
+  // bien común; los más antiguos no traen terreno)
+  const campos = Array.isArray(d.campos) ? d.campos : [];
+  const pos = (n) => campos.indexOf(n);
+  const conTerreno = pos('terreno') >= 0;
+  const iBien = pos('bienComun') >= 0 ? pos('bienComun') : 6;
+  const bienComun = r[iBien] || 0;
+  const destinoCod = pos('destino') >= 0 ? (r[pos('destino')] || '') : '';
+  let terreno = conTerreno ? (r[pos('terreno')] || 0) : null, terrenoComun = false;
   // Unidad de una copropiedad: su terreno es 0; se muestra el del bien común del edificio
   if (conTerreno && !terreno && bienComun) {
     const bc = d.m[String(parseInt(manzana, 10))][String(bienComun)];
-    if (bc && bc[6]) { terreno = bc[6]; terrenoComun = true; }
+    if (bc && bc[pos('terreno')]) { terreno = bc[pos('terreno')]; terrenoComun = true; }
   }
-  return { avaluo: r[0], material: r[1], calidad: r[2], ano: r[3], m2: r[4], lineas: r[5], terreno, terrenoComun, bienComun, periodo: d.periodo };
+  return { avaluo: r[0], material: r[1], calidad: r[2], ano: r[3], m2: r[4], lineas: r[5], terreno, terrenoComun, bienComun, destinoCod, periodo: d.periodo };
 }
 // Filas [etiqueta, valor] para mostrar: material, calidad, año y m²
 function filasCatastro(c) {
@@ -2641,7 +2645,10 @@ function filasCatastro(c) {
 function showResult(data) {
   document.getElementById('rol-value').textContent = data.rol || '—';
   // Material, calidad, año y m² desde el catastro de la comuna (si el sitio lo tiene)
-  if (data.comunaCodigo && data.rol) {
+  // El catastro del sitio es solo de predios no agrícolas: un rol agrícola con el mismo número
+  // es otra propiedad (p. ej. 376-2 agrícola de Mariquina ≠ 376-2 urbano de calle Llaima)
+  const esAgricola = /AGR[IÍ]COLA/i.test(String(data.destinoDescripcion || ''));
+  if (data.comunaCodigo && data.rol && !esAgricola) {
     cargarCatastro(data.comunaCodigo).then(() => {
       if (document.getElementById('rol-value').textContent !== String(data.rol)) return; // ya se consultó otro punto
       const det = document.getElementById('details');
@@ -3815,7 +3822,7 @@ async function abrirModalUnidades(comunaCodigo, nombreComuna, direccionClic, man
       // --- Detalles ocultos (se muestran con "Ver") ---
       const destino = pick(u, ['destinoDescripcion', 'destino', 'DESTINO', 'destinoPredio']);
       // Con el catastro de la comuna, el avalúo viene de ahí (sin consultar al SII)
-      const cat = datoCatastro(comunaCodigo, rolCompleto);
+      const cat = /AGR[IÍ]COLA/i.test(String(destino || '')) ? null : datoCatastro(comunaCodigo, rolCompleto);
       if (cat && cat.avaluo > 0 && !(Number(u.valorTotal) > 0)) u.valorTotal = cat.avaluo;
       const avaluoRaw = buscarAvaluo(u);
       // Un avalúo 0 es el SII diciendo "no lo incluí en esta respuesta", no un valor real
